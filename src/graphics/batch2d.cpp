@@ -220,10 +220,13 @@ void Batch2D::begin(int virtual_w, int virtual_h) {
     m_virtual_w = virtual_w;
     m_virtual_h = virtual_h;
     m_proj_matrix = glm::ortho(0.0f, static_cast<float>(virtual_w), static_cast<float>(virtual_h), 0.0f, -1.0f, 1.0f);
+    m_model_matrix_2d = glm::mat4(1.0f);
+    while (!m_matrix_stack_2d.empty()) m_matrix_stack_2d.pop();
     m_current_proj_view = m_proj_matrix;
     m_vertices.clear();
     m_current_texture = 0;
     m_blend_mode = BlendMode::Alpha;
+    m_scissor_stack.clear();
     if (m_scissor_active) {
         glDisable(GL_SCISSOR_TEST);
         m_scissor_active = false;
@@ -232,6 +235,9 @@ void Batch2D::begin(int virtual_w, int virtual_h) {
 
 void Batch2D::end() {
     flush();
+    m_scissor_stack.clear();
+    while (!m_matrix_stack_2d.empty()) m_matrix_stack_2d.pop();
+    m_model_matrix_2d = glm::mat4(1.0f);
     if (m_scissor_active) {
         glDisable(GL_SCISSOR_TEST);
         m_scissor_active = false;
@@ -257,6 +263,74 @@ void Batch2D::reset_scissor() {
     flush();
     glDisable(GL_SCISSOR_TEST);
     m_scissor_active = false;
+    m_scissor_stack.clear();
+}
+
+void Batch2D::push_scissor(int x, int y, int w, int h) {
+    flush();
+    if (!m_scissor_stack.empty()) {
+        const auto& parent = m_scissor_stack.back();
+        int nx = std::max(x, parent.x);
+        int ny = std::max(y, parent.y);
+        int rx1 = std::min(x + w, parent.x + parent.z);
+        int ry1 = std::min(y + h, parent.y + parent.w);
+        int nw = std::max(0, rx1 - nx);
+        int nh = std::max(0, ry1 - ny);
+        m_scissor_stack.push_back({nx, ny, nw, nh});
+        set_scissor(nx, ny, nw, nh);
+    } else {
+        m_scissor_stack.push_back({x, y, w, h});
+        set_scissor(x, y, w, h);
+    }
+}
+
+void Batch2D::pop_scissor() {
+    flush();
+    if (!m_scissor_stack.empty()) {
+        m_scissor_stack.pop_back();
+        if (!m_scissor_stack.empty()) {
+            const auto& prev = m_scissor_stack.back();
+            set_scissor(prev.x, prev.y, prev.z, prev.w);
+        } else {
+            glDisable(GL_SCISSOR_TEST);
+            m_scissor_active = false;
+        }
+    } else {
+        reset_scissor();
+    }
+}
+
+void Batch2D::push_matrix_2d() {
+    m_matrix_stack_2d.push(m_model_matrix_2d);
+}
+
+void Batch2D::pop_matrix_2d() {
+    flush();
+    if (!m_matrix_stack_2d.empty()) {
+        m_model_matrix_2d = m_matrix_stack_2d.top();
+        m_matrix_stack_2d.pop();
+    } else {
+        m_model_matrix_2d = glm::mat4(1.0f);
+    }
+    m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
+}
+
+void Batch2D::translate_2d(float x, float y) {
+    flush();
+    m_model_matrix_2d = glm::translate(m_model_matrix_2d, glm::vec3(x, y, 0.0f));
+    m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
+}
+
+void Batch2D::rotate_2d(float angle_rad) {
+    flush();
+    m_model_matrix_2d = glm::rotate(m_model_matrix_2d, angle_rad, glm::vec3(0.0f, 0.0f, 1.0f));
+    m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
+}
+
+void Batch2D::scale_2d(float sx, float sy) {
+    flush();
+    m_model_matrix_2d = glm::scale(m_model_matrix_2d, glm::vec3(sx, sy, 1.0f));
+    m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
 }
 
 void Batch2D::set_camera2d(float x, float y, float zoom, float angle_rad, float ox, float oy) {
@@ -268,12 +342,12 @@ void Batch2D::set_camera2d(float x, float y, float zoom, float angle_rad, float 
     }
     view = glm::scale(view, glm::vec3(zoom, zoom, 1.0f));
     view = glm::translate(view, glm::vec3(-x, -y, 0.0f));
-    m_current_proj_view = m_proj_matrix * view;
+    m_current_proj_view = m_proj_matrix * view * m_model_matrix_2d;
 }
 
 void Batch2D::reset_camera2d() {
     flush();
-    m_current_proj_view = m_proj_matrix;
+    m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
 }
 
 void Batch2D::flush() {
@@ -678,6 +752,117 @@ float Batch2D::get_text_height(const std::string& text, float scale) const {
         if (c == '\n') lines += 1.0f;
     }
     return lines * 8.0f * scale;
+}
+
+void Batch2D::draw_pie(float cx, float cy, float radius, float start_angle, float end_angle, const glm::vec4& color, bool filled, int segments) {
+    if (segments < 4) segments = 16;
+    float da = (end_angle - start_angle) / static_cast<float>(segments);
+
+    if (filled) {
+        for (int i = 0; i < segments; ++i) {
+            float a1 = start_angle + static_cast<float>(i) * da;
+            float a2 = start_angle + static_cast<float>(i + 1) * da;
+            float x1 = cx + std::cos(a1) * radius;
+            float y1 = cy + std::sin(a1) * radius;
+            float x2 = cx + std::cos(a2) * radius;
+            float y2 = cy + std::sin(a2) * radius;
+            draw_triangle(cx, cy, x1, y1, x2, y2, color, true);
+        }
+    } else {
+        float x_start = cx + std::cos(start_angle) * radius;
+        float y_start = cy + std::sin(start_angle) * radius;
+        float x_end = cx + std::cos(end_angle) * radius;
+        float y_end = cy + std::sin(end_angle) * radius;
+        draw_line(cx, cy, x_start, y_start, color);
+        draw_arc(cx, cy, radius, start_angle, end_angle, color, false, segments);
+        draw_line(cx, cy, x_end, y_end, color);
+    }
+}
+
+void Batch2D::draw_gradient_rect(float x, float y, float w, float h,
+                                 const glm::vec4& c_tl, const glm::vec4& c_tr,
+                                 const glm::vec4& c_br, const glm::vec4& c_bl) {
+    if (m_current_texture != 0 && m_current_texture != m_white_texture->get_id()) flush();
+    if (m_vertices.size() + 4 > MAX_VERTICES) flush();
+    m_current_texture = m_white_texture->get_id();
+
+    m_vertices.push_back({ {x, y}, {0.0f, 0.0f}, c_tl });
+    m_vertices.push_back({ {x + w, y}, {1.0f, 0.0f}, c_tr });
+    m_vertices.push_back({ {x + w, y + h}, {1.0f, 1.0f}, c_br });
+    m_vertices.push_back({ {x, y + h}, {0.0f, 1.0f}, c_bl });
+}
+
+void Batch2D::draw_gradient_h(float x, float y, float w, float h, const glm::vec4& col_left, const glm::vec4& col_right) {
+    draw_gradient_rect(x, y, w, h, col_left, col_right, col_right, col_left);
+}
+
+void Batch2D::draw_gradient_v(float x, float y, float w, float h, const glm::vec4& col_top, const glm::vec4& col_bottom) {
+    draw_gradient_rect(x, y, w, h, col_top, col_top, col_bottom, col_bottom);
+}
+
+void Batch2D::draw_polyline(const std::vector<glm::vec2>& points, const glm::vec4& color, float thickness, bool loop) {
+    if (points.size() < 2) return;
+    size_t count = loop ? points.size() : points.size() - 1;
+    for (size_t i = 0; i < count; ++i) {
+        const auto& p1 = points[i];
+        const auto& p2 = points[(i + 1) % points.size()];
+        draw_line(p1.x, p1.y, p2.x, p2.y, color, thickness);
+    }
+}
+
+void Batch2D::draw_bezier(const glm::vec2& p0, const glm::vec2& p1, const glm::vec2& p2, const glm::vec4& color, float thickness, int segments) {
+    if (segments < 2) segments = 16;
+    glm::vec2 prev = p0;
+    for (int i = 1; i <= segments; ++i) {
+        float t = static_cast<float>(i) / static_cast<float>(segments);
+        float u = 1.0f - t;
+        glm::vec2 curr = u * u * p0 + 2.0f * u * t * p1 + t * t * p2;
+        draw_line(prev.x, prev.y, curr.x, curr.y, color, thickness);
+        prev = curr;
+    }
+}
+
+void Batch2D::draw_bezier_cubic(const glm::vec2& p0, const glm::vec2& p1, const glm::vec2& p2, const glm::vec2& p3, const glm::vec4& color, float thickness, int segments) {
+    if (segments < 2) segments = 24;
+    glm::vec2 prev = p0;
+    for (int i = 1; i <= segments; ++i) {
+        float t = static_cast<float>(i) / static_cast<float>(segments);
+        float u = 1.0f - t;
+        glm::vec2 curr = u * u * u * p0 + 3.0f * u * u * t * p1 + 3.0f * u * t * t * p2 + t * t * t * p3;
+        draw_line(prev.x, prev.y, curr.x, curr.y, color, thickness);
+        prev = curr;
+    }
+}
+
+void Batch2D::draw_rounded_rect_ex(float x, float y, float w, float h, float rtl, float rtr, float rbr, float rbl, const glm::vec4& color, bool filled, int segments) {
+    if (segments < 2) segments = 4;
+    float max_r = std::min(w * 0.5f, h * 0.5f);
+    rtl = std::clamp(rtl, 0.0f, max_r);
+    rtr = std::clamp(rtr, 0.0f, max_r);
+    rbr = std::clamp(rbr, 0.0f, max_r);
+    rbl = std::clamp(rbl, 0.0f, max_r);
+
+    std::vector<glm::vec2> pts;
+    pts.reserve(segments * 4);
+
+    for (int i = 0; i <= segments; ++i) {
+        float a = -1.5707963f + (1.5707963f * i / segments);
+        pts.push_back({ (x + w - rtr) + std::cos(a) * rtr, (y + rtr) + std::sin(a) * rtr });
+    }
+    for (int i = 0; i <= segments; ++i) {
+        float a = 0.0f + (1.5707963f * i / segments);
+        pts.push_back({ (x + w - rbr) + std::cos(a) * rbr, (y + h - rbr) + std::sin(a) * rbr });
+    }
+    for (int i = 0; i <= segments; ++i) {
+        float a = 1.5707963f + (1.5707963f * i / segments);
+        pts.push_back({ (x + rbl) + std::cos(a) * rbl, (y + h - rbl) + std::sin(a) * rbl });
+    }
+    for (int i = 0; i <= segments; ++i) {
+        float a = 3.14159265f + (1.5707963f * i / segments);
+        pts.push_back({ (x + rtl) + std::cos(a) * rtl, (y + rtl) + std::sin(a) * rtl });
+    }
+
+    draw_polygon(pts, color, filled);
 }
 
 GLuint Batch2D::get_white_texture_id() const {

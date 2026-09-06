@@ -32,9 +32,11 @@ void Input::begin_frame() {
         m_mouse_pressed[i] = false;
         m_mouse_released[i] = false;
     }
-    m_mouse_wheel = 0.0f;
+    m_mouse_wheel_x = 0.0f;
+    m_mouse_wheel_y = 0.0f;
     m_mouse_delta_x = 0.0f;
     m_mouse_delta_y = 0.0f;
+    m_text_input.clear();
 }
 
 std::string Input::normalize_key(const std::string& name) const {
@@ -93,7 +95,12 @@ void Input::handle_event(const SDL_Event& event, const Window& window) {
         m_mouse_win_y = event.button.y;
         window.window_to_virtual(m_mouse_win_x, m_mouse_win_y, m_mouse_virt_x, m_mouse_virt_y);
     } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
-        m_mouse_wheel = event.wheel.y;
+        m_mouse_wheel_x = event.wheel.x;
+        m_mouse_wheel_y = event.wheel.y;
+    } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+        if (event.text.text) {
+            m_text_input += event.text.text;
+        }
     } else if (event.type == SDL_EVENT_GAMEPAD_ADDED) {
         if (!m_gamepad) {
             m_gamepad = SDL_OpenGamepad(event.gdevice.which);
@@ -167,6 +174,88 @@ float Input::gamepad_axis(int axis) const {
         return m_gamepad_axes[axis];
     }
     return 0.0f;
+}
+
+int Input::parse_mouse_button(const std::string& name) {
+    std::string s = name;
+    for (char& c : s) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    if (s == "left" || s == "l" || s == "1") return 1;
+    if (s == "middle" || s == "mid" || s == "m" || s == "2") return 2;
+    if (s == "right" || s == "r" || s == "3") return 3;
+    if (s == "x1" || s == "mouse4" || s == "4") return 4;
+    if (s == "x2" || s == "mouse5" || s == "5") return 5;
+    return 1;
+}
+
+bool Input::is_mouse_down(const std::string& name) const {
+    return is_mouse_down(parse_mouse_button(name));
+}
+
+bool Input::is_mouse_pressed(const std::string& name) const {
+    return is_mouse_pressed(parse_mouse_button(name));
+}
+
+bool Input::is_mouse_released(const std::string& name) const {
+    return is_mouse_released(parse_mouse_button(name));
+}
+
+void Input::set_mouse_position(const Window& window, float win_x, float win_y) {
+    if (window.get_sdl_window()) {
+        SDL_WarpMouseInWindow(window.get_sdl_window(), win_x, win_y);
+    }
+}
+
+bool Input::is_shift_down() const {
+    return (SDL_GetModState() & SDL_KMOD_SHIFT) != 0;
+}
+
+bool Input::is_ctrl_down() const {
+    return (SDL_GetModState() & SDL_KMOD_CTRL) != 0;
+}
+
+bool Input::is_alt_down() const {
+    return (SDL_GetModState() & SDL_KMOD_ALT) != 0;
+}
+
+bool Input::is_gui_down() const {
+    return (SDL_GetModState() & SDL_KMOD_GUI) != 0;
+}
+
+bool Input::is_caps_lock() const {
+    return (SDL_GetModState() & SDL_KMOD_CAPS) != 0;
+}
+
+void Input::start_text_input(const Window& window) {
+    if (window.get_sdl_window()) {
+        SDL_StartTextInput(window.get_sdl_window());
+    }
+}
+
+void Input::stop_text_input(const Window& window) {
+    if (window.get_sdl_window()) {
+        SDL_StopTextInput(window.get_sdl_window());
+    }
+}
+
+bool Input::is_text_input_active(const Window& window) const {
+    if (window.get_sdl_window()) {
+        return SDL_TextInputActive(window.get_sdl_window());
+    }
+    return false;
+}
+
+std::string Input::get_clipboard_text() const {
+    char* text = SDL_GetClipboardText();
+    if (text) {
+        std::string str(text);
+        SDL_free(text);
+        return str;
+    }
+    return "";
+}
+
+void Input::set_clipboard_text(const std::string& text) {
+    SDL_SetClipboardText(text.c_str());
 }
 
 } // namespace crayon

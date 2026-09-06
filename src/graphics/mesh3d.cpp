@@ -1014,6 +1014,151 @@ void MeshRenderer3D::draw_quad_3d(const glm::vec3& p1, const glm::vec3& p2, cons
     draw_triangle_3d(p1, p3, p4, color, texture_id, uv1, uv3, uv4);
 }
 
+void MeshRenderer3D::draw_billboard_rot(GLuint texture_id, const glm::vec3& position, const glm::vec2& size,
+                                        float angle_rad, BillboardMode mode, const glm::vec4& color,
+                                        float u0, float v0, float u1, float v1) {
+    glm::vec3 right, up;
+    if (mode == BillboardMode::Spherical) {
+        right = glm::vec3(m_view[0][0], m_view[1][0], m_view[2][0]);
+        up    = glm::vec3(m_view[0][1], m_view[1][1], m_view[2][1]);
+    } else {
+        glm::vec3 look = m_cam_position - position;
+        look.y = 0.0f;
+        if (glm::length(look) > 0.0001f) look = glm::normalize(look);
+        else look = glm::vec3(0, 0, 1);
+        up = glm::vec3(0.0f, 1.0f, 0.0f);
+        right = glm::normalize(glm::cross(up, look));
+    }
+
+    if (angle_rad != 0.0f) {
+        float c = std::cos(angle_rad);
+        float s = std::sin(angle_rad);
+        glm::vec3 new_right = right * c + up * s;
+        glm::vec3 new_up    = -right * s + up * c;
+        right = new_right;
+        up    = new_up;
+    }
+
+    glm::vec3 p0 = position - right * (size.x * 0.5f) - up * (size.y * 0.5f);
+    glm::vec3 p1 = position + right * (size.x * 0.5f) - up * (size.y * 0.5f);
+    glm::vec3 p2 = position + right * (size.x * 0.5f) + up * (size.y * 0.5f);
+    glm::vec3 p3 = position - right * (size.x * 0.5f) + up * (size.y * 0.5f);
+
+    glm::vec3 norm = glm::normalize(glm::cross(right, up));
+
+    Vertex3D quad[6] = {
+        { p0, norm, {u0, v1}, color },
+        { p1, norm, {u1, v1}, color },
+        { p2, norm, {u1, v0}, color },
+
+        { p0, norm, {u0, v1}, color },
+        { p2, norm, {u1, v0}, color },
+        { p3, norm, {u0, v0}, color }
+    };
+
+    glEnable(GL_BLEND);
+    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+    m_shader->bind();
+    m_shader->set_mat4("u_model", glm::mat4(1.0f));
+    m_shader->set_mat4("u_view", m_view);
+    m_shader->set_mat4("u_proj", m_proj);
+    m_shader->set_int("u_jitter_enabled", 0);
+    m_shader->set_float("u_affine_blend", 0.0f);
+    m_shader->set_int("u_shading_mode", 2); // Unlit
+    m_shader->set_int("u_fog_enabled", m_retro.fog_enabled ? 1 : 0);
+    m_shader->set_float("u_fog_start", m_retro.fog_start);
+    m_shader->set_float("u_fog_end", m_retro.fog_end);
+    m_shader->set_vec3("u_fog_color", m_retro.fog_color);
+
+    m_shader->set_int("u_texture", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture_id != 0 ? texture_id : m_white_texture->get_id());
+
+    glBindVertexArray(m_dyn_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_dyn_vbo);
+    glBufferSubData(GL_ARRAY_BUFFER, 0, sizeof(quad), quad);
+    glDrawArrays(GL_TRIANGLES, 0, 6);
+    glBindVertexArray(0);
+
+    m_shader->unbind();
+    glDisable(GL_BLEND);
+}
+
+void MeshRenderer3D::draw_axes_3d(const glm::vec3& pos, float size) {
+    draw_line_3d(pos, pos + glm::vec3(size, 0.0f, 0.0f), glm::vec4(1.0f, 0.15f, 0.15f, 1.0f));
+    draw_line_3d(pos, pos + glm::vec3(0.0f, size, 0.0f), glm::vec4(0.15f, 1.0f, 0.15f, 1.0f));
+    draw_line_3d(pos, pos + glm::vec3(0.0f, 0.0f, size), glm::vec4(0.2f, 0.4f, 1.0f, 1.0f));
+}
+
+void MeshRenderer3D::draw_cube_wires(const glm::vec3& pos, const glm::vec3& size, const glm::vec4& color, const glm::vec3& rot) {
+    push_matrix();
+    translate(pos);
+    if (rot.z != 0.0f) rotate(rot.z, glm::vec3(0, 0, 1));
+    if (rot.y != 0.0f) rotate(rot.y, glm::vec3(0, 1, 0));
+    if (rot.x != 0.0f) rotate(rot.x, glm::vec3(1, 0, 0));
+    scale(size);
+
+    glm::vec3 c[8] = {
+        {-0.5f, -0.5f, -0.5f},
+        { 0.5f, -0.5f, -0.5f},
+        { 0.5f,  0.5f, -0.5f},
+        {-0.5f,  0.5f, -0.5f},
+        {-0.5f, -0.5f,  0.5f},
+        { 0.5f, -0.5f,  0.5f},
+        { 0.5f,  0.5f,  0.5f},
+        {-0.5f,  0.5f,  0.5f}
+    };
+
+    // Bottom square
+    draw_line_3d(c[0], c[1], color);
+    draw_line_3d(c[1], c[2], color);
+    draw_line_3d(c[2], c[3], color);
+    draw_line_3d(c[3], c[0], color);
+
+    // Top square
+    draw_line_3d(c[4], c[5], color);
+    draw_line_3d(c[5], c[6], color);
+    draw_line_3d(c[6], c[7], color);
+    draw_line_3d(c[7], c[4], color);
+
+    // Vertical pillars
+    draw_line_3d(c[0], c[4], color);
+    draw_line_3d(c[1], c[5], color);
+    draw_line_3d(c[2], c[6], color);
+    draw_line_3d(c[3], c[7], color);
+
+    pop_matrix();
+}
+
+bool MeshRenderer3D::project(const glm::vec3& world_pos, float view_w, float view_h, glm::vec2& out_screen_pos) const {
+    glm::vec4 clip = m_proj * m_view * glm::vec4(world_pos, 1.0f);
+    if (clip.w <= 0.0001f) {
+        return false;
+    }
+    glm::vec3 ndc = glm::vec3(clip) / clip.w;
+    out_screen_pos.x = (ndc.x * 0.5f + 0.5f) * view_w;
+    out_screen_pos.y = (1.0f - (ndc.y * 0.5f + 0.5f)) * view_h;
+    return (ndc.z >= -1.0f && ndc.z <= 1.0f && ndc.x >= -1.2f && ndc.x <= 1.2f && ndc.y >= -1.2f && ndc.y <= 1.2f);
+}
+
+void MeshRenderer3D::unproject(const glm::vec2& screen_pos, float view_w, float view_h, glm::vec3& out_ray_orig, glm::vec3& out_ray_dir) const {
+    float ndc_x = (screen_pos.x / view_w) * 2.0f - 1.0f;
+    float ndc_y = 1.0f - (screen_pos.y / view_h) * 2.0f;
+
+    glm::mat4 inv_pv = glm::inverse(m_proj * m_view);
+    glm::vec4 near_pt = inv_pv * glm::vec4(ndc_x, ndc_y, -1.0f, 1.0f);
+    glm::vec4 far_pt  = inv_pv * glm::vec4(ndc_x, ndc_y,  1.0f, 1.0f);
+
+    if (std::abs(near_pt.w) > 0.00001f) near_pt /= near_pt.w;
+    if (std::abs(far_pt.w) > 0.00001f)  far_pt  /= far_pt.w;
+
+    out_ray_orig = glm::vec3(near_pt);
+    glm::vec3 diff = glm::vec3(far_pt - near_pt);
+    float len = glm::length(diff);
+    out_ray_dir = (len > 0.00001f) ? (diff / len) : glm::vec3(0, 0, 1);
+}
+
 GLuint MeshRenderer3D::get_fallback_texture_id() const {
     return m_checker_texture ? m_checker_texture->get_id() : 0;
 }

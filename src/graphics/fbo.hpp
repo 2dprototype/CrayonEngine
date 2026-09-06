@@ -15,6 +15,7 @@ struct PostProcessOptions {
     float curvature_distort = 0.05f;
     bool vignette = false;
     float vignette_strength = 0.25f;
+    bool transparent = false;
 };
 
 class FBO {

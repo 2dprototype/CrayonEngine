@@ -228,6 +228,7 @@ void Engine::render_frame() {
     opts.curvature_distort = retro.curvature_distort;
     opts.vignette = retro.vignette;
     opts.vignette_strength = retro.vignette_strength;
+    opts.transparent = m_window.is_transparent();
 
     m_fbo.blit_to_screen(m_window.get_viewport_info(), win_w, win_h, *m_post_shader, opts);
 

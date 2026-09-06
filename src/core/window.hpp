@@ -68,6 +68,23 @@ public:
     bool is_minimized() const;
     bool is_focused() const;
 
+    // Advanced Window Controls
+    void set_opacity(float opacity);
+    float get_opacity() const;
+
+    void set_always_on_top(bool on_top);
+    bool is_always_on_top() const;
+
+    void raise();
+    void focus();
+    void flash();
+
+    void set_mouse_grab(bool grabbed);
+    bool is_mouse_grabbed() const;
+
+    void set_transparent(bool transparent);
+    bool is_transparent() const { return m_transparent; }
+
     // Scaling Modes
     void set_scaling_mode(ScalingMode mode);
     ScalingMode get_scaling_mode() const { return m_scaling_mode; }
@@ -112,6 +129,7 @@ private:
     bool m_fullscreen = false;
     bool m_vsync = true;
     bool m_should_close = false;
+    bool m_transparent = false;
 
     ScalingMode m_scaling_mode = ScalingMode::Integer;
     ViewportInfo m_viewport;

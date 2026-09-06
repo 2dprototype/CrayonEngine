@@ -40,32 +40,137 @@ static int l_input_get_mouse_delta(lua_State* L) {
     return 2;
 }
 
+static int l_input_get_mouse_window_pos(lua_State* L) {
+    float x = 0.0f, y = 0.0f;
+    Engine::get().get_input().get_mouse_window_pos(x, y);
+    lua_pushnumber(L, x);
+    lua_pushnumber(L, y);
+    return 2;
+}
+
 static int l_input_is_mouse_down(lua_State* L) {
-    int btn = static_cast<int>(luaL_checkinteger(L, 1));
-    bool down = Engine::get().get_input().is_mouse_down(btn);
+    bool down = false;
+    if (lua_isnumber(L, 1)) {
+        int btn = static_cast<int>(lua_tointeger(L, 1));
+        down = Engine::get().get_input().is_mouse_down(btn);
+    } else if (lua_isstring(L, 1)) {
+        down = Engine::get().get_input().is_mouse_down(lua_tostring(L, 1));
+    }
     lua_pushboolean(L, down);
     return 1;
 }
 
 static int l_input_is_mouse_pressed(lua_State* L) {
-    int btn = static_cast<int>(luaL_checkinteger(L, 1));
-    bool pressed = Engine::get().get_input().is_mouse_pressed(btn);
+    bool pressed = false;
+    if (lua_isnumber(L, 1)) {
+        int btn = static_cast<int>(lua_tointeger(L, 1));
+        pressed = Engine::get().get_input().is_mouse_pressed(btn);
+    } else if (lua_isstring(L, 1)) {
+        pressed = Engine::get().get_input().is_mouse_pressed(lua_tostring(L, 1));
+    }
     lua_pushboolean(L, pressed);
     return 1;
 }
 
 static int l_input_is_mouse_released(lua_State* L) {
-    int btn = static_cast<int>(luaL_checkinteger(L, 1));
-    bool rel = Engine::get().get_input().is_mouse_released(btn);
+    bool rel = false;
+    if (lua_isnumber(L, 1)) {
+        int btn = static_cast<int>(lua_tointeger(L, 1));
+        rel = Engine::get().get_input().is_mouse_released(btn);
+    } else if (lua_isstring(L, 1)) {
+        rel = Engine::get().get_input().is_mouse_released(lua_tostring(L, 1));
+    }
     lua_pushboolean(L, rel);
     return 1;
 }
 
 static int l_input_get_mouse_wheel(lua_State* L) {
-    float wheel = Engine::get().get_input().get_mouse_wheel();
-    lua_pushnumber(L, wheel);
-    lua_pushnumber(L, wheel);
+    float wx = Engine::get().get_input().get_mouse_wheel_x();
+    float wy = Engine::get().get_input().get_mouse_wheel_y();
+    lua_pushnumber(L, wx);
+    lua_pushnumber(L, wy);
     return 2;
+}
+
+static int l_input_set_mouse_position(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    Engine::get().get_input().set_mouse_position(Engine::get().get_window(), x, y);
+    return 0;
+}
+
+static int l_input_any_key_pressed(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_input().any_key_pressed());
+    return 1;
+}
+
+static int l_input_get_pressed_keys(lua_State* L) {
+    const auto& keys = Engine::get().get_input().get_pressed_keys();
+    lua_createtable(L, static_cast<int>(keys.size()), 0);
+    int idx = 1;
+    for (const auto& k : keys) {
+        lua_pushstring(L, k.c_str());
+        lua_rawseti(L, -2, idx++);
+    }
+    return 1;
+}
+
+static int l_input_is_shift_down(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_input().is_shift_down());
+    return 1;
+}
+
+static int l_input_is_ctrl_down(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_input().is_ctrl_down());
+    return 1;
+}
+
+static int l_input_is_alt_down(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_input().is_alt_down());
+    return 1;
+}
+
+static int l_input_is_gui_down(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_input().is_gui_down());
+    return 1;
+}
+
+static int l_input_is_caps_lock(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_input().is_caps_lock());
+    return 1;
+}
+
+static int l_input_start_text_input(lua_State* L) {
+    (void)L;
+    Engine::get().get_input().start_text_input(Engine::get().get_window());
+    return 0;
+}
+
+static int l_input_stop_text_input(lua_State* L) {
+    (void)L;
+    Engine::get().get_input().stop_text_input(Engine::get().get_window());
+    return 0;
+}
+
+static int l_input_is_text_input_active(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_input().is_text_input_active(Engine::get().get_window()));
+    return 1;
+}
+
+static int l_input_get_text_input(lua_State* L) {
+    lua_pushstring(L, Engine::get().get_input().get_text_input().c_str());
+    return 1;
+}
+
+static int l_input_get_clipboard(lua_State* L) {
+    lua_pushstring(L, Engine::get().get_input().get_clipboard_text().c_str());
+    return 1;
+}
+
+static int l_input_set_clipboard(lua_State* L) {
+    const char* text = luaL_checkstring(L, 1);
+    Engine::get().get_input().set_clipboard_text(text);
+    return 0;
 }
 
 static int l_input_gamepad_is_down(lua_State* L) {
@@ -95,8 +200,34 @@ void register_input_bindings(lua_State* L) {
     lua_pushcfunction(L, l_input_is_released);
     lua_setfield(L, -2, "is_released");
 
+    lua_pushcfunction(L, l_input_any_key_pressed);
+    lua_setfield(L, -2, "any_key_pressed");
+
+    lua_pushcfunction(L, l_input_get_pressed_keys);
+    lua_setfield(L, -2, "get_pressed_keys");
+
+    // Key Modifiers
+    lua_pushcfunction(L, l_input_is_shift_down);
+    lua_setfield(L, -2, "is_shift_down");
+
+    lua_pushcfunction(L, l_input_is_ctrl_down);
+    lua_setfield(L, -2, "is_ctrl_down");
+
+    lua_pushcfunction(L, l_input_is_alt_down);
+    lua_setfield(L, -2, "is_alt_down");
+
+    lua_pushcfunction(L, l_input_is_gui_down);
+    lua_setfield(L, -2, "is_gui_down");
+
+    lua_pushcfunction(L, l_input_is_caps_lock);
+    lua_setfield(L, -2, "is_caps_lock");
+
+    // Mouse
     lua_pushcfunction(L, l_input_get_mouse_pos);
     lua_setfield(L, -2, "get_mouse_pos");
+
+    lua_pushcfunction(L, l_input_get_mouse_window_pos);
+    lua_setfield(L, -2, "get_mouse_window_pos");
 
     lua_pushcfunction(L, l_input_get_mouse_delta);
     lua_setfield(L, -2, "get_mouse_delta");
@@ -113,6 +244,29 @@ void register_input_bindings(lua_State* L) {
     lua_pushcfunction(L, l_input_get_mouse_wheel);
     lua_setfield(L, -2, "get_mouse_wheel");
 
+    lua_pushcfunction(L, l_input_set_mouse_position);
+    lua_setfield(L, -2, "set_mouse_position");
+
+    // Text Input & Clipboard
+    lua_pushcfunction(L, l_input_start_text_input);
+    lua_setfield(L, -2, "start_text_input");
+
+    lua_pushcfunction(L, l_input_stop_text_input);
+    lua_setfield(L, -2, "stop_text_input");
+
+    lua_pushcfunction(L, l_input_is_text_input_active);
+    lua_setfield(L, -2, "is_text_input_active");
+
+    lua_pushcfunction(L, l_input_get_text_input);
+    lua_setfield(L, -2, "get_text_input");
+
+    lua_pushcfunction(L, l_input_get_clipboard);
+    lua_setfield(L, -2, "get_clipboard");
+
+    lua_pushcfunction(L, l_input_set_clipboard);
+    lua_setfield(L, -2, "set_clipboard");
+
+    // Gamepad
     lua_pushcfunction(L, l_input_gamepad_is_down);
     lua_setfield(L, -2, "gamepad_is_down");
 

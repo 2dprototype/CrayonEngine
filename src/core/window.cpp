@@ -29,9 +29,22 @@ bool Window::init(const std::string& title, int window_w, int window_h, int virt
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
+    SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
 
-    SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-    m_window = SDL_CreateWindow(title.c_str(), m_window_w, m_window_h, flags);
+    SDL_PropertiesID props = SDL_CreateProperties();
+    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, title.c_str());
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, m_window_w);
+    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, m_window_h);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+    m_window = SDL_CreateWindowWithProperties(props);
+    SDL_DestroyProperties(props);
+
+    if (!m_window) {
+        SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        m_window = SDL_CreateWindow(title.c_str(), m_window_w, m_window_h, flags);
+    }
     if (!m_window) {
         CRAYON_LOG_ERROR("Failed to create SDL3 window: {}", SDL_GetError());
         return false;
@@ -203,6 +216,73 @@ bool Window::is_focused() const {
         return (SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS) != 0;
     }
     return false;
+}
+
+void Window::set_opacity(float opacity) {
+    if (m_window) {
+        if (opacity < 0.0f) opacity = 0.0f;
+        if (opacity > 1.0f) opacity = 1.0f;
+        SDL_SetWindowOpacity(m_window, opacity);
+    }
+}
+
+float Window::get_opacity() const {
+    if (m_window) {
+        return SDL_GetWindowOpacity(m_window);
+    }
+    return 1.0f;
+}
+
+void Window::set_always_on_top(bool on_top) {
+    if (m_window) {
+        SDL_SetWindowAlwaysOnTop(m_window, on_top);
+    }
+}
+
+bool Window::is_always_on_top() const {
+    if (m_window) {
+        return (SDL_GetWindowFlags(m_window) & SDL_WINDOW_ALWAYS_ON_TOP) != 0;
+    }
+    return false;
+}
+
+void Window::raise() {
+    if (m_window) {
+        SDL_RaiseWindow(m_window);
+    }
+}
+
+void Window::focus() {
+    if (m_window) {
+        SDL_RaiseWindow(m_window);
+    }
+}
+
+void Window::flash() {
+    if (m_window) {
+        SDL_FlashWindow(m_window, SDL_FLASH_UNTIL_FOCUSED);
+    }
+}
+
+void Window::set_mouse_grab(bool grabbed) {
+    if (m_window) {
+        SDL_SetWindowMouseGrab(m_window, grabbed);
+    }
+}
+
+bool Window::is_mouse_grabbed() const {
+    if (m_window) {
+        return SDL_GetWindowMouseGrab(m_window);
+    }
+    return false;
+}
+
+void Window::set_transparent(bool transparent) {
+    m_transparent = transparent;
+    if (m_window) {
+        SDL_PropertiesID props = SDL_GetWindowProperties(m_window);
+        SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, transparent);
+    }
 }
 
 void Window::set_scaling_mode(ScalingMode mode) {

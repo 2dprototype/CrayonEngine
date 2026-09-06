@@ -208,6 +208,68 @@ static int l_window_get_display_size(lua_State* L) {
     return 2;
 }
 
+static int l_window_set_opacity(lua_State* L) {
+    float opacity = static_cast<float>(luaL_checknumber(L, 1));
+    Engine::get().get_window().set_opacity(opacity);
+    return 0;
+}
+
+static int l_window_get_opacity(lua_State* L) {
+    lua_pushnumber(L, Engine::get().get_window().get_opacity());
+    return 1;
+}
+
+static int l_window_set_always_on_top(lua_State* L) {
+    bool on_top = lua_toboolean(L, 1);
+    Engine::get().get_window().set_always_on_top(on_top);
+    return 0;
+}
+
+static int l_window_is_always_on_top(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_window().is_always_on_top());
+    return 1;
+}
+
+static int l_window_raise(lua_State* L) {
+    (void)L;
+    Engine::get().get_window().raise();
+    return 0;
+}
+
+static int l_window_focus(lua_State* L) {
+    (void)L;
+    Engine::get().get_window().focus();
+    return 0;
+}
+
+static int l_window_flash(lua_State* L) {
+    (void)L;
+    Engine::get().get_window().flash();
+    return 0;
+}
+
+static int l_window_set_mouse_grab(lua_State* L) {
+    bool grab = lua_toboolean(L, 1);
+    Engine::get().get_window().set_mouse_grab(grab);
+    return 0;
+}
+
+static int l_window_is_mouse_grabbed(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_window().is_mouse_grabbed());
+    return 1;
+}
+
+static int l_window_set_transparent(lua_State* L) {
+    bool trans = lua_toboolean(L, 1);
+    Engine::get().get_window().set_transparent(trans);
+    return 0;
+}
+
+static int l_window_is_transparent(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_window().is_transparent());
+    return 1;
+}
+
 void register_window_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
@@ -313,6 +375,39 @@ void register_window_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_window_quit);
     lua_setfield(L, -2, "quit");
+
+    lua_pushcfunction(L, l_window_set_opacity);
+    lua_setfield(L, -2, "set_opacity");
+
+    lua_pushcfunction(L, l_window_get_opacity);
+    lua_setfield(L, -2, "get_opacity");
+
+    lua_pushcfunction(L, l_window_set_always_on_top);
+    lua_setfield(L, -2, "set_always_on_top");
+
+    lua_pushcfunction(L, l_window_is_always_on_top);
+    lua_setfield(L, -2, "is_always_on_top");
+
+    lua_pushcfunction(L, l_window_raise);
+    lua_setfield(L, -2, "raise");
+
+    lua_pushcfunction(L, l_window_focus);
+    lua_setfield(L, -2, "focus");
+
+    lua_pushcfunction(L, l_window_flash);
+    lua_setfield(L, -2, "flash");
+
+    lua_pushcfunction(L, l_window_set_mouse_grab);
+    lua_setfield(L, -2, "set_mouse_grab");
+
+    lua_pushcfunction(L, l_window_is_mouse_grabbed);
+    lua_setfield(L, -2, "is_mouse_grabbed");
+
+    lua_pushcfunction(L, l_window_set_transparent);
+    lua_setfield(L, -2, "set_transparent");
+
+    lua_pushcfunction(L, l_window_is_transparent);
+    lua_setfield(L, -2, "is_transparent");
 
     lua_setfield(L, -2, "window");
     lua_pop(L, 1);

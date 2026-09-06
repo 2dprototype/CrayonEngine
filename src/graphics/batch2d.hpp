@@ -3,6 +3,7 @@
 #include <vector>
 #include <string>
 #include <memory>
+#include <stack>
 #include <glm/glm.hpp>
 #include <glad/glad.h>
 #include "shader.hpp"
@@ -75,6 +76,30 @@ public:
     void draw_ellipse(float cx, float cy, float rx, float ry, const glm::vec4& color, bool filled = true, int segments = 24);
     void draw_arc(float cx, float cy, float radius, float start_angle, float end_angle, const glm::vec4& color, bool filled = true, int segments = 16);
     void draw_ring(float cx, float cy, float inner_radius, float outer_radius, const glm::vec4& color, bool filled = true, int segments = 24);
+    void draw_pie(float cx, float cy, float radius, float start_angle, float end_angle, const glm::vec4& color, bool filled = true, int segments = 16);
+
+    // Advanced 2D Primitives
+    void draw_gradient_rect(float x, float y, float w, float h,
+                            const glm::vec4& c_tl, const glm::vec4& c_tr,
+                            const glm::vec4& c_br, const glm::vec4& c_bl);
+    void draw_gradient_h(float x, float y, float w, float h, const glm::vec4& col_left, const glm::vec4& col_right);
+    void draw_gradient_v(float x, float y, float w, float h, const glm::vec4& col_top, const glm::vec4& col_bottom);
+
+    void draw_polyline(const std::vector<glm::vec2>& points, const glm::vec4& color, float thickness = 1.0f, bool loop = false);
+    void draw_bezier(const glm::vec2& p0, const glm::vec2& p1, const glm::vec2& p2, const glm::vec4& color, float thickness = 1.0f, int segments = 16);
+    void draw_bezier_cubic(const glm::vec2& p0, const glm::vec2& p1, const glm::vec2& p2, const glm::vec2& p3, const glm::vec4& color, float thickness = 1.0f, int segments = 24);
+    void draw_rounded_rect_ex(float x, float y, float w, float h, float rtl, float rtr, float rbr, float rbl, const glm::vec4& color, bool filled = true, int segments = 8);
+
+    // 2D Matrix Stack
+    void push_matrix_2d();
+    void pop_matrix_2d();
+    void translate_2d(float x, float y);
+    void rotate_2d(float angle_rad);
+    void scale_2d(float sx, float sy);
+
+    // 2D Scissor Stack
+    void push_scissor(int x, int y, int w, int h);
+    void pop_scissor();
 
     // Text & Font
     void draw_text(const std::string& text, float x, float y, float scale, const glm::vec4& color);
@@ -102,6 +127,10 @@ private:
 
     BlendMode m_blend_mode = BlendMode::Alpha;
     bool m_scissor_active = false;
+    std::vector<glm::ivec4> m_scissor_stack;
+
+    std::stack<glm::mat4> m_matrix_stack_2d;
+    glm::mat4 m_model_matrix_2d{1.0f};
 
     int m_virtual_w = 320;
     int m_virtual_h = 240;

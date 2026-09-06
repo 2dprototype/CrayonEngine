@@ -114,17 +114,28 @@ public:
     void draw_billboard(GLuint texture_id, const glm::vec3& position, const glm::vec2& size,
                         BillboardMode mode = BillboardMode::Spherical, const glm::vec4& color = glm::vec4(1.0f),
                         float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f);
+    void draw_billboard_rot(GLuint texture_id, const glm::vec3& position, const glm::vec2& size,
+                            float angle_rad, BillboardMode mode = BillboardMode::Spherical,
+                            const glm::vec4& color = glm::vec4(1.0f),
+                            float u0 = 0.0f, float v0 = 0.0f, float u1 = 1.0f, float v1 = 1.0f);
 
     // 3D Immediate Geometry & Lines
     void draw_line_3d(const glm::vec3& p1, const glm::vec3& p2, const glm::vec4& color = glm::vec4(1.0f));
     void draw_lines_3d(const std::vector<glm::vec3>& points, const glm::vec4& color = glm::vec4(1.0f));
     void draw_grid_3d(float size, int divisions, float y_level = 0.0f, const glm::vec4& color = glm::vec4(0.4f, 0.4f, 0.5f, 1.0f));
+    void draw_axes_3d(const glm::vec3& pos, float size = 1.0f);
+    void draw_cube_wires(const glm::vec3& pos, const glm::vec3& size, const glm::vec4& color = glm::vec4(1.0f), const glm::vec3& rot = glm::vec3(0.0f));
+
     void draw_triangle_3d(const glm::vec3& p1, const glm::vec3& p2, const glm::vec3& p3,
                           const glm::vec4& color = glm::vec4(1.0f), GLuint texture_id = 0,
                           const glm::vec2& uv1 = {0,0}, const glm::vec2& uv2 = {1,0}, const glm::vec2& uv3 = {0,1});
     void draw_quad_3d(const glm::vec3& p1, const glm::vec3& p2, const glm::vec3& p3, const glm::vec3& p4,
                       const glm::vec4& color = glm::vec4(1.0f), GLuint texture_id = 0,
                       const glm::vec2& uv1 = {0,0}, const glm::vec2& uv2 = {1,0}, const glm::vec2& uv3 = {1,1}, const glm::vec2& uv4 = {0,1});
+
+    // 3D Spatial Queries
+    bool project(const glm::vec3& world_pos, float view_w, float view_h, glm::vec2& out_screen_pos) const;
+    void unproject(const glm::vec2& screen_pos, float view_w, float view_h, glm::vec3& out_ray_orig, glm::vec3& out_ray_dir) const;
 
     // Transform Stack
     void push_matrix();

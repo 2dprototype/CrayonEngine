@@ -116,15 +116,24 @@ void FBO::create_fullscreen_quad() {
 void FBO::blit_to_screen(const ViewportInfo& vp, int window_w, int window_h, Shader& post_shader, const PostProcessOptions& opts) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
-    // Clear whole window (including pillarbox/letterbox areas) with black
+    // Clear whole window (including pillarbox/letterbox areas)
     glViewport(0, 0, window_w, window_h);
-    glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    if (opts.transparent) {
+        glClearColor(0.0f, 0.0f, 0.0f, 0.0f);
+    } else {
+        glClearColor(0.0f, 0.0f, 0.0f, 1.0f);
+    }
     glClear(GL_COLOR_BUFFER_BIT);
 
     // Render scaled virtual canvas into centered aspect-ratio viewport
     glViewport(vp.x, vp.y, vp.width, vp.height);
     glDisable(GL_DEPTH_TEST);
-    glDisable(GL_BLEND);
+    if (opts.transparent) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    } else {
+        glDisable(GL_BLEND);
+    }
 
     post_shader.bind();
     post_shader.set_int("u_screen_texture", 0);
