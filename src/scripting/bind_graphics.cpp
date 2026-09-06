@@ -1,0 +1,1279 @@
+#include "lua_runtime.hpp"
+#include "../core/engine.hpp"
+#include <vector>
+#include <unordered_map>
+#include <glm/gtc/matrix_transform.hpp>
+
+namespace crayon {
+
+static std::unordered_map<int, std::shared_ptr<Mesh3D>> s_model_handles;
+static int s_next_model_id = 1;
+
+static int register_mesh_handle(std::shared_ptr<Mesh3D> mesh) {
+    int id = s_next_model_id++;
+    s_model_handles[id] = mesh;
+    return id;
+}
+
+static int l_graphics_clear(lua_State* L) {
+    float r = static_cast<float>(luaL_checknumber(L, 1));
+    float g = static_cast<float>(luaL_checknumber(L, 2));
+    float b = static_cast<float>(luaL_checknumber(L, 3));
+    float a = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+    Engine::get().set_clear_color(r, g, b, a);
+    return 0;
+}
+
+static int l_graphics_set_color(lua_State* L) {
+    float r = static_cast<float>(luaL_checknumber(L, 1));
+    float g = static_cast<float>(luaL_checknumber(L, 2));
+    float b = static_cast<float>(luaL_checknumber(L, 3));
+    float a = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+    Engine::get().set_active_color(r, g, b, a);
+    return 0;
+}
+
+static int l_graphics_set_retro_effects(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+
+    auto& effects = Engine::get().get_mesh_renderer().get_retro_effects();
+
+    // opts.jitter_resolution
+    lua_getfield(L, 1, "jitter_resolution");
+    if (lua_istable(L, -1)) {
+        lua_rawgeti(L, -1, 1);
+        float jx = static_cast<float>(luaL_checknumber(L, -1));
+        lua_pop(L, 1);
+        lua_rawgeti(L, -1, 2);
+        float jy = static_cast<float>(luaL_checknumber(L, -1));
+        lua_pop(L, 1);
+        effects.jitter_enabled = true;
+        effects.jitter_resolution = glm::vec2(jx, jy);
+    } else if (lua_isnil(L, -1) || (lua_isboolean(L, -1) && !lua_toboolean(L, -1))) {
+        effects.jitter_enabled = false;
+    }
+    lua_pop(L, 1);
+
+    // opts.affine
+    lua_getfield(L, 1, "affine");
+    if (lua_isnumber(L, -1)) {
+        effects.affine_blend = static_cast<float>(lua_tonumber(L, -1));
+    }
+    lua_pop(L, 1);
+
+    // opts.dither
+    lua_getfield(L, 1, "dither");
+    if (lua_isboolean(L, -1)) {
+        effects.dither_enabled = lua_toboolean(L, -1);
+    }
+    lua_pop(L, 1);
+
+    // opts.color_depth or opts.dither_levels
+    lua_getfield(L, 1, "color_depth");
+    if (lua_isnumber(L, -1)) {
+        int depth = static_cast<int>(lua_tointeger(L, -1));
+        effects.dither_levels = (depth == 8) ? 8.0f : 32.0f;
+    }
+    lua_pop(L, 1);
+    lua_getfield(L, 1, "dither_levels");
+    if (lua_isnumber(L, -1)) {
+        effects.dither_levels = static_cast<float>(lua_tonumber(L, -1));
+    }
+    lua_pop(L, 1);
+
+    // opts.fog = { start = 10, end = 50, color = {0.1, 0.1, 0.2} }
+    lua_getfield(L, 1, "fog");
+    if (lua_istable(L, -1)) {
+        effects.fog_enabled = true;
+        lua_getfield(L, -1, "start");
+        if (lua_isnumber(L, -1)) effects.fog_start = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, -1, "end");
+        if (lua_isnumber(L, -1)) effects.fog_end = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, -1, "color");
+        if (lua_istable(L, -1)) {
+            lua_rawgeti(L, -1, 1);
+            float fr = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+            lua_rawgeti(L, -1, 2);
+            float fg = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+            lua_rawgeti(L, -1, 3);
+            float fb = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+            effects.fog_color = glm::vec3(fr, fg, fb);
+        }
+        lua_pop(L, 1);
+    } else if (lua_isnil(L, -1) || (lua_isboolean(L, -1) && !lua_toboolean(L, -1))) {
+        effects.fog_enabled = false;
+    }
+    lua_pop(L, 1);
+
+    // opts.crt = true or { scanlines = 0.3, curvature = 0.05, vignette = 0.25 }
+    lua_getfield(L, 1, "crt");
+    if (lua_isboolean(L, -1)) {
+        bool b = lua_toboolean(L, -1);
+        effects.crt_scanlines = b;
+        effects.crt_curvature = b;
+        effects.vignette = b;
+    } else if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, "scanlines");
+        if (lua_isnumber(L, -1)) { effects.crt_scanlines = true; effects.scanline_strength = static_cast<float>(lua_tonumber(L, -1)); }
+        else if (lua_isboolean(L, -1)) { effects.crt_scanlines = lua_toboolean(L, -1); }
+        lua_pop(L, 1);
+
+        lua_getfield(L, -1, "curvature");
+        if (lua_isnumber(L, -1)) { effects.crt_curvature = true; effects.curvature_distort = static_cast<float>(lua_tonumber(L, -1)); }
+        else if (lua_isboolean(L, -1)) { effects.crt_curvature = lua_toboolean(L, -1); }
+        lua_pop(L, 1);
+
+        lua_getfield(L, -1, "vignette");
+        if (lua_isnumber(L, -1)) { effects.vignette = true; effects.vignette_strength = static_cast<float>(lua_tonumber(L, -1)); }
+        else if (lua_isboolean(L, -1)) { effects.vignette = lua_toboolean(L, -1); }
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "scanlines");
+    if (lua_isboolean(L, -1)) effects.crt_scanlines = lua_toboolean(L, -1);
+    else if (lua_isnumber(L, -1)) { effects.crt_scanlines = true; effects.scanline_strength = static_cast<float>(lua_tonumber(L, -1)); }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "curvature");
+    if (lua_isboolean(L, -1)) effects.crt_curvature = lua_toboolean(L, -1);
+    else if (lua_isnumber(L, -1)) { effects.crt_curvature = true; effects.curvature_distort = static_cast<float>(lua_tonumber(L, -1)); }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "vignette");
+    if (lua_isboolean(L, -1)) effects.vignette = lua_toboolean(L, -1);
+    else if (lua_isnumber(L, -1)) { effects.vignette = true; effects.vignette_strength = static_cast<float>(lua_tonumber(L, -1)); }
+    lua_pop(L, 1);
+
+    return 0;
+}
+
+static int l_graphics_set_camera3d(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+
+    auto& cam = Engine::get().get_camera();
+
+    // cam.position = {x, y, z}
+    lua_getfield(L, 1, "position");
+    if (lua_istable(L, -1)) {
+        lua_rawgeti(L, -1, 1); float x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 2); float y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 3); float z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        cam.set_position(glm::vec3(x, y, z));
+    }
+    lua_pop(L, 1);
+
+    // cam.target = {x, y, z}
+    lua_getfield(L, 1, "target");
+    if (lua_istable(L, -1)) {
+        lua_rawgeti(L, -1, 1); float x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 2); float y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 3); float z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        cam.set_target(glm::vec3(x, y, z));
+    }
+    lua_pop(L, 1);
+
+    // cam.up = {x, y, z}
+    lua_getfield(L, 1, "up");
+    if (lua_istable(L, -1)) {
+        lua_rawgeti(L, -1, 1); float x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 2); float y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 3); float z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        cam.set_up(glm::vec3(x, y, z));
+    }
+    lua_pop(L, 1);
+
+    // cam.fov
+    lua_getfield(L, 1, "fov");
+    if (lua_isnumber(L, -1)) {
+        cam.set_fov(static_cast<float>(lua_tonumber(L, -1)));
+    }
+    lua_pop(L, 1);
+
+    // cam.near
+    lua_getfield(L, 1, "near");
+    if (lua_isnumber(L, -1)) {
+        cam.set_near(static_cast<float>(lua_tonumber(L, -1)));
+    }
+    lua_pop(L, 1);
+
+    // cam.far
+    lua_getfield(L, 1, "far");
+    if (lua_isnumber(L, -1)) {
+        cam.set_far(static_cast<float>(lua_tonumber(L, -1)));
+    }
+    lua_pop(L, 1);
+
+    // cam.ortho
+    lua_getfield(L, 1, "ortho");
+    if (lua_isboolean(L, -1)) {
+        cam.set_orthographic(lua_toboolean(L, -1));
+    }
+    lua_pop(L, 1);
+
+    // cam.ortho_size
+    lua_getfield(L, 1, "ortho_size");
+    if (lua_isnumber(L, -1)) {
+        cam.set_ortho_size(static_cast<float>(lua_tonumber(L, -1)));
+    }
+    lua_pop(L, 1);
+
+    return 0;
+}
+
+static int l_graphics_get_camera_ray(lua_State* L) {
+    float sx = static_cast<float>(luaL_checknumber(L, 1));
+    float sy = static_cast<float>(luaL_checknumber(L, 2));
+
+    int virt_w = Engine::get().get_window().get_virtual_width();
+    int virt_h = Engine::get().get_window().get_virtual_height();
+    if (virt_w <= 0 || virt_h <= 0) return 0;
+
+    float norm_x = (sx / static_cast<float>(virt_w)) * 2.0f - 1.0f;
+    float norm_y = 1.0f - (sy / static_cast<float>(virt_h)) * 2.0f;
+    float aspect = static_cast<float>(virt_w) / static_cast<float>(virt_h);
+
+    glm::vec3 origin, dir;
+    Engine::get().get_camera().get_ray(norm_x, norm_y, aspect, origin, dir);
+
+    lua_newtable(L);
+
+    lua_newtable(L);
+    lua_pushnumber(L, origin.x); lua_rawseti(L, -2, 1);
+    lua_pushnumber(L, origin.y); lua_rawseti(L, -2, 2);
+    lua_pushnumber(L, origin.z); lua_rawseti(L, -2, 3);
+    lua_setfield(L, -2, "origin");
+
+    lua_newtable(L);
+    lua_pushnumber(L, dir.x); lua_rawseti(L, -2, 1);
+    lua_pushnumber(L, dir.y); lua_rawseti(L, -2, 2);
+    lua_pushnumber(L, dir.z); lua_rawseti(L, -2, 3);
+    lua_setfield(L, -2, "direction");
+
+    return 1;
+}
+
+static int l_graphics_load_texture(lua_State* L) {
+    const char* path = luaL_checkstring(L, 1);
+    GLuint id = Engine::get().load_texture(path);
+    lua_pushinteger(L, id);
+    return 1;
+}
+
+static int l_graphics_get_texture_size(lua_State* L) {
+    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    int w = 0, h = 0;
+    Engine::get().get_texture_size(tex_id, w, h);
+    lua_pushinteger(L, w);
+    lua_pushinteger(L, h);
+    return 2;
+}
+
+static int l_graphics_load_model(lua_State* L) {
+    const char* path = luaL_checkstring(L, 1);
+    std::string p(path);
+
+    std::shared_ptr<Mesh3D> mesh;
+    if (p == "cube") {
+        mesh = Mesh3D::create_cube(1.0f);
+    } else if (p == "plane") {
+        mesh = Mesh3D::create_plane(10.0f, 10.0f, 10);
+    } else if (p == "sphere") {
+        mesh = Mesh3D::create_sphere(0.5f, 16, 16);
+    } else if (p == "cylinder") {
+        mesh = Mesh3D::create_cylinder(0.5f, 1.0f, 16);
+    } else if (p == "cone") {
+        mesh = Mesh3D::create_cone(0.5f, 1.0f, 16);
+    } else if (p == "pyramid") {
+        mesh = Mesh3D::create_pyramid(1.0f, 1.0f);
+    } else if (p == "torus") {
+        mesh = Mesh3D::create_torus(0.8f, 0.25f, 16, 12);
+    } else if (p == "capsule") {
+        mesh = Mesh3D::create_capsule(0.4f, 0.8f, 8, 12);
+    } else if (p == "grid") {
+        mesh = Mesh3D::create_grid(20.0f, 20);
+    } else {
+        mesh = Engine::get().load_model(p);
+    }
+
+    int handle = register_mesh_handle(mesh);
+    lua_pushinteger(L, handle);
+    return 1;
+}
+
+static int l_graphics_create_mesh(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+
+    std::vector<Vertex3D> vertices;
+    std::vector<GLuint> indices;
+
+    lua_getfield(L, 1, "vertices");
+    if (lua_istable(L, -1)) {
+        int v_len = static_cast<int>(lua_objlen(L, -1));
+        vertices.reserve(v_len);
+        for (int i = 1; i <= v_len; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                Vertex3D v{};
+                v.normal = glm::vec3(0, 1, 0);
+                v.uv = glm::vec2(0, 0);
+                v.color = glm::vec4(1, 1, 1, 1);
+
+                lua_getfield(L, -1, "pos");
+                if (lua_istable(L, -1)) {
+                    lua_rawgeti(L, -1, 1); v.position.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 2); v.position.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 3); v.position.z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                }
+                lua_pop(L, 1);
+
+                lua_getfield(L, -1, "norm");
+                if (lua_istable(L, -1)) {
+                    lua_rawgeti(L, -1, 1); v.normal.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 2); v.normal.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 3); v.normal.z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                }
+                lua_pop(L, 1);
+
+                lua_getfield(L, -1, "uv");
+                if (lua_istable(L, -1)) {
+                    lua_rawgeti(L, -1, 1); v.uv.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 2); v.uv.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                }
+                lua_pop(L, 1);
+
+                lua_getfield(L, -1, "color");
+                if (lua_istable(L, -1)) {
+                    lua_rawgeti(L, -1, 1); v.color.r = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 2); v.color.g = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 3); v.color.b = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 4); v.color.a = static_cast<float>(luaL_optnumber(L, -1, 1.0)); lua_pop(L, 1);
+                }
+                lua_pop(L, 1);
+
+                vertices.push_back(v);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "indices");
+    if (lua_istable(L, -1)) {
+        int idx_len = static_cast<int>(lua_objlen(L, -1));
+        indices.reserve(idx_len);
+        for (int i = 1; i <= idx_len; ++i) {
+            lua_rawgeti(L, -1, i);
+            int idx = static_cast<int>(lua_tointeger(L, -1));
+            indices.push_back(static_cast<GLuint>(idx > 0 ? idx - 1 : 0));
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    auto mesh = std::make_shared<Mesh3D>();
+    mesh->create_from_data(vertices, indices);
+    int handle = register_mesh_handle(mesh);
+    lua_pushinteger(L, handle);
+    return 1;
+}
+
+// ---------------- 3D Primitives Direct Draw ----------------
+
+static int l_graphics_draw_model(lua_State* L) {
+    int model_id = static_cast<int>(luaL_checkinteger(L, 1));
+    float x = static_cast<float>(luaL_optnumber(L, 2, 0.0));
+    float y = static_cast<float>(luaL_optnumber(L, 3, 0.0));
+    float z = static_cast<float>(luaL_optnumber(L, 4, 0.0));
+
+    float rx = static_cast<float>(luaL_optnumber(L, 5, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 6, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+
+    float sx = static_cast<float>(luaL_optnumber(L, 8, 1.0));
+    float sy = static_cast<float>(luaL_optnumber(L, 9, 1.0));
+    float sz = static_cast<float>(luaL_optnumber(L, 10, 1.0));
+
+    GLuint tex_id = static_cast<GLuint>(luaL_optinteger(L, 11, 0));
+
+    auto it = s_model_handles.find(model_id);
+    if (it == s_model_handles.end() || !it->second) {
+        return 0;
+    }
+
+    glm::mat4 model = glm::mat4(1.0f);
+    model = glm::translate(model, glm::vec3(x, y, z));
+    if (rz != 0.0f) model = glm::rotate(model, rz, glm::vec3(0, 0, 1));
+    if (ry != 0.0f) model = glm::rotate(model, ry, glm::vec3(0, 1, 0));
+    if (rx != 0.0f) model = glm::rotate(model, rx, glm::vec3(1, 0, 0));
+    model = glm::scale(model, glm::vec3(sx, sy, sz));
+
+    Engine::get().get_mesh_renderer().draw_mesh(*it->second, model, tex_id);
+    return 0;
+}
+
+static int l_graphics_draw_cube(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float sx = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+    float sy = static_cast<float>(luaL_optnumber(L, 5, sx));
+    float sz = static_cast<float>(luaL_optnumber(L, 6, sx));
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 7, 0));
+    float rx = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 9, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 10, 0.0));
+
+    Engine::get().get_mesh_renderer().draw_cube({x, y, z}, {sx, sy, sz}, tex, {rx, ry, rz});
+    return 0;
+}
+
+static int l_graphics_draw_plane(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float w = static_cast<float>(luaL_optnumber(L, 4, 10.0));
+    float d = static_cast<float>(luaL_optnumber(L, 5, w));
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
+
+    Engine::get().get_mesh_renderer().draw_plane({x, y, z}, w, d, tex, {rx, ry, rz});
+    return 0;
+}
+
+static int l_graphics_draw_sphere(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_optnumber(L, 4, 0.5));
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 5, 0));
+    float rx = static_cast<float>(luaL_optnumber(L, 6, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+
+    Engine::get().get_mesh_renderer().draw_sphere({x, y, z}, radius, tex, {rx, ry, rz});
+    return 0;
+}
+
+static int l_graphics_draw_cylinder(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_optnumber(L, 4, 0.5));
+    float height = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
+
+    Engine::get().get_mesh_renderer().draw_cylinder({x, y, z}, radius, height, tex, {rx, ry, rz});
+    return 0;
+}
+
+static int l_graphics_draw_cone(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_optnumber(L, 4, 0.5));
+    float height = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
+
+    Engine::get().get_mesh_renderer().draw_cone({x, y, z}, radius, height, tex, {rx, ry, rz});
+    return 0;
+}
+
+static int l_graphics_draw_pyramid(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float base_size = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+    float height = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
+
+    Engine::get().get_mesh_renderer().draw_pyramid({x, y, z}, base_size, height, tex, {rx, ry, rz});
+    return 0;
+}
+
+static int l_graphics_draw_torus(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_optnumber(L, 4, 0.8));
+    float tube = static_cast<float>(luaL_optnumber(L, 5, 0.25));
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
+
+    Engine::get().get_mesh_renderer().draw_torus({x, y, z}, radius, tube, tex, {rx, ry, rz});
+    return 0;
+}
+
+static int l_graphics_draw_capsule(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_optnumber(L, 4, 0.4));
+    float height = static_cast<float>(luaL_optnumber(L, 5, 0.8));
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
+
+    Engine::get().get_mesh_renderer().draw_capsule({x, y, z}, radius, height, tex, {rx, ry, rz});
+    return 0;
+}
+
+// ---------------- 3D Billboards & Lines ----------------
+
+static int l_graphics_draw_billboard(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float w = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+    float h = static_cast<float>(luaL_optnumber(L, 5, w));
+    GLuint tex_id = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+
+    BillboardMode mode = BillboardMode::Spherical;
+    if (lua_isboolean(L, 7)) {
+        mode = lua_toboolean(L, 7) ? BillboardMode::Cylindrical : BillboardMode::Spherical;
+    } else if (lua_isstring(L, 7)) {
+        const char* mode_str = lua_tostring(L, 7);
+        if (mode_str && std::string(mode_str) == "cylindrical") {
+            mode = BillboardMode::Cylindrical;
+        }
+    }
+
+    float u0 = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float v0 = static_cast<float>(luaL_optnumber(L, 9, 0.0));
+    float u1 = static_cast<float>(luaL_optnumber(L, 10, 1.0));
+    float v1 = static_cast<float>(luaL_optnumber(L, 11, 1.0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_mesh_renderer().draw_billboard(tex_id, {x, y, z}, {w, h}, mode, col, u0, v0, u1, v1);
+    return 0;
+}
+
+static int l_graphics_draw_line_3d(lua_State* L) {
+    float x1 = static_cast<float>(luaL_checknumber(L, 1));
+    float y1 = static_cast<float>(luaL_checknumber(L, 2));
+    float z1 = static_cast<float>(luaL_checknumber(L, 3));
+    float x2 = static_cast<float>(luaL_checknumber(L, 4));
+    float y2 = static_cast<float>(luaL_checknumber(L, 5));
+    float z2 = static_cast<float>(luaL_checknumber(L, 6));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_mesh_renderer().draw_line_3d({x1, y1, z1}, {x2, y2, z2}, col);
+    return 0;
+}
+
+static int l_graphics_draw_lines_3d(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+    int len = static_cast<int>(lua_objlen(L, 1));
+    std::vector<glm::vec3> pts;
+    pts.reserve(len);
+
+    for (int i = 1; i <= len; ++i) {
+        lua_rawgeti(L, 1, i);
+        if (lua_istable(L, -1)) {
+            lua_rawgeti(L, -1, 1); float x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+            lua_rawgeti(L, -1, 2); float y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+            lua_rawgeti(L, -1, 3); float z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+            pts.push_back({x, y, z});
+        }
+        lua_pop(L, 1);
+    }
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_mesh_renderer().draw_lines_3d(pts, col);
+    return 0;
+}
+
+static int l_graphics_draw_grid_3d(lua_State* L) {
+    float size = static_cast<float>(luaL_optnumber(L, 1, 20.0));
+    int divs = static_cast<int>(luaL_optinteger(L, 2, 20));
+    float y = static_cast<float>(luaL_optnumber(L, 3, 0.0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_mesh_renderer().draw_grid_3d(size, divs, y, col);
+    return 0;
+}
+
+static int l_graphics_draw_triangle_3d(lua_State* L) {
+    // p1 = {x,y,z}, p2 = {x,y,z}, p3 = {x,y,z}
+    if (!lua_istable(L, 1) || !lua_istable(L, 2) || !lua_istable(L, 3)) return 0;
+
+    auto get_vec3 = [&](int idx) {
+        lua_rawgeti(L, idx, 1); float x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, idx, 2); float y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, idx, 3); float z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        return glm::vec3(x, y, z);
+    };
+
+    glm::vec3 p1 = get_vec3(1);
+    glm::vec3 p2 = get_vec3(2);
+    glm::vec3 p3 = get_vec3(3);
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 4, 0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_mesh_renderer().draw_triangle_3d(p1, p2, p3, col, tex);
+    return 0;
+}
+
+static int l_graphics_draw_quad_3d(lua_State* L) {
+    if (!lua_istable(L, 1) || !lua_istable(L, 2) || !lua_istable(L, 3) || !lua_istable(L, 4)) return 0;
+
+    auto get_vec3 = [&](int idx) {
+        lua_rawgeti(L, idx, 1); float x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, idx, 2); float y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, idx, 3); float z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        return glm::vec3(x, y, z);
+    };
+
+    glm::vec3 p1 = get_vec3(1);
+    glm::vec3 p2 = get_vec3(2);
+    glm::vec3 p3 = get_vec3(3);
+    glm::vec3 p4 = get_vec3(4);
+    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 5, 0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_mesh_renderer().draw_quad_3d(p1, p2, p3, p4, col, tex);
+    return 0;
+}
+
+static int l_graphics_set_shading_mode(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    std::string m(mode_str);
+    if (m == "flat") {
+        Engine::get().get_mesh_renderer().set_shading_mode(ShadingMode::Flat);
+    } else if (m == "unlit") {
+        Engine::get().get_mesh_renderer().set_shading_mode(ShadingMode::Unlit);
+    } else {
+        Engine::get().get_mesh_renderer().set_shading_mode(ShadingMode::Gouraud);
+    }
+    return 0;
+}
+
+static int l_graphics_set_point_light(lua_State* L) {
+    int raw_idx = static_cast<int>(luaL_checkinteger(L, 1));
+    int idx = (raw_idx >= 1) ? (raw_idx - 1) : raw_idx; // Supports both 1-based (1..4) and 0-based (0..3)
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float z = static_cast<float>(luaL_checknumber(L, 4));
+    float r = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    float g = static_cast<float>(luaL_optnumber(L, 6, 1.0));
+    float b = static_cast<float>(luaL_optnumber(L, 7, 1.0));
+    float radius = static_cast<float>(luaL_optnumber(L, 8, 10.0));
+    float intensity = static_cast<float>(luaL_optnumber(L, 9, 1.0));
+
+    Engine::get().get_mesh_renderer().set_point_light(idx, {x, y, z}, {r, g, b}, radius, intensity);
+    return 0;
+}
+
+static int l_graphics_set_point_light_enabled(lua_State* L) {
+    int raw_idx = static_cast<int>(luaL_checkinteger(L, 1));
+    int idx = (raw_idx >= 1) ? (raw_idx - 1) : raw_idx;
+    bool enabled = lua_toboolean(L, 2);
+    Engine::get().get_mesh_renderer().set_point_light_enabled(idx, enabled);
+    return 0;
+}
+
+// ---------------- 2D Primitives ----------------
+
+static int l_graphics_draw_sprite(lua_State* L) {
+    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float w = static_cast<float>(luaL_optnumber(L, 4, 32.0));
+    float h = static_cast<float>(luaL_optnumber(L, 5, 32.0));
+    float rot = static_cast<float>(luaL_optnumber(L, 6, 0.0));
+    float ox = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float oy = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_sprite(tex_id, x, y, w, h, 0.0f, 0.0f, 1.0f, 1.0f, col, rot, ox, oy);
+    return 0;
+}
+
+static int l_graphics_draw_sprite_part(lua_State* L) {
+    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float u0 = static_cast<float>(luaL_checknumber(L, 4));
+    float v0 = static_cast<float>(luaL_checknumber(L, 5));
+    float u1 = static_cast<float>(luaL_checknumber(L, 6));
+    float v1 = static_cast<float>(luaL_checknumber(L, 7));
+    float w = static_cast<float>(luaL_optnumber(L, 8, 32.0));
+    float h = static_cast<float>(luaL_optnumber(L, 9, 32.0));
+    float rot = static_cast<float>(luaL_optnumber(L, 10, 0.0));
+    float ox = static_cast<float>(luaL_optnumber(L, 11, 0.0));
+    float oy = static_cast<float>(luaL_optnumber(L, 12, 0.0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_sprite(tex_id, x, y, w, h, u0, v0, u1, v1, col, rot, ox, oy);
+    return 0;
+}
+
+static int l_graphics_draw_sprite_tiled(lua_State* L) {
+    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float w = static_cast<float>(luaL_checknumber(L, 4));
+    float h = static_cast<float>(luaL_checknumber(L, 5));
+    float tile_w = static_cast<float>(luaL_optnumber(L, 6, 32.0));
+    float tile_h = static_cast<float>(luaL_optnumber(L, 7, tile_w));
+    float ox = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float oy = static_cast<float>(luaL_optnumber(L, 9, 0.0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_sprite_tiled(tex_id, x, y, w, h, tile_w, tile_h, col, ox, oy);
+    return 0;
+}
+
+static int l_graphics_draw_sprite_9slice(lua_State* L) {
+    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float w = static_cast<float>(luaL_checknumber(L, 4));
+    float h = static_cast<float>(luaL_checknumber(L, 5));
+    float left = static_cast<float>(luaL_checknumber(L, 6));
+    float top = static_cast<float>(luaL_checknumber(L, 7));
+    float right = static_cast<float>(luaL_checknumber(L, 8));
+    float bottom = static_cast<float>(luaL_checknumber(L, 9));
+
+    int tw = 0, th = 0;
+    if (lua_isnumber(L, 10) && lua_isnumber(L, 11)) {
+        tw = static_cast<int>(lua_tointeger(L, 10));
+        th = static_cast<int>(lua_tointeger(L, 11));
+    } else {
+        Engine::get().get_texture_size(tex_id, tw, th);
+    }
+    if (tw <= 0) tw = 32;
+    if (th <= 0) th = 32;
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_sprite_9slice(tex_id, x, y, w, h, left, top, right, bottom, tw, th, col);
+    return 0;
+}
+
+static int l_graphics_draw_point(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float size = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_point(x, y, size, col);
+    return 0;
+}
+
+static int l_graphics_draw_line(lua_State* L) {
+    float x1 = static_cast<float>(luaL_checknumber(L, 1));
+    float y1 = static_cast<float>(luaL_checknumber(L, 2));
+    float x2 = static_cast<float>(luaL_checknumber(L, 3));
+    float y2 = static_cast<float>(luaL_checknumber(L, 4));
+    float thick = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_line(x1, y1, x2, y2, col, thick);
+    return 0;
+}
+
+static int l_graphics_draw_rect(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    bool filled = (std::string(mode_str) == "fill");
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float w = static_cast<float>(luaL_checknumber(L, 4));
+    float h = static_cast<float>(luaL_checknumber(L, 5));
+    float thick = static_cast<float>(luaL_optnumber(L, 6, 1.0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_rect(x, y, w, h, col, filled, thick);
+    return 0;
+}
+
+static int l_graphics_draw_rounded_rect(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    bool filled = (std::string(mode_str) == "fill");
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float w = static_cast<float>(luaL_checknumber(L, 4));
+    float h = static_cast<float>(luaL_checknumber(L, 5));
+    float radius = static_cast<float>(luaL_checknumber(L, 6));
+    int segs = static_cast<int>(luaL_optinteger(L, 7, 8));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_rounded_rect(x, y, w, h, radius, col, filled, segs);
+    return 0;
+}
+
+static int l_graphics_draw_triangle(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    bool filled = (std::string(mode_str) == "fill");
+    float x1 = static_cast<float>(luaL_checknumber(L, 2));
+    float y1 = static_cast<float>(luaL_checknumber(L, 3));
+    float x2 = static_cast<float>(luaL_checknumber(L, 4));
+    float y2 = static_cast<float>(luaL_checknumber(L, 5));
+    float x3 = static_cast<float>(luaL_checknumber(L, 6));
+    float y3 = static_cast<float>(luaL_checknumber(L, 7));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_triangle(x1, y1, x2, y2, x3, y3, col, filled);
+    return 0;
+}
+
+static int l_graphics_draw_quad(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    bool filled = (std::string(mode_str) == "fill");
+    float x1 = static_cast<float>(luaL_checknumber(L, 2));
+    float y1 = static_cast<float>(luaL_checknumber(L, 3));
+    float x2 = static_cast<float>(luaL_checknumber(L, 4));
+    float y2 = static_cast<float>(luaL_checknumber(L, 5));
+    float x3 = static_cast<float>(luaL_checknumber(L, 6));
+    float y3 = static_cast<float>(luaL_checknumber(L, 7));
+    float x4 = static_cast<float>(luaL_checknumber(L, 8));
+    float y4 = static_cast<float>(luaL_checknumber(L, 9));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_quad(x1, y1, x2, y2, x3, y3, x4, y4, col, filled);
+    return 0;
+}
+
+static int l_graphics_draw_polygon(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    bool filled = (std::string(mode_str) == "fill");
+    if (!lua_istable(L, 2)) return 0;
+
+    int len = static_cast<int>(lua_objlen(L, 2));
+    if (len < 3) return 0;
+
+    std::vector<glm::vec2> pts;
+
+    // Check if element 1 is a subtable or a flat number
+    lua_rawgeti(L, 2, 1);
+    bool is_subtable = lua_istable(L, -1);
+    lua_pop(L, 1);
+
+    if (is_subtable) {
+        pts.reserve(len);
+        for (int i = 1; i <= len; ++i) {
+            lua_rawgeti(L, 2, i);
+            if (lua_istable(L, -1)) {
+                lua_rawgeti(L, -1, 1); float x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 2); float y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                pts.push_back({x, y});
+            }
+            lua_pop(L, 1);
+        }
+    } else {
+        pts.reserve(len / 2);
+        for (int i = 1; i + 1 <= len; i += 2) {
+            lua_rawgeti(L, 2, i);     float x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+            lua_rawgeti(L, 2, i + 1); float y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+            pts.push_back({x, y});
+        }
+    }
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_polygon(pts, col, filled);
+    return 0;
+}
+
+static int l_graphics_draw_circle(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    bool filled = (std::string(mode_str) == "fill");
+    float cx = static_cast<float>(luaL_checknumber(L, 2));
+    float cy = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_checknumber(L, 4));
+    int segs = static_cast<int>(luaL_optinteger(L, 5, 24));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_circle(cx, cy, radius, col, filled, segs);
+    return 0;
+}
+
+static int l_graphics_draw_ellipse(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    bool filled = (std::string(mode_str) == "fill");
+    float cx = static_cast<float>(luaL_checknumber(L, 2));
+    float cy = static_cast<float>(luaL_checknumber(L, 3));
+    float rx = static_cast<float>(luaL_checknumber(L, 4));
+    float ry = static_cast<float>(luaL_checknumber(L, 5));
+    int segs = static_cast<int>(luaL_optinteger(L, 6, 24));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_ellipse(cx, cy, rx, ry, col, filled, segs);
+    return 0;
+}
+
+static int l_graphics_draw_arc(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    bool filled = (std::string(mode_str) == "fill");
+    float cx = static_cast<float>(luaL_checknumber(L, 2));
+    float cy = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_checknumber(L, 4));
+    float a0 = static_cast<float>(luaL_checknumber(L, 5));
+    float a1 = static_cast<float>(luaL_checknumber(L, 6));
+    int segs = static_cast<int>(luaL_optinteger(L, 7, 16));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_arc(cx, cy, radius, a0, a1, col, filled, segs);
+    return 0;
+}
+
+static int l_graphics_draw_ring(lua_State* L) {
+    const char* mode_str = luaL_checkstring(L, 1);
+    bool filled = (std::string(mode_str) == "fill");
+    float cx = static_cast<float>(luaL_checknumber(L, 2));
+    float cy = static_cast<float>(luaL_checknumber(L, 3));
+    float in_r = static_cast<float>(luaL_checknumber(L, 4));
+    float out_r = static_cast<float>(luaL_checknumber(L, 5));
+    int segs = static_cast<int>(luaL_optinteger(L, 6, 24));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_ring(cx, cy, in_r, out_r, col, filled, segs);
+    return 0;
+}
+
+static int l_graphics_draw_text(lua_State* L) {
+    const char* text = luaL_checkstring(L, 1);
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float scale = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+
+    const glm::vec4& col = Engine::get().get_active_color();
+    Engine::get().get_batch2d().draw_text(text, x, y, scale, col);
+    return 0;
+}
+
+static int l_graphics_get_text_width(lua_State* L) {
+    const char* text = luaL_checkstring(L, 1);
+    float scale = static_cast<float>(luaL_optnumber(L, 2, 1.0));
+    float w = Engine::get().get_batch2d().get_text_width(text, scale);
+    lua_pushnumber(L, w);
+    return 1;
+}
+
+static int l_graphics_get_text_height(lua_State* L) {
+    const char* text = luaL_checkstring(L, 1);
+    float scale = static_cast<float>(luaL_optnumber(L, 2, 1.0));
+    float h = Engine::get().get_batch2d().get_text_height(text, scale);
+    lua_pushnumber(L, h);
+    return 1;
+}
+
+static int l_graphics_set_blend_mode(lua_State* L) {
+    const char* mode = luaL_checkstring(L, 1);
+    std::string m(mode);
+    if (m == "additive") {
+        Engine::get().get_batch2d().set_blend_mode(BlendMode::Additive);
+    } else if (m == "multiply") {
+        Engine::get().get_batch2d().set_blend_mode(BlendMode::Multiply);
+    } else if (m == "none") {
+        Engine::get().get_batch2d().set_blend_mode(BlendMode::None);
+    } else {
+        Engine::get().get_batch2d().set_blend_mode(BlendMode::Alpha);
+    }
+    return 0;
+}
+
+static int l_graphics_set_scissor(lua_State* L) {
+    int x = static_cast<int>(luaL_checkinteger(L, 1));
+    int y = static_cast<int>(luaL_checkinteger(L, 2));
+    int w = static_cast<int>(luaL_checkinteger(L, 3));
+    int h = static_cast<int>(luaL_checkinteger(L, 4));
+    Engine::get().get_batch2d().set_scissor(x, y, w, h);
+    return 0;
+}
+
+static int l_graphics_reset_scissor(lua_State* L) {
+    (void)L;
+    Engine::get().get_batch2d().reset_scissor();
+    return 0;
+}
+
+static int l_graphics_set_camera2d(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+
+    float x = 0.0f, y = 0.0f, zoom = 1.0f, angle = 0.0f, ox = 0.0f, oy = 0.0f;
+
+    lua_getfield(L, 1, "x"); if (lua_isnumber(L, -1)) x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "y"); if (lua_isnumber(L, -1)) y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "zoom"); if (lua_isnumber(L, -1)) zoom = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "angle"); if (lua_isnumber(L, -1)) angle = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "origin_x"); if (lua_isnumber(L, -1)) ox = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "origin_y"); if (lua_isnumber(L, -1)) oy = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+
+    Engine::get().get_batch2d().set_camera2d(x, y, zoom, angle, ox, oy);
+    return 0;
+}
+
+static int l_graphics_reset_camera2d(lua_State* L) {
+    (void)L;
+    Engine::get().get_batch2d().reset_camera2d();
+    return 0;
+}
+
+static int l_graphics_push_matrix(lua_State* L) {
+    (void)L;
+    Engine::get().get_mesh_renderer().push_matrix();
+    return 0;
+}
+
+static int l_graphics_pop_matrix(lua_State* L) {
+    (void)L;
+    Engine::get().get_mesh_renderer().pop_matrix();
+    return 0;
+}
+
+static int l_graphics_translate(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    Engine::get().get_mesh_renderer().translate(glm::vec3(x, y, z));
+    return 0;
+}
+
+static int l_graphics_rotate(lua_State* L) {
+    float angle = static_cast<float>(luaL_checknumber(L, 1));
+    float ax = static_cast<float>(luaL_checknumber(L, 2));
+    float ay = static_cast<float>(luaL_checknumber(L, 3));
+    float az = static_cast<float>(luaL_checknumber(L, 4));
+    Engine::get().get_mesh_renderer().rotate(angle, glm::vec3(ax, ay, az));
+    return 0;
+}
+
+static int l_graphics_scale(lua_State* L) {
+    float sx = static_cast<float>(luaL_checknumber(L, 1));
+    float sy = static_cast<float>(luaL_checknumber(L, 2));
+    float sz = static_cast<float>(luaL_checknumber(L, 3));
+    Engine::get().get_mesh_renderer().scale(glm::vec3(sx, sy, sz));
+    return 0;
+}
+
+static int l_graphics_set_light(lua_State* L) {
+    float dx = static_cast<float>(luaL_checknumber(L, 1));
+    float dy = static_cast<float>(luaL_checknumber(L, 2));
+    float dz = static_cast<float>(luaL_checknumber(L, 3));
+    float lr = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+    float lg = static_cast<float>(luaL_optnumber(L, 5, 0.95));
+    float lb = static_cast<float>(luaL_optnumber(L, 6, 0.9));
+    float ar = static_cast<float>(luaL_optnumber(L, 7, 0.25));
+    float ag = static_cast<float>(luaL_optnumber(L, 8, 0.25));
+    float ab = static_cast<float>(luaL_optnumber(L, 9, 0.3));
+
+    Engine::get().get_mesh_renderer().set_directional_light(
+        glm::vec3(dx, dy, dz),
+        glm::vec3(lr, lg, lb),
+        glm::vec3(ar, ag, ab)
+    );
+    return 0;
+}
+
+static int l_graphics_get_white_texture(lua_State* L) {
+    GLuint id = Engine::get().get_batch2d().get_white_texture_id();
+    lua_pushinteger(L, id);
+    return 1;
+}
+
+void register_graphics_bindings(lua_State* L) {
+    lua_getglobal(L, "crayon");
+    lua_newtable(L);
+
+    // Color & Canvas
+    lua_pushcfunction(L, l_graphics_clear);
+    lua_setfield(L, -2, "clear");
+
+    lua_pushcfunction(L, l_graphics_set_color);
+    lua_setfield(L, -2, "set_color");
+
+    lua_pushcfunction(L, l_graphics_set_retro_effects);
+    lua_setfield(L, -2, "set_retro_effects");
+
+    // Camera & Lighting
+    lua_pushcfunction(L, l_graphics_set_camera3d);
+    lua_setfield(L, -2, "set_camera3d");
+
+    lua_pushcfunction(L, l_graphics_get_camera_ray);
+    lua_setfield(L, -2, "get_camera_ray");
+
+    lua_pushcfunction(L, l_graphics_set_light);
+    lua_setfield(L, -2, "set_light");
+
+    lua_pushcfunction(L, l_graphics_set_point_light);
+    lua_setfield(L, -2, "set_point_light");
+
+    lua_pushcfunction(L, l_graphics_set_point_light_enabled);
+    lua_setfield(L, -2, "set_point_light_enabled");
+
+    lua_pushcfunction(L, l_graphics_set_shading_mode);
+    lua_setfield(L, -2, "set_shading_mode");
+
+    // Textures & Models
+    lua_pushcfunction(L, l_graphics_load_texture);
+    lua_setfield(L, -2, "load_texture");
+
+    lua_pushcfunction(L, l_graphics_get_texture_size);
+    lua_setfield(L, -2, "get_texture_size");
+
+    lua_pushcfunction(L, l_graphics_get_white_texture);
+    lua_setfield(L, -2, "get_white_texture");
+
+    lua_pushcfunction(L, l_graphics_load_model);
+    lua_setfield(L, -2, "load_model");
+
+    lua_pushcfunction(L, l_graphics_create_mesh);
+    lua_setfield(L, -2, "create_mesh");
+
+    // 3D Rendering
+    lua_pushcfunction(L, l_graphics_draw_model);
+    lua_setfield(L, -2, "draw_model");
+
+    lua_pushcfunction(L, l_graphics_draw_cube);
+    lua_setfield(L, -2, "draw_cube");
+
+    lua_pushcfunction(L, l_graphics_draw_plane);
+    lua_setfield(L, -2, "draw_plane");
+
+    lua_pushcfunction(L, l_graphics_draw_sphere);
+    lua_setfield(L, -2, "draw_sphere");
+
+    lua_pushcfunction(L, l_graphics_draw_cylinder);
+    lua_setfield(L, -2, "draw_cylinder");
+
+    lua_pushcfunction(L, l_graphics_draw_cone);
+    lua_setfield(L, -2, "draw_cone");
+
+    lua_pushcfunction(L, l_graphics_draw_pyramid);
+    lua_setfield(L, -2, "draw_pyramid");
+
+    lua_pushcfunction(L, l_graphics_draw_torus);
+    lua_setfield(L, -2, "draw_torus");
+
+    lua_pushcfunction(L, l_graphics_draw_capsule);
+    lua_setfield(L, -2, "draw_capsule");
+
+    lua_pushcfunction(L, l_graphics_draw_billboard);
+    lua_setfield(L, -2, "draw_billboard");
+
+    lua_pushcfunction(L, l_graphics_draw_line_3d);
+    lua_setfield(L, -2, "draw_line_3d");
+
+    lua_pushcfunction(L, l_graphics_draw_lines_3d);
+    lua_setfield(L, -2, "draw_lines_3d");
+
+    lua_pushcfunction(L, l_graphics_draw_grid_3d);
+    lua_setfield(L, -2, "draw_grid_3d");
+
+    lua_pushcfunction(L, l_graphics_draw_triangle_3d);
+    lua_setfield(L, -2, "draw_triangle_3d");
+
+    lua_pushcfunction(L, l_graphics_draw_quad_3d);
+    lua_setfield(L, -2, "draw_quad_3d");
+
+    // 2D Rendering
+    lua_pushcfunction(L, l_graphics_draw_sprite);
+    lua_setfield(L, -2, "draw_sprite");
+
+    lua_pushcfunction(L, l_graphics_draw_sprite_part);
+    lua_setfield(L, -2, "draw_sprite_part");
+
+    lua_pushcfunction(L, l_graphics_draw_sprite_tiled);
+    lua_setfield(L, -2, "draw_sprite_tiled");
+
+    lua_pushcfunction(L, l_graphics_draw_sprite_9slice);
+    lua_setfield(L, -2, "draw_sprite_9slice");
+
+    lua_pushcfunction(L, l_graphics_draw_point);
+    lua_setfield(L, -2, "draw_point");
+
+    lua_pushcfunction(L, l_graphics_draw_line);
+    lua_setfield(L, -2, "draw_line");
+
+    lua_pushcfunction(L, l_graphics_draw_rect);
+    lua_setfield(L, -2, "draw_rect");
+
+    lua_pushcfunction(L, l_graphics_draw_rounded_rect);
+    lua_setfield(L, -2, "draw_rounded_rect");
+
+    lua_pushcfunction(L, l_graphics_draw_triangle);
+    lua_setfield(L, -2, "draw_triangle");
+
+    lua_pushcfunction(L, l_graphics_draw_quad);
+    lua_setfield(L, -2, "draw_quad");
+
+    lua_pushcfunction(L, l_graphics_draw_polygon);
+    lua_setfield(L, -2, "draw_polygon");
+
+    lua_pushcfunction(L, l_graphics_draw_circle);
+    lua_setfield(L, -2, "draw_circle");
+
+    lua_pushcfunction(L, l_graphics_draw_ellipse);
+    lua_setfield(L, -2, "draw_ellipse");
+
+    lua_pushcfunction(L, l_graphics_draw_arc);
+    lua_setfield(L, -2, "draw_arc");
+
+    lua_pushcfunction(L, l_graphics_draw_ring);
+    lua_setfield(L, -2, "draw_ring");
+
+    lua_pushcfunction(L, l_graphics_draw_text);
+    lua_setfield(L, -2, "draw_text");
+
+    lua_pushcfunction(L, l_graphics_get_text_width);
+    lua_setfield(L, -2, "get_text_width");
+
+    lua_pushcfunction(L, l_graphics_get_text_height);
+    lua_setfield(L, -2, "get_text_height");
+
+    lua_pushcfunction(L, l_graphics_set_blend_mode);
+    lua_setfield(L, -2, "set_blend_mode");
+
+    lua_pushcfunction(L, l_graphics_set_scissor);
+    lua_setfield(L, -2, "set_scissor");
+
+    lua_pushcfunction(L, l_graphics_reset_scissor);
+    lua_setfield(L, -2, "reset_scissor");
+
+    lua_pushcfunction(L, l_graphics_set_camera2d);
+    lua_setfield(L, -2, "set_camera2d");
+
+    lua_pushcfunction(L, l_graphics_reset_camera2d);
+    lua_setfield(L, -2, "reset_camera2d");
+
+    // Transform Stack
+    lua_pushcfunction(L, l_graphics_push_matrix);
+    lua_setfield(L, -2, "push_matrix");
+
+    lua_pushcfunction(L, l_graphics_pop_matrix);
+    lua_setfield(L, -2, "pop_matrix");
+
+    lua_pushcfunction(L, l_graphics_translate);
+    lua_setfield(L, -2, "translate");
+
+    lua_pushcfunction(L, l_graphics_rotate);
+    lua_setfield(L, -2, "rotate");
+
+    lua_pushcfunction(L, l_graphics_scale);
+    lua_setfield(L, -2, "scale");
+
+    lua_setfield(L, -2, "graphics");
+    lua_pop(L, 1);
+}
+
+} // namespace crayon
