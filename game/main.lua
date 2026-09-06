@@ -14,6 +14,7 @@ local demo_list = {
     { key = "9", title = "09: Procedural Mesh & Waves",           file = "game/examples/09_custom_procedural_mesh.lua", desc = "Dynamic sinusoidal terrain generation & vertex colors" },
     { key = "0", title = "10: 3D OBJ Model Inspector",            file = "game/examples/10_obj_model_viewer.lua", desc = "Loads monkey.obj, girl.obj, cube.obj, turntable & lighting" },
     { key = "X", title = "11: 3D Jolt Physics Sandbox",           file = "game/examples/11_3d_physics_sandbox.lua", desc = "Rigid bodies, stacking, cannonball shooting, impulses, raycast" },
+    { key = "C", title = "12: 3D Jolt Ragdoll Showcase",          file = "game/examples/12_3d_ragdoll_sandbox.lua", desc = "Articulated humanoids, stairs tumbling, joint constraints, zero-G" },
     { key = "P", title = "Featured: Retro 3D World Showcase",     file = "showcase", desc = "Interactive 3D orbit world with matrix hierarchy & coin HUD" }
 }
 
@@ -103,8 +104,12 @@ function crayon.update(dt)
             launch_demo(11)
             return
         end
-        if (crayon.input.is_pressed("p")) then
+        if (crayon.input.is_pressed("c")) then
             launch_demo(12)
+            return
+        end
+        if (crayon.input.is_pressed("p")) then
+            launch_demo(13)
             return
         end
 
@@ -203,7 +208,7 @@ function draw_menu()
     crayon.graphics.draw_text(cur_item.desc, 12, 214, 1.0)
 
     crayon.graphics.set_color(0.65, 0.7, 0.8, 1.0)
-    crayon.graphics.draw_text("[ENTER/SPACE]: Launch | [1-9,0,X,P]: Quick Jump | [ESC]: Quit", 12, 224, 1.0)
+    crayon.graphics.draw_text("[ENTER/SPACE]: Launch | [1-9,0,X,C,P]: Quick Jump | [ESC]: Quit", 12, 224, 1.0)
 end
 
 function draw_showcase()

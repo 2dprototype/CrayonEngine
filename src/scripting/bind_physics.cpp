@@ -1,4 +1,4 @@
-﻿#include "lua_runtime.hpp"
+#include "lua_runtime.hpp"
 #include "../core/engine.hpp"
 #include "../physics/physics_system.hpp"
 #include <cstring>
@@ -368,6 +368,108 @@ static int l_physics_get_body_count(lua_State* L) {
     return 2;
 }
 
+static int l_physics_create_point_constraint(lua_State* L) {
+    uint32_t b1 = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    uint32_t b2 = static_cast<uint32_t>(luaL_checkinteger(L, 2));
+    float px = static_cast<float>(luaL_checknumber(L, 3));
+    float py = static_cast<float>(luaL_checknumber(L, 4));
+    float pz = static_cast<float>(luaL_checknumber(L, 5));
+
+    uint32_t cid = Engine::get().get_physics().create_point_constraint(b1, b2, glm::vec3(px, py, pz));
+    lua_pushinteger(L, cid);
+    return 1;
+}
+
+static int l_physics_create_hinge_constraint(lua_State* L) {
+    uint32_t b1 = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    uint32_t b2 = static_cast<uint32_t>(luaL_checkinteger(L, 2));
+    float px = static_cast<float>(luaL_checknumber(L, 3));
+    float py = static_cast<float>(luaL_checknumber(L, 4));
+    float pz = static_cast<float>(luaL_checknumber(L, 5));
+    float ax = static_cast<float>(luaL_checknumber(L, 6));
+    float ay = static_cast<float>(luaL_checknumber(L, 7));
+    float az = static_cast<float>(luaL_checknumber(L, 8));
+    float min_angle = static_cast<float>(luaL_optnumber(L, 9, -3.14159265));
+    float max_angle = static_cast<float>(luaL_optnumber(L, 10, 3.14159265));
+
+    uint32_t cid = Engine::get().get_physics().create_hinge_constraint(
+        b1, b2, glm::vec3(px, py, pz), glm::vec3(ax, ay, az), min_angle, max_angle
+    );
+    lua_pushinteger(L, cid);
+    return 1;
+}
+
+static int l_physics_create_distance_constraint(lua_State* L) {
+    uint32_t b1 = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    uint32_t b2 = static_cast<uint32_t>(luaL_checkinteger(L, 2));
+    float p1x = static_cast<float>(luaL_checknumber(L, 3));
+    float p1y = static_cast<float>(luaL_checknumber(L, 4));
+    float p1z = static_cast<float>(luaL_checknumber(L, 5));
+    float p2x = static_cast<float>(luaL_checknumber(L, 6));
+    float p2y = static_cast<float>(luaL_checknumber(L, 7));
+    float p2z = static_cast<float>(luaL_checknumber(L, 8));
+    float min_d = static_cast<float>(luaL_optnumber(L, 9, -1.0));
+    float max_d = static_cast<float>(luaL_optnumber(L, 10, -1.0));
+
+    uint32_t cid = Engine::get().get_physics().create_distance_constraint(
+        b1, b2, glm::vec3(p1x, p1y, p1z), glm::vec3(p2x, p2y, p2z), min_d, max_d
+    );
+    lua_pushinteger(L, cid);
+    return 1;
+}
+
+static int l_physics_create_fixed_constraint(lua_State* L) {
+    uint32_t b1 = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    uint32_t b2 = static_cast<uint32_t>(luaL_checkinteger(L, 2));
+
+    uint32_t cid = Engine::get().get_physics().create_fixed_constraint(b1, b2);
+    lua_pushinteger(L, cid);
+    return 1;
+}
+
+static int l_physics_destroy_constraint(lua_State* L) {
+    uint32_t cid = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    bool ok = Engine::get().get_physics().destroy_constraint(cid);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+static int l_physics_set_sensor(lua_State* L) {
+    uint32_t id = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    bool is_sensor = lua_toboolean(L, 2);
+    Engine::get().get_physics().set_is_sensor(id, is_sensor);
+    return 0;
+}
+
+static int l_physics_is_sensor(lua_State* L) {
+    uint32_t id = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    lua_pushboolean(L, Engine::get().get_physics().is_sensor(id));
+    return 1;
+}
+
+static int l_physics_set_damping(lua_State* L) {
+    uint32_t id = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    float lin_d = static_cast<float>(luaL_checknumber(L, 2));
+    float ang_d = static_cast<float>(luaL_optnumber(L, 3, lin_d));
+    Engine::get().get_physics().set_damping(id, lin_d, ang_d);
+    return 0;
+}
+
+static int l_physics_overlap_sphere(lua_State* L) {
+    float cx = static_cast<float>(luaL_checknumber(L, 1));
+    float cy = static_cast<float>(luaL_checknumber(L, 2));
+    float cz = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_checknumber(L, 4));
+
+    std::vector<uint32_t> hits = Engine::get().get_physics().overlap_sphere(glm::vec3(cx, cy, cz), radius);
+    lua_createtable(L, static_cast<int>(hits.size()), 0);
+    for (size_t i = 0; i < hits.size(); ++i) {
+        lua_pushinteger(L, hits[i]);
+        lua_rawseti(L, -2, static_cast<int>(i + 1));
+    }
+    return 1;
+}
+
 void register_physics_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
@@ -461,6 +563,34 @@ void register_physics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_physics_get_body_count);
     lua_setfield(L, -2, "get_body_count");
+
+    // Constraints & Advanced features
+    lua_pushcfunction(L, l_physics_create_point_constraint);
+    lua_setfield(L, -2, "create_point_constraint");
+
+    lua_pushcfunction(L, l_physics_create_hinge_constraint);
+    lua_setfield(L, -2, "create_hinge_constraint");
+
+    lua_pushcfunction(L, l_physics_create_distance_constraint);
+    lua_setfield(L, -2, "create_distance_constraint");
+
+    lua_pushcfunction(L, l_physics_create_fixed_constraint);
+    lua_setfield(L, -2, "create_fixed_constraint");
+
+    lua_pushcfunction(L, l_physics_destroy_constraint);
+    lua_setfield(L, -2, "destroy_constraint");
+
+    lua_pushcfunction(L, l_physics_set_sensor);
+    lua_setfield(L, -2, "set_sensor");
+
+    lua_pushcfunction(L, l_physics_is_sensor);
+    lua_setfield(L, -2, "is_sensor");
+
+    lua_pushcfunction(L, l_physics_set_damping);
+    lua_setfield(L, -2, "set_damping");
+
+    lua_pushcfunction(L, l_physics_overlap_sphere);
+    lua_setfield(L, -2, "overlap_sphere");
 
     lua_setfield(L, -2, "physics");
     lua_pop(L, 1);

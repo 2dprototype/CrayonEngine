@@ -31,6 +31,12 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Constraints/PointConstraint.h>
+#include <Jolt/Physics/Constraints/HingeConstraint.h>
+#include <Jolt/Physics/Constraints/DistanceConstraint.h>
+#include <Jolt/Physics/Constraints/FixedConstraint.h>
+#include <Jolt/Physics/Collision/CollideShape.h>
+#include <Jolt/Physics/Collision/BroadPhase/BroadPhaseQuery.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 #ifndef GLM_ENABLE_EXPERIMENTAL
@@ -40,6 +46,7 @@
 #include <algorithm>
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
 #include <thread>
 
 namespace crayon {
@@ -122,6 +129,8 @@ struct PhysicsSystem::Impl {
     ObjectLayerPairFilterImpl obj_pair_filter;
     JPH::PhysicsSystem physics_system;
     std::unordered_set<uint32_t> alive_bodies;
+    std::unordered_map<uint32_t, JPH::Ref<JPH::TwoBodyConstraint>> constraints;
+    uint32_t next_constraint_id = 1;
 
     bool initialized = false;
 };
@@ -372,6 +381,20 @@ bool PhysicsSystem::destroy_body(uint32_t body_id) {
     JPH::BodyID id(body_id);
     auto& bi = m_impl->physics_system.GetBodyInterface();
     if (bi.IsAdded(id)) {
+        // Remove any constraints attached to this body
+        std::vector<uint32_t> to_remove;
+        for (auto& pair : m_impl->constraints) {
+            JPH::Body* b1 = pair.second->GetBody1();
+            JPH::Body* b2 = pair.second->GetBody2();
+            if ((b1 && b1->GetID() == id) || (b2 && b2->GetID() == id)) {
+                m_impl->physics_system.RemoveConstraint(pair.second.GetPtr());
+                to_remove.push_back(pair.first);
+            }
+        }
+        for (uint32_t cid : to_remove) {
+            m_impl->constraints.erase(cid);
+        }
+
         bi.RemoveBody(id);
         bi.DestroyBody(id);
         m_impl->alive_bodies.erase(body_id);
@@ -382,6 +405,13 @@ bool PhysicsSystem::destroy_body(uint32_t body_id) {
 
 void PhysicsSystem::destroy_all_bodies() {
     if (!m_impl->initialized) return;
+
+    // Remove all constraints first
+    for (auto& pair : m_impl->constraints) {
+        m_impl->physics_system.RemoveConstraint(pair.second.GetPtr());
+    }
+    m_impl->constraints.clear();
+
     auto& bi = m_impl->physics_system.GetBodyInterface();
     for (uint32_t raw_id : m_impl->alive_bodies) {
         JPH::BodyID id(raw_id);
@@ -617,6 +647,157 @@ uint32_t PhysicsSystem::get_num_bodies() const {
 uint32_t PhysicsSystem::get_num_active_bodies() const {
     if (!m_impl->initialized) return 0;
     return m_impl->physics_system.GetNumActiveBodies(JPH::EBodyType::RigidBody);
+}
+
+uint32_t PhysicsSystem::create_point_constraint(uint32_t body1_id, uint32_t body2_id, const glm::vec3& pivot) {
+    if (!m_impl->initialized) return 0;
+    JPH::BodyID b1(body1_id);
+    JPH::BodyID b2(body2_id);
+    JPH::BodyLockWrite lock1(m_impl->physics_system.GetBodyLockInterface(), b1);
+    JPH::BodyLockWrite lock2(m_impl->physics_system.GetBodyLockInterface(), b2);
+    if (!lock1.Succeeded() || !lock2.Succeeded()) return 0;
+
+    JPH::PointConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    settings.mPoint1 = settings.mPoint2 = JPH::RVec3(pivot.x, pivot.y, pivot.z);
+
+    JPH::TwoBodyConstraint* constraint = settings.Create(lock1.GetBody(), lock2.GetBody());
+    if (!constraint) return 0;
+
+    m_impl->physics_system.AddConstraint(constraint);
+    uint32_t cid = m_impl->next_constraint_id++;
+    m_impl->constraints[cid] = constraint;
+    return cid;
+}
+
+uint32_t PhysicsSystem::create_hinge_constraint(uint32_t body1_id, uint32_t body2_id, const glm::vec3& pivot, const glm::vec3& axis, float min_angle, float max_angle) {
+    if (!m_impl->initialized) return 0;
+    JPH::BodyID b1(body1_id);
+    JPH::BodyID b2(body2_id);
+    JPH::BodyLockWrite lock1(m_impl->physics_system.GetBodyLockInterface(), b1);
+    JPH::BodyLockWrite lock2(m_impl->physics_system.GetBodyLockInterface(), b2);
+    if (!lock1.Succeeded() || !lock2.Succeeded()) return 0;
+
+    JPH::HingeConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    settings.mPoint1 = settings.mPoint2 = JPH::RVec3(pivot.x, pivot.y, pivot.z);
+
+    glm::vec3 norm_axis = glm::normalize(axis);
+    settings.mHingeAxis1 = settings.mHingeAxis2 = JPH::Vec3(norm_axis.x, norm_axis.y, norm_axis.z);
+
+    glm::vec3 up = std::abs(norm_axis.y) > 0.9f ? glm::vec3(1.0f, 0.0f, 0.0f) : glm::vec3(0.0f, 1.0f, 0.0f);
+    glm::vec3 normal = glm::normalize(glm::cross(norm_axis, up));
+    settings.mNormalAxis1 = settings.mNormalAxis2 = JPH::Vec3(normal.x, normal.y, normal.z);
+
+    settings.mLimitsMin = min_angle;
+    settings.mLimitsMax = max_angle;
+
+    JPH::TwoBodyConstraint* constraint = settings.Create(lock1.GetBody(), lock2.GetBody());
+    if (!constraint) return 0;
+
+    m_impl->physics_system.AddConstraint(constraint);
+    uint32_t cid = m_impl->next_constraint_id++;
+    m_impl->constraints[cid] = constraint;
+    return cid;
+}
+
+uint32_t PhysicsSystem::create_distance_constraint(uint32_t body1_id, uint32_t body2_id, const glm::vec3& p1, const glm::vec3& p2, float min_dist, float max_dist) {
+    if (!m_impl->initialized) return 0;
+    JPH::BodyID b1(body1_id);
+    JPH::BodyID b2(body2_id);
+    JPH::BodyLockWrite lock1(m_impl->physics_system.GetBodyLockInterface(), b1);
+    JPH::BodyLockWrite lock2(m_impl->physics_system.GetBodyLockInterface(), b2);
+    if (!lock1.Succeeded() || !lock2.Succeeded()) return 0;
+
+    JPH::DistanceConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    settings.mPoint1 = JPH::RVec3(p1.x, p1.y, p1.z);
+    settings.mPoint2 = JPH::RVec3(p2.x, p2.y, p2.z);
+    settings.mMinDistance = min_dist;
+    settings.mMaxDistance = max_dist;
+
+    JPH::TwoBodyConstraint* constraint = settings.Create(lock1.GetBody(), lock2.GetBody());
+    if (!constraint) return 0;
+
+    m_impl->physics_system.AddConstraint(constraint);
+    uint32_t cid = m_impl->next_constraint_id++;
+    m_impl->constraints[cid] = constraint;
+    return cid;
+}
+
+uint32_t PhysicsSystem::create_fixed_constraint(uint32_t body1_id, uint32_t body2_id) {
+    if (!m_impl->initialized) return 0;
+    JPH::BodyID b1(body1_id);
+    JPH::BodyID b2(body2_id);
+    JPH::BodyLockWrite lock1(m_impl->physics_system.GetBodyLockInterface(), b1);
+    JPH::BodyLockWrite lock2(m_impl->physics_system.GetBodyLockInterface(), b2);
+    if (!lock1.Succeeded() || !lock2.Succeeded()) return 0;
+
+    JPH::FixedConstraintSettings settings;
+    settings.mSpace = JPH::EConstraintSpace::WorldSpace;
+    settings.mAutoDetectPoint = true;
+
+    JPH::TwoBodyConstraint* constraint = settings.Create(lock1.GetBody(), lock2.GetBody());
+    if (!constraint) return 0;
+
+    m_impl->physics_system.AddConstraint(constraint);
+    uint32_t cid = m_impl->next_constraint_id++;
+    m_impl->constraints[cid] = constraint;
+    return cid;
+}
+
+bool PhysicsSystem::destroy_constraint(uint32_t constraint_id) {
+    if (!m_impl->initialized) return false;
+    auto it = m_impl->constraints.find(constraint_id);
+    if (it != m_impl->constraints.end()) {
+        m_impl->physics_system.RemoveConstraint(it->second.GetPtr());
+        m_impl->constraints.erase(it);
+        return true;
+    }
+    return false;
+}
+
+void PhysicsSystem::set_is_sensor(uint32_t body_id, bool is_sensor) {
+    if (!m_impl->initialized) return;
+    JPH::BodyID id(body_id);
+    m_impl->physics_system.GetBodyInterface().SetIsSensor(id, is_sensor);
+}
+
+bool PhysicsSystem::is_sensor(uint32_t body_id) const {
+    if (!m_impl->initialized) return false;
+    JPH::BodyID id(body_id);
+    return m_impl->physics_system.GetBodyInterface().IsSensor(id);
+}
+
+void PhysicsSystem::set_damping(uint32_t body_id, float linear_damping, float angular_damping) {
+    if (!m_impl->initialized) return;
+    JPH::BodyID id(body_id);
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), id);
+    if (lock.Succeeded()) {
+        JPH::MotionProperties* mp = lock.GetBody().GetMotionProperties();
+        if (mp) {
+            mp->SetLinearDamping(linear_damping);
+            mp->SetAngularDamping(angular_damping);
+        }
+    }
+}
+
+std::vector<uint32_t> PhysicsSystem::overlap_sphere(const glm::vec3& center, float radius) {
+    std::vector<uint32_t> result;
+    if (!m_impl->initialized) return result;
+
+    JPH::AllHitCollisionCollector<JPH::CollideShapeBodyCollector> collector;
+    m_impl->physics_system.GetBroadPhaseQuery().CollideSphere(
+        JPH::Vec3(center.x, center.y, center.z),
+        radius,
+        collector
+    );
+
+    result.reserve(collector.mHits.size());
+    for (const JPH::BodyID& id : collector.mHits) {
+        result.push_back(id.GetIndexAndSequenceNumber());
+    }
+    return result;
 }
 
 } // namespace crayon

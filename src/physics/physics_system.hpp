@@ -1,4 +1,4 @@
-﻿#pragma once
+#pragma once
 
 #include <memory>
 #include <vector>
@@ -94,6 +94,23 @@ public:
 
     // Raycast
     bool raycast(const glm::vec3& origin, const glm::vec3& direction, float max_distance, RaycastHit& out_hit);
+
+    // Constraints / Joints
+    uint32_t create_point_constraint(uint32_t body1_id, uint32_t body2_id, const glm::vec3& pivot);
+    uint32_t create_hinge_constraint(uint32_t body1_id, uint32_t body2_id, const glm::vec3& pivot, const glm::vec3& axis, float min_angle = -3.14159265f, float max_angle = 3.14159265f);
+    uint32_t create_distance_constraint(uint32_t body1_id, uint32_t body2_id, const glm::vec3& p1, const glm::vec3& p2, float min_dist, float max_dist);
+    uint32_t create_fixed_constraint(uint32_t body1_id, uint32_t body2_id);
+    bool destroy_constraint(uint32_t constraint_id);
+
+    // Sensor / Trigger
+    void set_is_sensor(uint32_t body_id, bool is_sensor);
+    bool is_sensor(uint32_t body_id) const;
+
+    // Damping
+    void set_damping(uint32_t body_id, float linear_damping, float angular_damping);
+
+    // Overlap Queries
+    std::vector<uint32_t> overlap_sphere(const glm::vec3& center, float radius);
 
     // Debug visualization
     void draw_debug(MeshRenderer3D& renderer, const glm::vec4& active_color = glm::vec4(0.2f, 1.0f, 0.4f, 1.0f), const glm::vec4& sleeping_color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f));
