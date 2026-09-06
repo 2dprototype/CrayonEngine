@@ -13,6 +13,7 @@ local demo_list = {
     { key = "8", title = "08: Window Management & Scaling",       file = "game/examples/08_window_and_scaling.lua", desc = "Window sizing, display bounds, integer/aspect/stretch scalers" },
     { key = "9", title = "09: Procedural Mesh & Waves",           file = "game/examples/09_custom_procedural_mesh.lua", desc = "Dynamic sinusoidal terrain generation & vertex colors" },
     { key = "0", title = "10: 3D OBJ Model Inspector",            file = "game/examples/10_obj_model_viewer.lua", desc = "Loads monkey.obj, girl.obj, cube.obj, turntable & lighting" },
+    { key = "X", title = "11: 3D Jolt Physics Sandbox",           file = "game/examples/11_3d_physics_sandbox.lua", desc = "Rigid bodies, stacking, cannonball shooting, impulses, raycast" },
     { key = "P", title = "Featured: Retro 3D World Showcase",     file = "showcase", desc = "Interactive 3D orbit world with matrix hierarchy & coin HUD" }
 }
 
@@ -94,12 +95,16 @@ function crayon.update(dt)
                 return
             end
         end
-        if crayon.input.is_pressed("0") then
+        if (crayon.input.is_pressed("0")) then
             launch_demo(10)
             return
         end
-        if crayon.input.is_pressed("p") then
+        if (crayon.input.is_pressed("x")) then
             launch_demo(11)
+            return
+        end
+        if (crayon.input.is_pressed("p")) then
+            launch_demo(12)
             return
         end
 
@@ -198,7 +203,7 @@ function draw_menu()
     crayon.graphics.draw_text(cur_item.desc, 12, 214, 1.0)
 
     crayon.graphics.set_color(0.65, 0.7, 0.8, 1.0)
-    crayon.graphics.draw_text("[ENTER/SPACE]: Launch | [1-9,0,P]: Quick Jump | [ESC]: Quit", 12, 224, 1.0)
+    crayon.graphics.draw_text("[ENTER/SPACE]: Launch | [1-9,0,X,P]: Quick Jump | [ESC]: Quit", 12, 224, 1.0)
 end
 
 function draw_showcase()

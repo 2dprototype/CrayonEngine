@@ -2,6 +2,7 @@
 #include "log.hpp"
 #include "../graphics/default_shaders.hpp"
 #include "../scripting/lua_runtime.hpp"
+#include "../physics/physics_system.hpp"
 #include <filesystem>
 
 namespace crayon {
@@ -50,6 +51,12 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
         return false;
     }
 
+    m_physics = std::make_unique<PhysicsSystem>();
+    if (!m_physics->init()) {
+        CRAYON_LOG_ERROR("Engine failed to initialize PhysicsSystem");
+        return false;
+    }
+
     m_lua_runtime = std::make_unique<LuaRuntime>();
     if (!m_lua_runtime->init()) {
         CRAYON_LOG_ERROR("Engine failed to initialize LuaRuntime");
@@ -78,6 +85,10 @@ void Engine::shutdown() {
     if (m_lua_runtime) {
         m_lua_runtime->shutdown();
         m_lua_runtime.reset();
+    }
+    if (m_physics) {
+        m_physics->shutdown();
+        m_physics.reset();
     }
     m_mesh_renderer.shutdown();
     m_batch2d.shutdown();
@@ -266,6 +277,17 @@ void Engine::run() {
 
         if (m_window.should_close()) {
             break;
+        }
+
+        // Fixed-timestep physics simulation (60 Hz)
+        if (m_physics) {
+            const float fixed_dt = 1.0f / 60.0f;
+            m_physics_accumulator += m_delta_time;
+            if (m_physics_accumulator > 0.2f) m_physics_accumulator = 0.2f; // clamp spiral
+            while (m_physics_accumulator >= fixed_dt) {
+                m_physics->update(fixed_dt);
+                m_physics_accumulator -= fixed_dt;
+            }
         }
 
         // Game Update

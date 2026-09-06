@@ -17,6 +17,7 @@
 namespace crayon {
 
 class LuaRuntime;
+class PhysicsSystem;
 
 class Engine {
 public:
@@ -42,6 +43,7 @@ public:
     MeshRenderer3D& get_mesh_renderer() { return m_mesh_renderer; }
     Camera& get_camera() { return m_camera; }
     LuaRuntime& get_lua_runtime() { return *m_lua_runtime; }
+    PhysicsSystem& get_physics() { return *m_physics; }
 
     // Graphics state
     void set_clear_color(float r, float g, float b, float a = 1.0f);
@@ -72,6 +74,8 @@ private:
     Camera m_camera;
     std::unique_ptr<Shader> m_post_shader;
     std::unique_ptr<LuaRuntime> m_lua_runtime;
+    std::unique_ptr<PhysicsSystem> m_physics;
+    float m_physics_accumulator = 0.0f;
 
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_texture_cache;
     std::unordered_map<GLuint, std::pair<int, int>> m_texture_sizes;

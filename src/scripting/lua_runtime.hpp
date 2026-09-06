@@ -34,5 +34,6 @@ void register_window_bindings(lua_State* L);
 void register_graphics_bindings(lua_State* L);
 void register_input_bindings(lua_State* L);
 void register_time_bindings(lua_State* L);
+void register_physics_bindings(lua_State* L);
 
 } // namespace crayon

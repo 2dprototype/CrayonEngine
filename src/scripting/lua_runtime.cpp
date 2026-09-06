@@ -63,6 +63,7 @@ void LuaRuntime::register_modules() {
     register_graphics_bindings(m_L);
     register_input_bindings(m_L);
     register_time_bindings(m_L);
+    register_physics_bindings(m_L);
 }
 
 int LuaRuntime::push_error_handler() {

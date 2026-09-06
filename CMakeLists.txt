@@ -12,6 +12,13 @@ else()
     add_compile_options(-Wall -Wextra -O3 -march=x86-64)
 endif()
 
+add_compile_definitions(
+    GLM_ENABLE_EXPERIMENTAL
+    JPH_DEBUG_RENDERER
+    JPH_PROFILE_ENABLED
+    JPH_OBJECT_STREAM
+)
+
 # Include directories
 include_directories(
     src
@@ -21,6 +28,7 @@ include_directories(
     vendor/luajit/include
     vendor/stb/include
     vendor/tinyobj/include
+    vendor/JoltPhysics
 )
 
 # Source files
@@ -35,18 +43,27 @@ set(SOURCES
     src/graphics/camera.cpp
     src/graphics/batch2d.cpp
     src/graphics/mesh3d.cpp
+    src/physics/physics_system.cpp
     src/scripting/lua_runtime.cpp
     src/scripting/bind_window.cpp
     src/scripting/bind_graphics.cpp
     src/scripting/bind_input.cpp
     src/scripting/bind_time.cpp
+    src/scripting/bind_physics.cpp
     src/main.cpp
 )
 
 add_executable(crayon_engine ${SOURCES})
 
+set_target_properties(crayon_engine PROPERTIES
+    CXX_STANDARD 20
+    CXX_STANDARD_REQUIRED ON
+    CXX_EXTENSIONS OFF
+)
+
 # Link libraries
 target_link_libraries(crayon_engine PRIVATE
+    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/JoltPhysics/lib/libJolt.a
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/lib/libSDL3.dll.a
     ${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/lib/libluajit-5.1.dll.a
     opengl32
