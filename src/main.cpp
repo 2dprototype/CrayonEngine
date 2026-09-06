@@ -4,8 +4,8 @@
 
 int main(int argc, char* argv[]) {
     std::string script_path = "";
-    int win_w = 960/2;
-    int win_h = 720/2;
+    int win_w = 320;
+    int win_h = 240;
     int virt_w = 320;
     int virt_h = 240;
 
