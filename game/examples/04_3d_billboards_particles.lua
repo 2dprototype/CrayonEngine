@@ -23,21 +23,21 @@ local max_particles = 60
 local forest_trees = {}
 
 function crayon.init()
-    crayon.window.set_resolution(320, 240)
-    crayon.window.set_title("04 - 3D Billboards & Particles [Arrows: Orbit, Space: Burst]")
+    crayon.window.setResolution(320, 240)
+    crayon.window.setTitle("04 - 3D Billboards & Particles [Arrows: Orbit, Space: Burst]")
 
-    tex_coin  = crayon.graphics.load_texture("game/assets/textures/coin.bmp")
-    tex_grass = crayon.graphics.load_texture("game/assets/textures/grass.bmp")
-    tex_brick = crayon.graphics.load_texture("game/assets/textures/brick.bmp")
+    tex_coin  = crayon.graphics.loadTexture("game/assets/textures/coin.bmp")
+    tex_grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
+    tex_brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
 
-    crayon.graphics.set_retro_effects({
-        jitter_resolution = {240, 160},
+    crayon.graphics.setRetroEffects({
+        jitterResolution = {240, 160},
         affine = 1.0,
         dither = true,
-        fog = { start = 8, ["end"] = 20, color = {0.08, 0.1, 0.16} }
+        fog = { startDist = 8, endDist = 20, color = {0.08, 0.1, 0.16} }
     })
 
-    crayon.graphics.set_light(
+    crayon.graphics.setLight(
         -0.4, -0.9, -0.5,
         1.0, 0.95, 0.85,
         0.3, 0.3, 0.35
@@ -77,22 +77,22 @@ function crayon.update(dt)
     timer = timer + dt
 
     -- Camera Orbit Controls
-    if crayon.input.is_down("left") or crayon.input.is_down("a") then
+    if crayon.input.isDown("left") or crayon.input.isDown("a") then
         cam.yaw = cam.yaw - 50.0 * dt
     end
-    if crayon.input.is_down("right") or crayon.input.is_down("d") then
+    if crayon.input.isDown("right") or crayon.input.isDown("d") then
         cam.yaw = cam.yaw + 50.0 * dt
     end
-    if crayon.input.is_down("up") or crayon.input.is_down("w") then
+    if crayon.input.isDown("up") or crayon.input.isDown("w") then
         cam.pitch = math.min(10.0, cam.pitch + 40.0 * dt)
     end
-    if crayon.input.is_down("down") or crayon.input.is_down("s") then
+    if crayon.input.isDown("down") or crayon.input.isDown("s") then
         cam.pitch = math.max(-75.0, cam.pitch - 40.0 * dt)
     end
 
     -- Zoom
-    local wheel_y = crayon.input.get_mouse_wheel() or 0
-    if wheel_y ~= 0 then
+    local wheel_x, wheel_y = crayon.input.getMouseWheel()
+    if wheel_y and wheel_y ~= 0 then
         cam.dist = math.max(3.0, math.min(18.0, cam.dist - wheel_y * 1.0))
     end
 
@@ -102,7 +102,7 @@ function crayon.update(dt)
     end
 
     -- Spacebar burst
-    if crayon.input.is_pressed("space") then
+    if crayon.input.isPressed("space") then
         for i = 1, 25 do
             table.insert(particles, spawn_particle())
         end
@@ -121,7 +121,7 @@ function crayon.update(dt)
         end
     end
 
-    if crayon.input.is_pressed("escape") then
+    if crayon.input.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -136,7 +136,7 @@ function crayon.draw()
     local cy = -math.sin(rad_pitch) * cam.dist + cam.target_y
     local cz = math.cos(rad_pitch) * math.sin(rad_yaw) * cam.dist
 
-    crayon.graphics.set_camera3d({
+    crayon.graphics.setCamera3d({
         position = {cx, cy, cz},
         target = {0, cam.target_y, 0},
         up = {0, 1, 0},
@@ -144,19 +144,20 @@ function crayon.draw()
     })
 
     -- 1. Grassy Ground Terrain
-    crayon.graphics.set_color(0.8, 0.9, 0.8, 1.0)
-    crayon.graphics.draw_plane(0, 0, 0, 0, 0, 0, 10, 1, 10, tex_grass)
+    -- drawPlane(x, y, z, w, d, tex, rx, ry, rz)
+    crayon.graphics.setColor(0.8, 0.9, 0.8, 1.0)
+    crayon.graphics.drawPlane(0, 0, 0, 20, 20, tex_grass, 0, 0, 0)
 
     -- 2. Central Stone Pedestal / Fountain Base
-    crayon.graphics.set_color(0.6, 0.65, 0.7, 1.0)
-    crayon.graphics.draw_cylinder(0, 0.25, 0, 0, 0, 0, 1.2, 0.5, 1.2, tex_brick)
+    -- drawCylinder(x, y, z, radius, height, tex, rx, ry, rz)
+    crayon.graphics.setColor(0.6, 0.65, 0.7, 1.0)
+    crayon.graphics.drawCylinder(0, 0.25, 0, 1.2, 0.5, tex_brick, 0, 0, 0)
 
     -- 3. Cylindrical Billboards (Retro 2.5D Sprite Trees/Pillars)
     -- They stay vertical and rotate only around the Y axis!
-    crayon.graphics.set_color(0.9, 0.95, 0.85, 1.0)
+    crayon.graphics.setColor(0.9, 0.95, 0.85, 1.0)
     for _, t in ipairs(forest_trees) do
-        -- Draw cylindrical billboard standing upright
-        crayon.graphics.draw_billboard(
+        crayon.graphics.drawBillboard(
             t.x, t.height * 0.5, t.z,
             t.width, t.height,
             tex_brick,
@@ -172,46 +173,46 @@ function crayon.draw()
         local py = 1.0 + math.sin(timer * 4.0 + i) * 0.2
 
         -- Shadow on the ground
-        crayon.graphics.set_color(0, 0, 0, 0.4)
-        crayon.graphics.draw_plane(px, 0.02, pz, 0, 0, 0, 0.3, 1, 0.3)
+        crayon.graphics.setColor(0, 0, 0, 0.4)
+        crayon.graphics.drawPlane(px, 0.02, pz, 0.3, 0.3, 0, 0, 0, 0)
 
         -- Spherical billboard coin
-        crayon.graphics.set_color(1.0, 0.9, 0.3, 1.0)
-        crayon.graphics.draw_billboard(px, py, pz, 0.6, 0.6, tex_coin, "spherical")
+        crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
+        crayon.graphics.drawBillboard(px, py, pz, 0.6, 0.6, tex_coin, "spherical")
     end
 
     -- 5. 3D Particle Fountain (Spherical Billboards with Unlit Glow)
-    crayon.graphics.set_shading_mode("unlit")
+    crayon.graphics.setShadingMode("unlit")
     for _, p in ipairs(particles) do
         local sz = p.size * p.life
-        crayon.graphics.set_color(1.0, 0.6 * p.life, 0.2, p.life)
+        crayon.graphics.setColor(1.0, 0.6 * p.life, 0.2, p.life)
         -- Spherical billboard faces camera completely in all 3 axes
-        crayon.graphics.draw_billboard(p.x, p.y, p.z, sz, sz, 0, "spherical")
+        crayon.graphics.drawBillboard(p.x, p.y, p.z, sz, sz, 0, "spherical")
     end
-    crayon.graphics.set_shading_mode("gouraud")
+    crayon.graphics.setShadingMode("gouraud")
 
     -- ========================================================================
     -- 2D HUD OVERLAY
     -- ========================================================================
-    crayon.graphics.set_color(0.08, 0.1, 0.16, 0.85)
-    crayon.graphics.draw_rect("fill", 4, 4, 312, 22)
-    crayon.graphics.set_color(0.3, 0.5, 0.8, 1.0)
-    crayon.graphics.draw_rect("line", 4, 4, 312, 22)
+    crayon.graphics.setColor(0.08, 0.1, 0.16, 0.85)
+    crayon.graphics.drawRect("fill", 4, 4, 312, 22)
+    crayon.graphics.setColor(0.3, 0.5, 0.8, 1.0)
+    crayon.graphics.drawRect("line", 4, 4, 312, 22)
 
-    crayon.graphics.set_color(1.0, 0.9, 0.3, 1.0)
-    crayon.graphics.draw_text("3D BILLBOARDS & PARTICLE FOUNTAIN", 8, 10, 1.0)
+    crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
+    crayon.graphics.drawText("3D BILLBOARDS & PARTICLE FOUNTAIN", 8, 10, 1.0)
 
-    crayon.graphics.set_color(0.4, 1.0, 0.5, 1.0)
-    crayon.graphics.draw_text("Particles: " .. #particles, 230, 10, 1.0)
+    crayon.graphics.setColor(0.4, 1.0, 0.5, 1.0)
+    crayon.graphics.drawText("Particles: " .. #particles, 230, 10, 1.0)
 
     -- Bottom Explanation Box
-    crayon.graphics.set_color(0.06, 0.08, 0.14, 0.85)
-    crayon.graphics.draw_rect("fill", 4, 204, 312, 32)
-    crayon.graphics.set_color(0.25, 0.35, 0.6, 1.0)
-    crayon.graphics.draw_rect("line", 4, 204, 312, 32)
+    crayon.graphics.setColor(0.06, 0.08, 0.14, 0.85)
+    crayon.graphics.drawRect("fill", 4, 204, 312, 32)
+    crayon.graphics.setColor(0.25, 0.35, 0.6, 1.0)
+    crayon.graphics.drawRect("line", 4, 204, 312, 32)
 
-    crayon.graphics.set_color(0.95, 0.95, 0.95, 1.0)
-    crayon.graphics.draw_text("Outer Pillars: Cylindrical (stays upright Y-axis)", 10, 208, 1.0)
-    crayon.graphics.set_color(1.0, 0.7, 0.3, 1.0)
-    crayon.graphics.draw_text("Particles/Coins: Spherical (full camera face) | [SPACE]: Burst", 10, 222, 1.0)
+    crayon.graphics.setColor(0.95, 0.95, 0.95, 1.0)
+    crayon.graphics.drawText("Outer Pillars: Cylindrical (stays upright Y-axis)", 10, 208, 1.0)
+    crayon.graphics.setColor(1.0, 0.7, 0.3, 1.0)
+    crayon.graphics.drawText("Particles/Coins: Spherical (full camera face) | [SPACE]: Burst", 10, 222, 1.0)
 end

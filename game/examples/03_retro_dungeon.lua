@@ -50,24 +50,24 @@ function is_wall(x, z)
 end
 
 function crayon.init()
-    crayon.window.set_resolution(320, 240)
-    crayon.window.set_title("Crayon Engine - Retro 3D Dungeon Crawler")
+    crayon.window.setResolution(320, 240)
+    crayon.window.setTitle("Crayon Engine - Retro 3D Dungeon Crawler")
 
-    cube_model = crayon.graphics.load_model("cube")
-    plane_model = crayon.graphics.load_model("plane")
+    cube_model  = crayon.graphics.loadModel("cube")
+    plane_model = crayon.graphics.loadModel("plane")
 
-    tex_brick = crayon.graphics.load_texture("game/assets/textures/brick.bmp")
-    tex_crate = crayon.graphics.load_texture("game/assets/textures/crate.bmp")
-    tex_coin  = crayon.graphics.load_texture("game/assets/textures/coin.bmp")
+    tex_brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
+    tex_crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
+    tex_coin  = crayon.graphics.loadTexture("game/assets/textures/coin.bmp")
 
-    crayon.graphics.set_retro_effects({
-        jitter_resolution = {160, 120},
+    crayon.graphics.setRetroEffects({
+        jitterResolution = {160, 120},
         affine = 1.0,
         dither = true,
-        fog = { start = 3, ["end"] = 9, color = {0.04, 0.04, 0.08} }
+        fog = { startDist = 3, endDist = 9, color = {0.04, 0.04, 0.08} }
     })
 
-    crayon.graphics.set_light(0.3, -1.0, 0.5, 1.0, 0.9, 0.7, 0.35, 0.3, 0.4)
+    crayon.graphics.setLight(0.3, -1.0, 0.5, 1.0, 0.9, 0.7, 0.35, 0.3, 0.4)
 end
 
 function crayon.update(dt)
@@ -75,10 +75,10 @@ function crayon.update(dt)
 
     -- Turn Left / Right
     local turn_spd = 110.0 * dt
-    if crayon.input.is_down("left") or crayon.input.is_down("a") then
+    if crayon.input.isDown("left") or crayon.input.isDown("a") then
         player.angle = player.angle - turn_spd
     end
-    if crayon.input.is_down("right") or crayon.input.is_down("d") then
+    if crayon.input.isDown("right") or crayon.input.isDown("d") then
         player.angle = player.angle + turn_spd
     end
 
@@ -89,11 +89,11 @@ function crayon.update(dt)
     local fwd_z = math.sin(rad)
 
     local move_x, move_z = 0, 0
-    if crayon.input.is_down("up") or crayon.input.is_down("w") then
+    if crayon.input.isDown("up") or crayon.input.isDown("w") then
         move_x = move_x + fwd_x * move_spd
         move_z = move_z + fwd_z * move_spd
     end
-    if crayon.input.is_down("down") or crayon.input.is_down("s") then
+    if crayon.input.isDown("down") or crayon.input.isDown("s") then
         move_x = move_x - fwd_x * move_spd
         move_z = move_z - fwd_z * move_spd
     end
@@ -115,7 +115,7 @@ function crayon.update(dt)
         end
     end
 
-    if crayon.input.is_pressed("escape") then
+    if crayon.input.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -128,7 +128,7 @@ function crayon.draw()
     local tx = player.x + math.cos(rad)
     local tz = player.z + math.sin(rad)
 
-    crayon.graphics.set_camera3d({
+    crayon.graphics.setCamera3d({
         position = {player.x, 0.5, player.z},
         target = {tx, 0.5, tz},
         up = {0, 1, 0},
@@ -138,14 +138,16 @@ function crayon.draw()
     })
 
     -- 2. Draw Floor & Ceiling Planes
-    crayon.graphics.draw_model(plane_model, 5, 0, 5, 0, 0, 0, 1.0, 1.0, 1.0, tex_crate)
-    crayon.graphics.draw_model(plane_model, 5, 1.0, 5, 0, 0, 0, 1.0, 1.0, 1.0, tex_crate)
+    -- drawPlane(x, y, z, w, d, tex, rx, ry, rz)
+    crayon.graphics.drawPlane(5, 0, 5, 20, 20, tex_crate, 0, 0, 0)
+    crayon.graphics.drawPlane(5, 1.0, 5, 20, 20, tex_crate, math.pi * 0.5, 0, 0)
 
     -- 3. Draw Dungeon Walls
+    -- drawCube(x, y, z, sx, sy, sz, tex, rx, ry, rz)
     for gz = 0, MAP_H - 1 do
         for gx = 0, MAP_W - 1 do
             if map[gz * MAP_W + gx + 1] == 1 then
-                crayon.graphics.draw_model(cube_model, gx + 0.5, 0.5, gz + 0.5, 0, 0, 0, 1.0, 1.0, 1.0, tex_brick)
+                crayon.graphics.drawCube(gx + 0.5, 0.5, gz + 0.5, 1.0, 1.0, 1.0, tex_brick, 0, 0, 0)
             end
         end
     end
@@ -155,37 +157,37 @@ function crayon.draw()
         if not c.collected then
             local bob = 0.4 + math.sin(timer * 4.0) * 0.08
             local coin_rot = timer * 3.0
-            crayon.graphics.draw_model(cube_model, c.x, bob, c.z, 0, coin_rot, 0, 0.25, 0.25, 0.05, tex_coin)
+            crayon.graphics.drawCube(c.x, bob, c.z, 0.25, 0.25, 0.05, tex_coin, 0, coin_rot, 0)
         end
     end
 
     -- 5. 2D HUD & Mini-Map
     -- Top Score Bar
-    crayon.graphics.set_color(0.05, 0.05, 0.1, 0.8)
-    crayon.graphics.draw_rect("fill", 5, 5, 310, 20)
-    crayon.graphics.set_color(0.4, 0.5, 0.8, 1.0)
-    crayon.graphics.draw_rect("line", 5, 5, 310, 20)
+    crayon.graphics.setColor(0.05, 0.05, 0.1, 0.8)
+    crayon.graphics.drawRect("fill", 5, 5, 310, 20)
+    crayon.graphics.setColor(0.4, 0.5, 0.8, 1.0)
+    crayon.graphics.drawRect("line", 5, 5, 310, 20)
 
-    crayon.graphics.set_color(1.0, 0.85, 0.2, 1.0)
-    crayon.graphics.draw_text("GOLD: " .. player.score, 12, 11, 1.0)
+    crayon.graphics.setColor(1.0, 0.85, 0.2, 1.0)
+    crayon.graphics.drawText("GOLD: " .. player.score, 12, 11, 1.0)
 
-    crayon.graphics.set_color(0.8, 0.8, 0.8, 1.0)
-    crayon.graphics.draw_text("FPS: " .. math.floor(crayon.window.get_fps() + 0.5), 260, 11, 1.0)
+    crayon.graphics.setColor(0.8, 0.8, 0.8, 1.0)
+    crayon.graphics.drawText("FPS: " .. math.floor(crayon.window.getFps() + 0.5), 260, 11, 1.0)
 
     -- Mini-map (Bottom Left)
     local mm_size = 5
     local mm_x = 10
     local mm_y = 175
 
-    crayon.graphics.set_color(0, 0, 0, 0.7)
-    crayon.graphics.draw_rect("fill", mm_x - 2, mm_y - 2, MAP_W * mm_size + 4, MAP_H * mm_size + 4)
+    crayon.graphics.setColor(0, 0, 0, 0.7)
+    crayon.graphics.drawRect("fill", mm_x - 2, mm_y - 2, MAP_W * mm_size + 4, MAP_H * mm_size + 4)
 
     for gz = 0, MAP_H - 1 do
         for gx = 0, MAP_W - 1 do
             local cell = map[gz * MAP_W + gx + 1]
             if cell == 1 then
-                crayon.graphics.set_color(0.4, 0.4, 0.5, 0.9)
-                crayon.graphics.draw_rect("fill", mm_x + gx * mm_size, mm_y + gz * mm_size, mm_size, mm_size)
+                crayon.graphics.setColor(0.4, 0.4, 0.5, 0.9)
+                crayon.graphics.drawRect("fill", mm_x + gx * mm_size, mm_y + gz * mm_size, mm_size, mm_size)
             end
         end
     end
@@ -193,19 +195,19 @@ function crayon.draw()
     -- Coins on mini-map
     for _, c in ipairs(coins) do
         if not c.collected then
-            crayon.graphics.set_color(1.0, 0.85, 0.2, 1.0)
-            crayon.graphics.draw_rect("fill", mm_x + c.x * mm_size - 1, mm_y + c.z * mm_size - 1, 2, 2)
+            crayon.graphics.setColor(1.0, 0.85, 0.2, 1.0)
+            crayon.graphics.drawRect("fill", mm_x + c.x * mm_size - 1, mm_y + c.z * mm_size - 1, 2, 2)
         end
     end
 
     -- Player dot & view line on mini-map
-    crayon.graphics.set_color(1.0, 0.2, 0.2, 1.0)
+    crayon.graphics.setColor(1.0, 0.2, 0.2, 1.0)
     local px = mm_x + player.x * mm_size
     local pz = mm_y + player.z * mm_size
-    crayon.graphics.draw_circle("fill", px, pz, 2)
-    crayon.graphics.draw_line(px, pz, px + math.cos(rad) * 6, pz + math.sin(rad) * 6, 1.0)
+    crayon.graphics.drawCircle("fill", px, pz, 2)
+    crayon.graphics.drawLine(px, pz, px + math.cos(rad) * 6, pz + math.sin(rad) * 6, 1.0)
 
     -- Bottom controls hint
-    crayon.graphics.set_color(0.7, 0.8, 0.9, 1.0)
-    crayon.graphics.draw_text("Arrows/WASD: Move & Turn", 70, 220, 1.0)
+    crayon.graphics.setColor(0.7, 0.8, 0.9, 1.0)
+    crayon.graphics.drawText("Arrows/WASD: Move & Turn", 70, 220, 1.0)
 end

@@ -20,13 +20,9 @@ void register_time_bindings(lua_State* L) {
     // Primary camelCase + backward-compatibility snake_case
     lua_pushcfunction(L, l_time_get_time);
     lua_setfield(L, -2, "getTime");
-    lua_pushcfunction(L, l_time_get_time);
-    lua_setfield(L, -2, "get_time");
 
     lua_pushcfunction(L, l_time_get_dt);
     lua_setfield(L, -2, "getDt");
-    lua_pushcfunction(L, l_time_get_dt);
-    lua_setfield(L, -2, "get_dt");
 
     lua_setfield(L, -2, "time");
     lua_pop(L, 1);

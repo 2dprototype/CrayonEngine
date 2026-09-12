@@ -126,18 +126,6 @@ static void register_texture_metatable(lua_State* L) {
     lua_pushcfunction(L, l_texture_is_valid);
     lua_setfield(L, -2, "isValid");
 
-    // snake_case
-    lua_pushcfunction(L, l_texture_get_size);
-    lua_setfield(L, -2, "get_size");
-    lua_pushcfunction(L, l_texture_get_width);
-    lua_setfield(L, -2, "get_width");
-    lua_pushcfunction(L, l_texture_get_height);
-    lua_setfield(L, -2, "get_height");
-    lua_pushcfunction(L, l_texture_get_id);
-    lua_setfield(L, -2, "get_id");
-    lua_pushcfunction(L, l_texture_is_valid);
-    lua_setfield(L, -2, "is_valid");
-
     lua_pushcfunction(L, l_texture_tostring);
     lua_setfield(L, -2, "__tostring");
     lua_pushcfunction(L, l_texture_gc);
@@ -175,8 +163,6 @@ static void register_model_metatable(lua_State* L) {
 
     lua_pushcfunction(L, l_model_is_valid);
     lua_setfield(L, -2, "isValid");
-    lua_pushcfunction(L, l_model_is_valid);
-    lua_setfield(L, -2, "is_valid");
 
     lua_pushcfunction(L, l_model_tostring);
     lua_setfield(L, -2, "__tostring");
@@ -210,7 +196,7 @@ static int l_graphics_set_retro_effects(lua_State* L) {
     auto& effects = Engine::get().get_mesh_renderer().get_retro_effects();
 
     // opts.jitter_resolution
-    lua_getfield(L, 1, "jitter_resolution");
+    lua_getfield(L, 1, "jitterResolution");
     if (lua_istable(L, -1)) {
         lua_rawgeti(L, -1, 1);
         float jx = static_cast<float>(luaL_checknumber(L, -1));
@@ -240,13 +226,13 @@ static int l_graphics_set_retro_effects(lua_State* L) {
     lua_pop(L, 1);
 
     // opts.color_depth or opts.dither_levels
-    lua_getfield(L, 1, "color_depth");
+    lua_getfield(L, 1, "colorDepth");
     if (lua_isnumber(L, -1)) {
         int depth = static_cast<int>(lua_tointeger(L, -1));
         effects.dither_levels = (depth == 8) ? 8.0f : 32.0f;
     }
     lua_pop(L, 1);
-    lua_getfield(L, 1, "dither_levels");
+    lua_getfield(L, 1, "ditherLevels");
     if (lua_isnumber(L, -1)) {
         effects.dither_levels = static_cast<float>(lua_tonumber(L, -1));
     }
@@ -256,11 +242,11 @@ static int l_graphics_set_retro_effects(lua_State* L) {
     lua_getfield(L, 1, "fog");
     if (lua_istable(L, -1)) {
         effects.fog_enabled = true;
-        lua_getfield(L, -1, "start");
+        lua_getfield(L, -1, "startDist");
         if (lua_isnumber(L, -1)) effects.fog_start = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, -1, "end");
+        lua_getfield(L, -1, "endDist");
         if (lua_isnumber(L, -1)) effects.fog_end = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
@@ -390,7 +376,7 @@ static int l_graphics_set_camera3d(lua_State* L) {
     lua_pop(L, 1);
 
     // cam.ortho_size
-    lua_getfield(L, 1, "ortho_size");
+    lua_getfield(L, 1, "orthoSize");
     if (lua_isnumber(L, -1)) {
         cam.set_ortho_size(static_cast<float>(lua_tonumber(L, -1)));
     }
@@ -1190,8 +1176,8 @@ static int l_graphics_set_camera2d(lua_State* L) {
     lua_getfield(L, 1, "y"); if (lua_isnumber(L, -1)) y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
     lua_getfield(L, 1, "zoom"); if (lua_isnumber(L, -1)) zoom = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
     lua_getfield(L, 1, "angle"); if (lua_isnumber(L, -1)) angle = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
-    lua_getfield(L, 1, "origin_x"); if (lua_isnumber(L, -1)) ox = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
-    lua_getfield(L, 1, "origin_y"); if (lua_isnumber(L, -1)) oy = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "originX"); if (lua_isnumber(L, -1)) ox = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "originY"); if (lua_isnumber(L, -1)) oy = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
 
     Engine::get().get_batch2d().set_camera2d(x, y, zoom, angle, ox, oy);
     return 0;
@@ -1719,273 +1705,167 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_set_color);
     lua_setfield(L, -2, "setColor");
-    lua_pushcfunction(L, l_graphics_set_color);
-    lua_setfield(L, -2, "set_color");
 
     lua_pushcfunction(L, l_graphics_set_retro_effects);
     lua_setfield(L, -2, "setRetroEffects");
-    lua_pushcfunction(L, l_graphics_set_retro_effects);
-    lua_setfield(L, -2, "set_retro_effects");
 
     // Camera & Lighting
     lua_pushcfunction(L, l_graphics_set_camera3d);
     lua_setfield(L, -2, "setCamera3d");
-    lua_pushcfunction(L, l_graphics_set_camera3d);
-    lua_setfield(L, -2, "set_camera3d");
 
     lua_pushcfunction(L, l_graphics_get_camera_ray);
     lua_setfield(L, -2, "getCameraRay");
-    lua_pushcfunction(L, l_graphics_get_camera_ray);
-    lua_setfield(L, -2, "get_camera_ray");
 
     lua_pushcfunction(L, l_graphics_set_light);
     lua_setfield(L, -2, "setLight");
-    lua_pushcfunction(L, l_graphics_set_light);
-    lua_setfield(L, -2, "set_light");
 
     lua_pushcfunction(L, l_graphics_set_point_light);
     lua_setfield(L, -2, "setPointLight");
-    lua_pushcfunction(L, l_graphics_set_point_light);
-    lua_setfield(L, -2, "set_point_light");
 
     lua_pushcfunction(L, l_graphics_set_point_light_enabled);
     lua_setfield(L, -2, "setPointLightEnabled");
-    lua_pushcfunction(L, l_graphics_set_point_light_enabled);
-    lua_setfield(L, -2, "set_point_light_enabled");
 
     lua_pushcfunction(L, l_graphics_set_shading_mode);
     lua_setfield(L, -2, "setShadingMode");
-    lua_pushcfunction(L, l_graphics_set_shading_mode);
-    lua_setfield(L, -2, "set_shading_mode");
 
     // Textures & Models
     lua_pushcfunction(L, l_graphics_load_texture);
     lua_setfield(L, -2, "loadTexture");
-    lua_pushcfunction(L, l_graphics_load_texture);
-    lua_setfield(L, -2, "load_texture");
 
     lua_pushcfunction(L, l_graphics_get_texture_size);
     lua_setfield(L, -2, "getTextureSize");
-    lua_pushcfunction(L, l_graphics_get_texture_size);
-    lua_setfield(L, -2, "get_texture_size");
 
     lua_pushcfunction(L, l_graphics_get_white_texture);
     lua_setfield(L, -2, "getWhiteTexture");
-    lua_pushcfunction(L, l_graphics_get_white_texture);
-    lua_setfield(L, -2, "get_white_texture");
-
+    
     lua_pushcfunction(L, l_graphics_load_model);
     lua_setfield(L, -2, "loadModel");
-    lua_pushcfunction(L, l_graphics_load_model);
-    lua_setfield(L, -2, "load_model");
 
     lua_pushcfunction(L, l_graphics_create_mesh);
     lua_setfield(L, -2, "createMesh");
-    lua_pushcfunction(L, l_graphics_create_mesh);
-    lua_setfield(L, -2, "create_mesh");
 
     // 3D Rendering
     lua_pushcfunction(L, l_graphics_draw_model);
     lua_setfield(L, -2, "drawModel");
-    lua_pushcfunction(L, l_graphics_draw_model);
-    lua_setfield(L, -2, "draw_model");
 
     lua_pushcfunction(L, l_graphics_draw_cube);
     lua_setfield(L, -2, "drawCube");
-    lua_pushcfunction(L, l_graphics_draw_cube);
-    lua_setfield(L, -2, "draw_cube");
 
     lua_pushcfunction(L, l_graphics_draw_plane);
     lua_setfield(L, -2, "drawPlane");
-    lua_pushcfunction(L, l_graphics_draw_plane);
-    lua_setfield(L, -2, "draw_plane");
 
     lua_pushcfunction(L, l_graphics_draw_sphere);
     lua_setfield(L, -2, "drawSphere");
-    lua_pushcfunction(L, l_graphics_draw_sphere);
-    lua_setfield(L, -2, "draw_sphere");
 
     lua_pushcfunction(L, l_graphics_draw_cylinder);
     lua_setfield(L, -2, "drawCylinder");
-    lua_pushcfunction(L, l_graphics_draw_cylinder);
-    lua_setfield(L, -2, "draw_cylinder");
 
     lua_pushcfunction(L, l_graphics_draw_cone);
     lua_setfield(L, -2, "drawCone");
-    lua_pushcfunction(L, l_graphics_draw_cone);
-    lua_setfield(L, -2, "draw_cone");
 
     lua_pushcfunction(L, l_graphics_draw_pyramid);
     lua_setfield(L, -2, "drawPyramid");
-    lua_pushcfunction(L, l_graphics_draw_pyramid);
-    lua_setfield(L, -2, "draw_pyramid");
 
     lua_pushcfunction(L, l_graphics_draw_torus);
     lua_setfield(L, -2, "drawTorus");
-    lua_pushcfunction(L, l_graphics_draw_torus);
-    lua_setfield(L, -2, "draw_torus");
 
     lua_pushcfunction(L, l_graphics_draw_capsule);
     lua_setfield(L, -2, "drawCapsule");
-    lua_pushcfunction(L, l_graphics_draw_capsule);
-    lua_setfield(L, -2, "draw_capsule");
 
     lua_pushcfunction(L, l_graphics_draw_billboard);
     lua_setfield(L, -2, "drawBillboard");
-    lua_pushcfunction(L, l_graphics_draw_billboard);
-    lua_setfield(L, -2, "draw_billboard");
 
     lua_pushcfunction(L, l_graphics_draw_line_3d);
     lua_setfield(L, -2, "drawLine3d");
-    lua_pushcfunction(L, l_graphics_draw_line_3d);
-    lua_setfield(L, -2, "draw_line_3d");
 
     lua_pushcfunction(L, l_graphics_draw_lines_3d);
     lua_setfield(L, -2, "drawLines3d");
-    lua_pushcfunction(L, l_graphics_draw_lines_3d);
-    lua_setfield(L, -2, "draw_lines_3d");
 
     lua_pushcfunction(L, l_graphics_draw_grid_3d);
     lua_setfield(L, -2, "drawGrid3d");
-    lua_pushcfunction(L, l_graphics_draw_grid_3d);
-    lua_setfield(L, -2, "draw_grid_3d");
 
     lua_pushcfunction(L, l_graphics_draw_triangle_3d);
     lua_setfield(L, -2, "drawTriangle3d");
-    lua_pushcfunction(L, l_graphics_draw_triangle_3d);
-    lua_setfield(L, -2, "draw_triangle_3d");
 
     lua_pushcfunction(L, l_graphics_draw_quad_3d);
     lua_setfield(L, -2, "drawQuad3d");
-    lua_pushcfunction(L, l_graphics_draw_quad_3d);
-    lua_setfield(L, -2, "draw_quad_3d");
 
     // 2D Rendering
     lua_pushcfunction(L, l_graphics_draw_sprite);
     lua_setfield(L, -2, "drawSprite");
-    lua_pushcfunction(L, l_graphics_draw_sprite);
-    lua_setfield(L, -2, "draw_sprite");
 
     lua_pushcfunction(L, l_graphics_draw_sprite_part);
     lua_setfield(L, -2, "drawSpritePart");
-    lua_pushcfunction(L, l_graphics_draw_sprite_part);
-    lua_setfield(L, -2, "draw_sprite_part");
-
+    
     lua_pushcfunction(L, l_graphics_draw_sprite_tiled);
     lua_setfield(L, -2, "drawSpriteTiled");
-    lua_pushcfunction(L, l_graphics_draw_sprite_tiled);
-    lua_setfield(L, -2, "draw_sprite_tiled");
 
     lua_pushcfunction(L, l_graphics_draw_sprite_9slice);
     lua_setfield(L, -2, "drawSprite9slice");
-    lua_pushcfunction(L, l_graphics_draw_sprite_9slice);
-    lua_setfield(L, -2, "draw_sprite_9slice");
 
     lua_pushcfunction(L, l_graphics_draw_point);
     lua_setfield(L, -2, "drawPoint");
-    lua_pushcfunction(L, l_graphics_draw_point);
-    lua_setfield(L, -2, "draw_point");
 
     lua_pushcfunction(L, l_graphics_draw_line);
     lua_setfield(L, -2, "drawLine");
-    lua_pushcfunction(L, l_graphics_draw_line);
-    lua_setfield(L, -2, "draw_line");
-
+    
     lua_pushcfunction(L, l_graphics_draw_rect);
     lua_setfield(L, -2, "drawRect");
-    lua_pushcfunction(L, l_graphics_draw_rect);
-    lua_setfield(L, -2, "draw_rect");
 
     lua_pushcfunction(L, l_graphics_draw_rounded_rect);
     lua_setfield(L, -2, "drawRoundedRect");
-    lua_pushcfunction(L, l_graphics_draw_rounded_rect);
-    lua_setfield(L, -2, "draw_rounded_rect");
-
+    
     lua_pushcfunction(L, l_graphics_draw_triangle);
     lua_setfield(L, -2, "drawTriangle");
-    lua_pushcfunction(L, l_graphics_draw_triangle);
-    lua_setfield(L, -2, "draw_triangle");
 
     lua_pushcfunction(L, l_graphics_draw_quad);
     lua_setfield(L, -2, "drawQuad");
-    lua_pushcfunction(L, l_graphics_draw_quad);
-    lua_setfield(L, -2, "draw_quad");
 
     lua_pushcfunction(L, l_graphics_draw_polygon);
     lua_setfield(L, -2, "drawPolygon");
-    lua_pushcfunction(L, l_graphics_draw_polygon);
-    lua_setfield(L, -2, "draw_polygon");
 
     lua_pushcfunction(L, l_graphics_draw_circle);
     lua_setfield(L, -2, "drawCircle");
-    lua_pushcfunction(L, l_graphics_draw_circle);
-    lua_setfield(L, -2, "draw_circle");
 
     lua_pushcfunction(L, l_graphics_draw_ellipse);
     lua_setfield(L, -2, "drawEllipse");
-    lua_pushcfunction(L, l_graphics_draw_ellipse);
-    lua_setfield(L, -2, "draw_ellipse");
-
+    
     lua_pushcfunction(L, l_graphics_draw_arc);
     lua_setfield(L, -2, "drawArc");
-    lua_pushcfunction(L, l_graphics_draw_arc);
-    lua_setfield(L, -2, "draw_arc");
 
     lua_pushcfunction(L, l_graphics_draw_ring);
     lua_setfield(L, -2, "drawRing");
-    lua_pushcfunction(L, l_graphics_draw_ring);
-    lua_setfield(L, -2, "draw_ring");
 
     lua_pushcfunction(L, l_graphics_draw_text);
     lua_setfield(L, -2, "drawText");
-    lua_pushcfunction(L, l_graphics_draw_text);
-    lua_setfield(L, -2, "draw_text");
-
+    
     lua_pushcfunction(L, l_graphics_get_text_width);
     lua_setfield(L, -2, "getTextWidth");
-    lua_pushcfunction(L, l_graphics_get_text_width);
-    lua_setfield(L, -2, "get_text_width");
 
     lua_pushcfunction(L, l_graphics_get_text_height);
     lua_setfield(L, -2, "getTextHeight");
-    lua_pushcfunction(L, l_graphics_get_text_height);
-    lua_setfield(L, -2, "get_text_height");
 
     lua_pushcfunction(L, l_graphics_set_blend_mode);
     lua_setfield(L, -2, "setBlendMode");
-    lua_pushcfunction(L, l_graphics_set_blend_mode);
-    lua_setfield(L, -2, "set_blend_mode");
 
     lua_pushcfunction(L, l_graphics_set_scissor);
     lua_setfield(L, -2, "setScissor");
-    lua_pushcfunction(L, l_graphics_set_scissor);
-    lua_setfield(L, -2, "set_scissor");
 
     lua_pushcfunction(L, l_graphics_reset_scissor);
     lua_setfield(L, -2, "resetScissor");
-    lua_pushcfunction(L, l_graphics_reset_scissor);
-    lua_setfield(L, -2, "reset_scissor");
 
     lua_pushcfunction(L, l_graphics_set_camera2d);
     lua_setfield(L, -2, "setCamera2d");
-    lua_pushcfunction(L, l_graphics_set_camera2d);
-    lua_setfield(L, -2, "set_camera2d");
 
     lua_pushcfunction(L, l_graphics_reset_camera2d);
     lua_setfield(L, -2, "resetCamera2d");
-    lua_pushcfunction(L, l_graphics_reset_camera2d);
-    lua_setfield(L, -2, "reset_camera2d");
 
     // Transform Stack
     lua_pushcfunction(L, l_graphics_push_matrix);
     lua_setfield(L, -2, "pushMatrix");
-    lua_pushcfunction(L, l_graphics_push_matrix);
-    lua_setfield(L, -2, "push_matrix");
 
     lua_pushcfunction(L, l_graphics_pop_matrix);
     lua_setfield(L, -2, "popMatrix");
-    lua_pushcfunction(L, l_graphics_pop_matrix);
-    lua_setfield(L, -2, "pop_matrix");
 
     lua_pushcfunction(L, l_graphics_translate);
     lua_setfield(L, -2, "translate");
@@ -1999,96 +1879,60 @@ void register_graphics_bindings(lua_State* L) {
     // 2D Matrix Stack
     lua_pushcfunction(L, l_graphics_push_matrix_2d);
     lua_setfield(L, -2, "pushMatrix2d");
-    lua_pushcfunction(L, l_graphics_push_matrix_2d);
-    lua_setfield(L, -2, "push_matrix_2d");
-
+    
     lua_pushcfunction(L, l_graphics_pop_matrix_2d);
     lua_setfield(L, -2, "popMatrix2d");
-    lua_pushcfunction(L, l_graphics_pop_matrix_2d);
-    lua_setfield(L, -2, "pop_matrix_2d");
 
     lua_pushcfunction(L, l_graphics_translate_2d);
     lua_setfield(L, -2, "translate2d");
-    lua_pushcfunction(L, l_graphics_translate_2d);
-    lua_setfield(L, -2, "translate_2d");
 
     lua_pushcfunction(L, l_graphics_rotate_2d);
     lua_setfield(L, -2, "rotate2d");
-    lua_pushcfunction(L, l_graphics_rotate_2d);
-    lua_setfield(L, -2, "rotate_2d");
 
     lua_pushcfunction(L, l_graphics_scale_2d);
     lua_setfield(L, -2, "scale2d");
-    lua_pushcfunction(L, l_graphics_scale_2d);
-    lua_setfield(L, -2, "scale_2d");
 
     // Scissor Stack
     lua_pushcfunction(L, l_graphics_push_scissor);
     lua_setfield(L, -2, "pushScissor");
-    lua_pushcfunction(L, l_graphics_push_scissor);
-    lua_setfield(L, -2, "push_scissor");
 
     lua_pushcfunction(L, l_graphics_pop_scissor);
     lua_setfield(L, -2, "popScissor");
-    lua_pushcfunction(L, l_graphics_pop_scissor);
-    lua_setfield(L, -2, "pop_scissor");
 
     // Advanced 2D Primitives
     lua_pushcfunction(L, l_graphics_draw_gradient_rect);
     lua_setfield(L, -2, "drawGradientRect");
-    lua_pushcfunction(L, l_graphics_draw_gradient_rect);
-    lua_setfield(L, -2, "draw_gradient_rect");
 
     lua_pushcfunction(L, l_graphics_draw_gradient_h);
     lua_setfield(L, -2, "drawGradientH");
-    lua_pushcfunction(L, l_graphics_draw_gradient_h);
-    lua_setfield(L, -2, "draw_gradient_h");
 
     lua_pushcfunction(L, l_graphics_draw_gradient_v);
     lua_setfield(L, -2, "drawGradientV");
-    lua_pushcfunction(L, l_graphics_draw_gradient_v);
-    lua_setfield(L, -2, "draw_gradient_v");
 
     lua_pushcfunction(L, l_graphics_draw_polyline);
     lua_setfield(L, -2, "drawPolyline");
-    lua_pushcfunction(L, l_graphics_draw_polyline);
-    lua_setfield(L, -2, "draw_polyline");
-
+    
     lua_pushcfunction(L, l_graphics_draw_bezier);
     lua_setfield(L, -2, "drawBezier");
-    lua_pushcfunction(L, l_graphics_draw_bezier);
-    lua_setfield(L, -2, "draw_bezier");
 
     lua_pushcfunction(L, l_graphics_draw_pie);
     lua_setfield(L, -2, "drawPie");
-    lua_pushcfunction(L, l_graphics_draw_pie);
-    lua_setfield(L, -2, "draw_pie");
 
     lua_pushcfunction(L, l_graphics_draw_rounded_rect_ex);
     lua_setfield(L, -2, "drawRoundedRectEx");
-    lua_pushcfunction(L, l_graphics_draw_rounded_rect_ex);
-    lua_setfield(L, -2, "draw_rounded_rect_ex");
 
     lua_pushcfunction(L, l_graphics_draw_texture_rot);
     lua_setfield(L, -2, "drawTextureRot");
-    lua_pushcfunction(L, l_graphics_draw_texture_rot);
-    lua_setfield(L, -2, "draw_texture_rot");
 
     // Advanced 3D Helpers
     lua_pushcfunction(L, l_graphics_draw_billboard_rot);
     lua_setfield(L, -2, "drawBillboardRot");
-    lua_pushcfunction(L, l_graphics_draw_billboard_rot);
-    lua_setfield(L, -2, "draw_billboard_rot");
 
     lua_pushcfunction(L, l_graphics_draw_axes_3d);
     lua_setfield(L, -2, "drawAxes3d");
-    lua_pushcfunction(L, l_graphics_draw_axes_3d);
-    lua_setfield(L, -2, "draw_axes_3d");
 
     lua_pushcfunction(L, l_graphics_draw_cube_wires);
     lua_setfield(L, -2, "drawCubeWires");
-    lua_pushcfunction(L, l_graphics_draw_cube_wires);
-    lua_setfield(L, -2, "draw_cube_wires");
 
     lua_pushcfunction(L, l_graphics_draw_capsule_wires);
     lua_setfield(L, -2, "drawCapsuleWires");
@@ -2098,6 +1942,7 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_draw_ray_3d);
     lua_setfield(L, -2, "drawRay3d");
+
     lua_pushcfunction(L, l_graphics_draw_ray_3d);
     lua_setfield(L, -2, "drawRay");
 

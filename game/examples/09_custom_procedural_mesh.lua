@@ -79,25 +79,25 @@ function build_sine_terrain(time_val)
         end
     end
 
-    return crayon.graphics.create_mesh({
+    return crayon.graphics.createMesh({
         vertices = vertices,
         indices = indices
     })
 end
 
 function crayon.init()
-    crayon.window.set_resolution(320, 240)
-    crayon.window.set_title("09 - Custom Procedural Mesh [SPACE: Animate, 1: Tex]")
+    crayon.window.setResolution(320, 240)
+    crayon.window.setTitle("09 - Custom Procedural Mesh [SPACE: Animate, 1: Tex]")
 
-    tex_grass = crayon.graphics.load_texture("game/assets/textures/grass.bmp")
+    tex_grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
 
-    crayon.graphics.set_retro_effects({
-        jitter_resolution = {240, 160},
+    crayon.graphics.setRetroEffects({
+        jitterResolution = {240, 160},
         affine = 1.0,
         dither = true
     })
 
-    crayon.graphics.set_light(
+    crayon.graphics.setLight(
         -0.5, -0.9, -0.4,
         1.0, 0.95, 0.85,
         0.3, 0.3, 0.35
@@ -110,27 +110,27 @@ function crayon.update(dt)
     timer = timer + dt
 
     -- Camera Controls
-    if crayon.input.is_down("left") or crayon.input.is_down("a") then cam.yaw = cam.yaw - 45.0 * dt end
-    if crayon.input.is_down("right") or crayon.input.is_down("d") then cam.yaw = cam.yaw + 45.0 * dt end
-    if crayon.input.is_down("up") or crayon.input.is_down("w") then cam.pitch = math.min(-10.0, cam.pitch + 35.0 * dt) end
-    if crayon.input.is_down("down") or crayon.input.is_down("s") then cam.pitch = math.max(-80.0, cam.pitch - 35.0 * dt) end
+    if crayon.input.isDown("left") or crayon.input.isDown("a") then cam.yaw = cam.yaw - 45.0 * dt end
+    if crayon.input.isDown("right") or crayon.input.isDown("d") then cam.yaw = cam.yaw + 45.0 * dt end
+    if crayon.input.isDown("up") or crayon.input.isDown("w") then cam.pitch = math.min(-10.0, cam.pitch + 35.0 * dt) end
+    if crayon.input.isDown("down") or crayon.input.isDown("s") then cam.pitch = math.max(-80.0, cam.pitch - 35.0 * dt) end
 
     -- Zoom
-    local wheel_y = crayon.input.get_mouse_wheel() or 0
-    if wheel_y ~= 0 then
+    local wheel_x, wheel_y = crayon.input.getMouseWheel()
+    if wheel_y and wheel_y ~= 0 then
         cam.dist = math.max(4.0, math.min(25.0, cam.dist - wheel_y * 1.0))
     end
 
     -- Rebuild animated mesh on spacebar or every few frames
-    if crayon.input.is_down("space") then
+    if crayon.input.isDown("space") then
         terrain_mesh = build_sine_terrain(timer)
     end
 
-    if crayon.input.is_pressed("1") then
+    if crayon.input.isPressed("1") then
         use_texture = not use_texture
     end
 
-    if crayon.input.is_pressed("escape") then
+    if crayon.input.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -145,7 +145,7 @@ function crayon.draw()
     local cy = -math.sin(rad_pitch) * cam.dist
     local cz = math.cos(rad_pitch) * math.sin(rad_yaw) * cam.dist
 
-    crayon.graphics.set_camera3d({
+    crayon.graphics.setCamera3d({
         position = {cx, cy, cz},
         target = {0, 0, 0},
         up = {0, 1, 0},
@@ -153,36 +153,37 @@ function crayon.draw()
     })
 
     -- 1. Reference Grid below
-    crayon.graphics.set_color(0.2, 0.25, 0.35, 0.4)
-    crayon.graphics.draw_grid_3d(12, 1.0, -1.2)
+    crayon.graphics.setColor(0.2, 0.25, 0.35, 0.4)
+    crayon.graphics.drawGrid3d(12, 12, -1.2)
 
     -- 2. Draw Custom Procedural Mesh
-    crayon.graphics.set_color(1.0, 1.0, 1.0, 1.0)
-    crayon.graphics.draw_model(terrain_mesh, 0, 0, 0, 0, 0, 0, 1, 1, 1, use_texture and tex_grass or 0)
+    -- drawModel(model, x, y, z, rx, ry, rz, sx, sy, sz, tex)
+    crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
+    crayon.graphics.drawModel(terrain_mesh, 0, 0, 0, 0, 0, 0, 1, 1, 1, use_texture and tex_grass or 0)
 
     -- ========================================================================
     -- 2D HUD OVERLAY
     -- ========================================================================
-    crayon.graphics.set_color(0.06, 0.08, 0.14, 0.85)
-    crayon.graphics.draw_rect("fill", 4, 4, 312, 22)
-    crayon.graphics.set_color(0.3, 0.5, 0.8, 1.0)
-    crayon.graphics.draw_rect("line", 4, 4, 312, 22)
+    crayon.graphics.setColor(0.06, 0.08, 0.14, 0.85)
+    crayon.graphics.drawRect("fill", 4, 4, 312, 22)
+    crayon.graphics.setColor(0.3, 0.5, 0.8, 1.0)
+    crayon.graphics.drawRect("line", 4, 4, 312, 22)
 
-    crayon.graphics.set_color(1.0, 0.9, 0.3, 1.0)
-    crayon.graphics.draw_text("PROCEDURAL MESH GENERATION", 8, 10, 1.0)
+    crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
+    crayon.graphics.drawText("PROCEDURAL MESH GENERATION", 8, 10, 1.0)
 
-    local fps = math.floor(crayon.window.get_fps() + 0.5)
-    crayon.graphics.set_color(0.4, 1.0, 0.5, 1.0)
-    crayon.graphics.draw_text("FPS: " .. fps, 265, 10, 1.0)
+    local fps = math.floor(crayon.window.getFps() + 0.5)
+    crayon.graphics.setColor(0.4, 1.0, 0.5, 1.0)
+    crayon.graphics.drawText("FPS: " .. fps, 265, 10, 1.0)
 
     -- Bottom Info
-    crayon.graphics.set_color(0.06, 0.08, 0.14, 0.85)
-    crayon.graphics.draw_rect("fill", 4, 204, 312, 32)
-    crayon.graphics.set_color(0.25, 0.35, 0.6, 1.0)
-    crayon.graphics.draw_rect("line", 4, 204, 312, 32)
+    crayon.graphics.setColor(0.06, 0.08, 0.14, 0.85)
+    crayon.graphics.drawRect("fill", 4, 204, 312, 32)
+    crayon.graphics.setColor(0.25, 0.35, 0.6, 1.0)
+    crayon.graphics.drawRect("line", 4, 204, 312, 32)
 
-    crayon.graphics.set_color(0.9, 0.95, 1.0, 1.0)
-    crayon.graphics.draw_text("Hold [SPACE]: Real-time Dynamic Wave Generation", 10, 208, 1.0)
-    crayon.graphics.set_color(0.6, 0.75, 0.9, 1.0)
-    crayon.graphics.draw_text("[1] Texture: " .. (use_texture and "ON" or "OFF (Vertex Color)") .. " | Arrows: Orbit", 10, 222, 1.0)
+    crayon.graphics.setColor(0.9, 0.95, 1.0, 1.0)
+    crayon.graphics.drawText("Hold [SPACE]: Real-time Dynamic Wave Generation", 10, 208, 1.0)
+    crayon.graphics.setColor(0.6, 0.75, 0.9, 1.0)
+    crayon.graphics.drawText("[1] Texture: " .. (use_texture and "ON" or "OFF (Vertex Color)") .. " | Arrows: Orbit", 10, 222, 1.0)
 end

@@ -96,10 +96,10 @@ function crayon.draw()
     -- 6. HUD / Instructions
     crayon.graphics.setColor(0.9, 0.9, 0.9, 1.0)
     crayon.graphics.drawText("Left Click anywhere to spawn particles!", 15, 180, 1.0)
-    crayon.graphics.drawText("FPS: " .. math.floor(crayon.window.get_fps() + 0.5), 15, 200, 1.0)
+    crayon.graphics.drawText("FPS: " .. math.floor(crayon.window.getFps() + 0.5), 15, 200, 1.0)
 
     -- Mouse cursor
-    local mx, my = crayon.input.get_mouse_pos()
+    local mx, my = crayon.input.getMousePos()
     crayon.graphics.setColor(1.0, 0.3, 0.3, 1.0)
     crayon.graphics.drawLine(mx - 3, my, mx + 3, my, 1.0)
     crayon.graphics.drawLine(mx, my - 3, mx, my + 3, 1.0)

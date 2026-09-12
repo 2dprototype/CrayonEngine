@@ -619,10 +619,10 @@ static int l_character_get_ground_state(lua_State* L) {
     auto* c = check_character(L, 1);
     auto state = c->physics->character_get_ground_state(c->id);
     switch (state) {
-        case PhysicsSystem::GroundState::OnGround: lua_pushstring(L, "on_ground"); break;
-        case PhysicsSystem::GroundState::OnSteepGround: lua_pushstring(L, "on_steep_ground"); break;
-        case PhysicsSystem::GroundState::NotSupported: lua_pushstring(L, "not_supported"); break;
-        case PhysicsSystem::GroundState::InAir: default: lua_pushstring(L, "in_air"); break;
+        case PhysicsSystem::GroundState::OnGround:        lua_pushstring(L, "onGround");      break;
+        case PhysicsSystem::GroundState::OnSteepGround:   lua_pushstring(L, "onSteepGround"); break;
+        case PhysicsSystem::GroundState::NotSupported:    lua_pushstring(L, "notSupported");  break;
+        case PhysicsSystem::GroundState::InAir: default:  lua_pushstring(L, "inAir");         break;
     }
     return 1;
 }
@@ -1701,11 +1701,7 @@ static int l_physics_create_character(lua_State* L) {
         if (lua_isnumber(L, -1)) cfg.radius = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, 1, "half_height");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_getfield(L, 1, "halfHeight");
-        }
+        lua_getfield(L, 1, "halfHeight");
         if (lua_isnumber(L, -1)) cfg.half_height = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
@@ -1717,19 +1713,11 @@ static int l_physics_create_character(lua_State* L) {
         if (lua_isnumber(L, -1)) cfg.friction = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, 1, "gravity_factor");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_getfield(L, 1, "gravityFactor");
-        }
+        lua_getfield(L, 1, "gravityFactor");
         if (lua_isnumber(L, -1)) cfg.gravity_factor = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, 1, "max_slope_angle_deg");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_getfield(L, 1, "maxSlopeAngleDeg");
-        }
+        lua_getfield(L, 1, "maxSlopeAngleDeg");
         if (lua_isnumber(L, -1)) cfg.max_slope_angle_deg = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
@@ -1766,11 +1754,7 @@ static int l_physics_create_character_virtual(lua_State* L) {
         if (lua_isnumber(L, -1)) cfg.radius = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, 1, "half_height");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_getfield(L, 1, "halfHeight");
-        }
+        lua_getfield(L, 1, "halfHeight");
         if (lua_isnumber(L, -1)) cfg.half_height = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
@@ -1778,43 +1762,23 @@ static int l_physics_create_character_virtual(lua_State* L) {
         if (lua_isnumber(L, -1)) cfg.mass = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, 1, "max_slope_angle_deg");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_getfield(L, 1, "maxSlopeAngleDeg");
-        }
+        lua_getfield(L, 1, "maxSlopeAngleDeg");
         if (lua_isnumber(L, -1)) cfg.max_slope_angle_deg = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, 1, "max_strength");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_getfield(L, 1, "maxStrength");
-        }
+        lua_getfield(L, 1, "maxStrength");
         if (lua_isnumber(L, -1)) cfg.max_strength = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, 1, "step_height");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_getfield(L, 1, "stepHeight");
-        }
+        lua_getfield(L, 1, "stepHeight");
         if (lua_isnumber(L, -1)) cfg.step_height = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, 1, "predictive_contact_distance");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_getfield(L, 1, "predictiveContactDistance");
-        }
+        lua_getfield(L, 1, "predictiveContactDistance");
         if (lua_isnumber(L, -1)) cfg.predictive_contact_distance = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
 
-        lua_getfield(L, 1, "inner_body");
-        if (lua_isnil(L, -1)) {
-            lua_pop(L, 1);
-            lua_getfield(L, 1, "innerBody");
-        }
+        lua_getfield(L, 1, "innerBody");
         if (lua_isboolean(L, -1)) cfg.inner_body = lua_toboolean(L, -1);
         lua_pop(L, 1);
     } else {
@@ -1841,10 +1805,6 @@ static PhysicsSystem::WheelConfig parse_wheel_config(lua_State* L, int idx) {
     if (!lua_istable(L, idx)) return w;
 
     lua_getfield(L, idx, "pos");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "position");
-    }
     if (lua_istable(L, -1)) {
         lua_rawgeti(L, -1, 1); w.position.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
         lua_rawgeti(L, -1, 2); w.position.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
@@ -1860,75 +1820,39 @@ static PhysicsSystem::WheelConfig parse_wheel_config(lua_State* L, int idx) {
     if (lua_isnumber(L, -1)) w.width = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, idx, "suspension_min_length");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "suspensionMinLength");
-    }
+    lua_getfield(L, idx, "suspensionMinLength");
     if (lua_isnumber(L, -1)) w.suspension_min_length = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, idx, "suspension_max_length");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "suspensionMaxLength");
-    }
+    lua_getfield(L, idx, "suspensionMaxLength");
     if (lua_isnumber(L, -1)) w.suspension_max_length = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, idx, "suspension_spring");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "suspensionSpring");
-    }
+    lua_getfield(L, idx, "suspensionSpring");
     if (lua_isnumber(L, -1)) w.suspension_spring = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, idx, "suspension_damping");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "suspensionDamping");
-    }
+    lua_getfield(L, idx, "suspensionDamping");
     if (lua_isnumber(L, -1)) w.suspension_damping = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, idx, "max_steer_angle_rad");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "maxSteerAngleRad");
-    }
+    lua_getfield(L, idx, "maxSteerAngleRad");
     if (lua_isnumber(L, -1)) w.max_steer_angle_rad = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, idx, "max_brake_torque");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "maxBrakeTorque");
-    }
+    lua_getfield(L, idx, "maxBrakeTorque");
     if (lua_isnumber(L, -1)) w.max_brake_torque = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, idx, "max_hand_brake_torque");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "maxHandBrakeTorque");
-    }
+    lua_getfield(L, idx, "maxHandBrakeTorque");
     if (lua_isnumber(L, -1)) w.max_hand_brake_torque = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, idx, "is_front");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "isFront");
-    }
+    lua_getfield(L, idx, "isFront");
     if (lua_isboolean(L, -1)) w.is_front = lua_toboolean(L, -1);
     lua_pop(L, 1);
 
-    lua_getfield(L, idx, "is_drive");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, idx, "isDrive");
-    }
+    lua_getfield(L, idx, "isDrive");
     if (lua_isboolean(L, -1)) w.is_drive = lua_toboolean(L, -1);
     lua_pop(L, 1);
 
@@ -1939,15 +1863,7 @@ static int l_physics_create_wheeled_vehicle(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     PhysicsSystem::WheeledVehicleConfig cfg;
 
-    lua_getfield(L, 1, "chassis_body_id");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "chassisBodyId");
-    }
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "chassis");
-    }
+    lua_getfield(L, 1, "chassis");
     if (!lua_isnil(L, -1)) cfg.chassis_body_id = check_body_id(L, -1);
     lua_pop(L, 1);
 
@@ -1962,35 +1878,19 @@ static int l_physics_create_wheeled_vehicle(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "max_pitch_roll_angle");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "maxPitchRollAngle");
-    }
+    lua_getfield(L, 1, "maxPitchRollAngle");
     if (lua_isnumber(L, -1)) cfg.max_pitch_roll_angle = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "engine_max_torque");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "engineMaxTorque");
-    }
+    lua_getfield(L, 1, "engineMaxTorque");
     if (lua_isnumber(L, -1)) cfg.engine_max_torque = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "engine_min_rpm");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "engineMinRpm");
-    }
+    lua_getfield(L, 1, "engineMinRpm");
     if (lua_isnumber(L, -1)) cfg.engine_min_rpm = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "engine_max_rpm");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "engineMaxRpm");
-    }
+    lua_getfield(L, 1, "engineMaxRpm");
     if (lua_isnumber(L, -1)) cfg.engine_max_rpm = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
@@ -2004,23 +1904,11 @@ static int l_physics_create_tracked_vehicle(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     PhysicsSystem::TrackedVehicleConfig cfg;
 
-    lua_getfield(L, 1, "chassis_body_id");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "chassisBodyId");
-    }
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "chassis");
-    }
+    lua_getfield(L, 1, "chassis");
     if (!lua_isnil(L, -1)) cfg.chassis_body_id = check_body_id(L, -1);
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "left_wheels");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "leftWheels");
-    }
+    lua_getfield(L, 1, "leftWheels");
     if (lua_istable(L, -1)) {
         int n = static_cast<int>(lua_objlen(L, -1));
         for (int i = 1; i <= n; ++i) {
@@ -2031,11 +1919,7 @@ static int l_physics_create_tracked_vehicle(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "right_wheels");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "rightWheels");
-    }
+    lua_getfield(L, 1, "rightWheels");
     if (lua_istable(L, -1)) {
         int n = static_cast<int>(lua_objlen(L, -1));
         for (int i = 1; i <= n; ++i) {
@@ -2046,11 +1930,7 @@ static int l_physics_create_tracked_vehicle(lua_State* L) {
     }
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "engine_max_torque");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "engineMaxTorque");
-    }
+    lua_getfield(L, 1, "engineMaxTorque");
     if (lua_isnumber(L, -1)) cfg.engine_max_torque = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
@@ -2064,71 +1944,35 @@ static int l_physics_create_motorcycle(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     PhysicsSystem::MotorcycleConfig cfg;
 
-    lua_getfield(L, 1, "chassis_body_id");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "chassisBodyId");
-    }
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "chassis");
-    }
+    lua_getfield(L, 1, "chassis");
     if (!lua_isnil(L, -1)) cfg.chassis_body_id = check_body_id(L, -1);
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "front_wheel");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "frontWheel");
-    }
+    lua_getfield(L, 1, "frontWheel");
     if (lua_istable(L, -1)) cfg.front_wheel = parse_wheel_config(L, -1);
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "rear_wheel");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "rearWheel");
-    }
+    lua_getfield(L, 1, "rearWheel");
     if (lua_istable(L, -1)) cfg.rear_wheel = parse_wheel_config(L, -1);
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "max_lean_angle_rad");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "maxLeanAngleRad");
-    }
+    lua_getfield(L, 1, "maxLeanAngleRad");
     if (lua_isnumber(L, -1)) cfg.max_lean_angle_rad = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "lean_spring_constant");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "leanSpringConstant");
-    }
+    lua_getfield(L, 1, "leanSpringConstant");
     if (lua_isnumber(L, -1)) cfg.lean_spring_constant = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "lean_spring_damping");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "leanSpringDamping");
-    }
+    lua_getfield(L, 1, "leanSpringDamping");
     if (lua_isnumber(L, -1)) cfg.lean_spring_damping = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "lean_smoothing_factor");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "leanSmoothingFactor");
-    }
+    lua_getfield(L, 1, "leanSmoothingFactor");
     if (lua_isnumber(L, -1)) cfg.lean_smoothing_factor = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
-    lua_getfield(L, 1, "engine_max_torque");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "engineMaxTorque");
-    }
+    lua_getfield(L, 1, "engineMaxTorque");
     if (lua_isnumber(L, -1)) cfg.engine_max_torque = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
@@ -2156,15 +2000,7 @@ static int l_physics_create_skeleton(lua_State* L) {
             if (lua_isstring(L, -1)) name = lua_tostring(L, -1);
             lua_pop(L, 1);
 
-            lua_getfield(L, -1, "parent");
-            if (lua_isnil(L, -1)) {
-                lua_pop(L, 1);
-                lua_getfield(L, -1, "parent_idx");
-            }
-            if (lua_isnil(L, -1)) {
-                lua_pop(L, 1);
-                lua_getfield(L, -1, "parentIndex");
-            }
+            lua_getfield(L, -1, "parentIndex");
             if (lua_isnumber(L, -1)) parent_idx = static_cast<int>(lua_tointeger(L, -1));
             lua_pop(L, 1);
 
@@ -2224,11 +2060,7 @@ static int l_physics_create_ragdoll(lua_State* L) {
     luaL_checktype(L, 1, LUA_TTABLE);
     PhysicsSystem::RagdollConfig cfg;
 
-    lua_getfield(L, 1, "disable_parent_child_collisions");
-    if (lua_isnil(L, -1)) {
-        lua_pop(L, 1);
-        lua_getfield(L, 1, "disableParentChildCollisions");
-    }
+    lua_getfield(L, 1, "disableParentChildCollisions");
     if (lua_isboolean(L, -1)) cfg.disable_parent_child_collisions = lua_toboolean(L, -1);
     lua_pop(L, 1);
 
@@ -2243,27 +2075,16 @@ static int l_physics_create_ragdoll(lua_State* L) {
             lua_rawgeti(L, -1, i);
             if (lua_istable(L, -1)) {
                 PhysicsSystem::RagdollPartConfig part;
+
                 lua_getfield(L, -1, "name");
                 if (lua_isstring(L, -1)) part.name = lua_tostring(L, -1);
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "parent_joint_index");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "parentJointIndex");
-                }
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "parent");
-                }
+                lua_getfield(L, -1, "parentJointIndex");
                 if (lua_isnumber(L, -1)) part.parent_joint_index = static_cast<int>(lua_tointeger(L, -1));
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "pos");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "position");
-                }
+                lua_getfield(L, -1, "position");
                 if (lua_istable(L, -1)) {
                     lua_rawgeti(L, -1, 1); part.position.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
                     lua_rawgeti(L, -1, 2); part.position.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
@@ -2271,11 +2092,7 @@ static int l_physics_create_ragdoll(lua_State* L) {
                 }
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "rot");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "rotation");
-                }
+                lua_getfield(L, -1, "rotation");
                 if (lua_istable(L, -1)) {
                     lua_rawgeti(L, -1, 1); part.rotation.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
                     lua_rawgeti(L, -1, 2); part.rotation.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
@@ -2284,15 +2101,7 @@ static int l_physics_create_ragdoll(lua_State* L) {
                 }
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "shape_type");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "shapeType");
-                }
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "shape");
-                }
+                lua_getfield(L, -1, "shapeType");
                 if (lua_isstring(L, -1)) {
                     const char* s = lua_tostring(L, -1);
                     if (std::strcmp(s, "box") == 0) part.shape_type = PhysicsSystem::RagdollPartShape::Box;
@@ -2301,11 +2110,7 @@ static int l_physics_create_ragdoll(lua_State* L) {
                 }
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "half_extent");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "halfExtent");
-                }
+                lua_getfield(L, -1, "halfExtent");
                 if (lua_istable(L, -1)) {
                     lua_rawgeti(L, -1, 1); part.half_extent.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
                     lua_rawgeti(L, -1, 2); part.half_extent.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
@@ -2317,11 +2122,7 @@ static int l_physics_create_ragdoll(lua_State* L) {
                 if (lua_isnumber(L, -1)) part.radius = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "half_height");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "halfHeight");
-                }
+                lua_getfield(L, -1, "halfHeight");
                 if (lua_isnumber(L, -1)) part.half_height = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 
@@ -2337,67 +2138,35 @@ static int l_physics_create_ragdoll(lua_State* L) {
                 if (lua_isnumber(L, -1)) part.friction = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "swing_limit_y");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "swingLimitY");
-                }
+                lua_getfield(L, -1, "swingLimitY");
                 if (lua_isnumber(L, -1)) part.swing_limit_y = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "swing_limit_z");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "swingLimitZ");
-                }
+                lua_getfield(L, -1, "swingLimitZ");
                 if (lua_isnumber(L, -1)) part.swing_limit_z = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "twist_min");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "twistMin");
-                }
+                lua_getfield(L, -1, "twistMin");
                 if (lua_isnumber(L, -1)) part.twist_min = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "twist_max");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "twistMax");
-                }
+                lua_getfield(L, -1, "twistMax");
                 if (lua_isnumber(L, -1)) part.twist_max = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "enable_motors");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "enableMotors");
-                }
+                lua_getfield(L, -1, "enableMotors");
                 if (lua_isboolean(L, -1)) part.enable_motors = lua_toboolean(L, -1);
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "motor_spring_k");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "motorSpringK");
-                }
+                lua_getfield(L, -1, "motorSpringK");
                 if (lua_isnumber(L, -1)) part.motor_spring_k = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "motor_damping_c");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "motorDampingC");
-                }
+                lua_getfield(L, -1, "motorDampingC");
                 if (lua_isnumber(L, -1)) part.motor_damping_c = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 
-                lua_getfield(L, -1, "motor_max_torque");
-                if (lua_isnil(L, -1)) {
-                    lua_pop(L, 1);
-                    lua_getfield(L, -1, "motorMaxTorque");
-                }
+                lua_getfield(L, -1, "motorMaxTorque");
                 if (lua_isnumber(L, -1)) part.motor_max_torque = static_cast<float>(lua_tonumber(L, -1));
                 lua_pop(L, 1);
 

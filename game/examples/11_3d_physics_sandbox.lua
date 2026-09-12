@@ -81,12 +81,12 @@ local function reset_scene()
 end
 
 function crayon.init()
-    crayon.window.set_resolution(320, 240)
-    crayon.window.set_title("Crayon Engine - High-Speed Jolt 3D Physics Sandbox")
+    crayon.window.setResolution(320, 240)
+    crayon.window.setTitle("Crayon Engine - High-Speed Jolt 3D Physics Sandbox")
 
-    models.cube = crayon.graphics.loadModel("cube")
+    models.cube   = crayon.graphics.loadModel("cube")
     models.sphere = crayon.graphics.loadModel("sphere")
-    models.plane = crayon.graphics.loadModel("plane")
+    models.plane  = crayon.graphics.loadModel("plane")
 
     textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
     textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
@@ -96,10 +96,10 @@ function crayon.init()
     print(string.format("[Init] Crate texture loaded: %dx%d", cw, ch))
 
     crayon.graphics.setRetroEffects({
-        jitter_resolution = {160, 120},
+        jitterResolution = {160, 120},
         affine = 0.8,
         dither = true,
-        fog = { start = 12, ["end"] = 40, color = {0.08, 0.10, 0.16} }
+        fog = { startDist = 12, endDist = 40, color = {0.08, 0.10, 0.16} }
     })
 
     crayon.graphics.setLight(-0.4, -0.9, -0.6, 1.0, 0.95, 0.85, 0.35, 0.35, 0.42)
@@ -231,7 +231,7 @@ function crayon.draw()
     crayon.graphics.drawRect("line", 4, 4, 185, 52)
 
     local total_bodies, active_bodies = crayon.physics3d.getBodyCount()
-    local fps = math.floor(crayon.window.get_fps() + 0.5)
+    local fps = math.floor(crayon.window.getFps() + 0.5)
 
     crayon.graphics.setColor(1.0, 0.9, 0.2, 1.0)
     crayon.graphics.drawText("JOLT 3D PHYSICS SANDBOX", 8, 8, 1.0)

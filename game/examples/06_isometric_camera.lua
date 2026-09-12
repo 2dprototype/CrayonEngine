@@ -29,21 +29,21 @@ function get_block(x, z)
 end
 
 function crayon.init()
-    crayon.window.set_resolution(320, 240)
-    crayon.window.set_title("06 - Isometric Ortho 3D [Arrows: Move Cursor, SPACE: Build, Q/E: Rotate]")
+    crayon.window.setResolution(320, 240)
+    crayon.window.setTitle("06 - Isometric Ortho 3D [Arrows: Move Cursor, SPACE: Build, Q/E: Rotate]")
 
-    textures.crate = crayon.graphics.load_texture("game/assets/textures/crate.bmp")
-    textures.brick = crayon.graphics.load_texture("game/assets/textures/brick.bmp")
-    textures.grass = crayon.graphics.load_texture("game/assets/textures/grass.bmp")
+    textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
+    textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
+    textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
 
-    crayon.graphics.set_retro_effects({
-        jitter_resolution = {240, 160},
+    crayon.graphics.setRetroEffects({
+        jitterResolution = {240, 160},
         affine = 1.0,
         dither = true
     })
 
     -- Warm isometric directional lighting
-    crayon.graphics.set_light(
+    crayon.graphics.setLight(
         -0.6, -1.0, -0.4,
         1.0, 0.95, 0.85,
         0.35, 0.35, 0.4
@@ -67,27 +67,27 @@ function crayon.update(dt)
     timer = timer + dt
 
     -- Cursor movement on isometric grid
-    if crayon.input.is_pressed("up") or crayon.input.is_pressed("w") then
+    if crayon.input.isPressed("up") or crayon.input.isPressed("w") then
         cursor_z = math.max(-4, cursor_z - 1)
     end
-    if crayon.input.is_pressed("down") or crayon.input.is_pressed("s") then
+    if crayon.input.isPressed("down") or crayon.input.isPressed("s") then
         cursor_z = math.min(4, cursor_z + 1)
     end
-    if crayon.input.is_pressed("left") or crayon.input.is_pressed("a") then
+    if crayon.input.isPressed("left") or crayon.input.isPressed("a") then
         cursor_x = math.max(-4, cursor_x - 1)
     end
-    if crayon.input.is_pressed("right") or crayon.input.is_pressed("d") then
+    if crayon.input.isPressed("right") or crayon.input.isPressed("d") then
         cursor_x = math.min(4, cursor_x + 1)
     end
 
     -- Build block (SPACE) / Remove block (X or BACKSPACE)
-    if crayon.input.is_pressed("space") then
+    if crayon.input.isPressed("space") then
         local cur_h = get_block(cursor_x, cursor_z)
         if cur_h < 5 then
             set_block(cursor_x, cursor_z, cur_h + 1)
         end
     end
-    if crayon.input.is_pressed("x") or crayon.input.is_pressed("backspace") then
+    if crayon.input.isPressed("x") or crayon.input.isPressed("backspace") then
         local cur_h = get_block(cursor_x, cursor_z)
         if cur_h > 0 then
             set_block(cursor_x, cursor_z, cur_h - 1)
@@ -95,26 +95,26 @@ function crayon.update(dt)
     end
 
     -- Rotate isometric view by 90 degrees (Q / E)
-    if crayon.input.is_pressed("q") then
+    if crayon.input.isPressed("q") then
         cam.yaw = cam.yaw - 90.0
     end
-    if crayon.input.is_pressed("e") then
+    if crayon.input.isPressed("e") then
         cam.yaw = cam.yaw + 90.0
     end
 
     -- Zoom in / out (Scroll Wheel or R / F)
-    local wheel_y = crayon.input.get_mouse_wheel() or 0
-    if wheel_y ~= 0 then
+    local wheel_x, wheel_y = crayon.input.getMouseWheel()
+    if wheel_y and wheel_y ~= 0 then
         cam.ortho_size = math.max(4.0, math.min(16.0, cam.ortho_size - wheel_y * 1.0))
     end
-    if crayon.input.is_down("r") then
+    if crayon.input.isDown("r") then
         cam.ortho_size = math.max(4.0, cam.ortho_size - 6.0 * dt)
     end
-    if crayon.input.is_down("f") then
+    if crayon.input.isDown("f") then
         cam.ortho_size = math.min(16.0, cam.ortho_size + 6.0 * dt)
     end
 
-    if crayon.input.is_pressed("escape") then
+    if crayon.input.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -130,33 +130,36 @@ function crayon.draw()
     local cy = -math.sin(rad_pitch) * dist
     local cz = math.cos(rad_pitch) * math.sin(rad_yaw) * dist
 
-    crayon.graphics.set_camera3d({
+    crayon.graphics.setCamera3d({
         position = {cx, cy, cz},
         target = {cam.target_x, cam.target_y, cam.target_z},
         up = {0, 1, 0},
         ortho = true,
-        ortho_size = cam.ortho_size,
+        orthoSize = cam.ortho_size,
         near = 0.1,
         far = 100.0
     })
 
     -- 1. Base Island Foundation
-    crayon.graphics.set_color(0.7, 0.85, 0.7, 1.0)
-    crayon.graphics.draw_plane(0, -0.01, 0, 0, 0, 0, 5, 1, 5, textures.grass)
+    -- drawPlane(x, y, z, w, d, tex, rx, ry, rz)
+    crayon.graphics.setColor(0.7, 0.85, 0.7, 1.0)
+    crayon.graphics.drawPlane(0, -0.01, 0, 10, 10, textures.grass, 0, 0, 0)
 
     -- 2. Floor Grid
-    crayon.graphics.set_color(0.2, 0.35, 0.45, 0.5)
-    crayon.graphics.draw_grid_3d(10, 1.0)
+    -- drawGrid3d(size, divs, y)
+    crayon.graphics.setColor(0.2, 0.35, 0.45, 0.5)
+    crayon.graphics.drawGrid3d(10, 10, 0)
 
     -- 3. Draw All Placed Blocks
+    -- drawCube(x, y, z, sx, sy, sz, tex, rx, ry, rz)
     for x = -4, 4 do
         for z = -4, 4 do
             local h = get_block(x, z)
             for y = 1, h do
                 local by = y - 0.5
                 local tex = (y == 1) and textures.brick or textures.crate
-                crayon.graphics.set_color(0.9, 0.9, 0.95, 1.0)
-                crayon.graphics.draw_cube(x, by, z, 0, 0, 0, 0.98, 0.98, 0.98, tex)
+                crayon.graphics.setColor(0.9, 0.9, 0.95, 1.0)
+                crayon.graphics.drawCube(x, by, z, 0.98, 0.98, 0.98, tex, 0, 0, 0)
             end
         end
     end
@@ -165,33 +168,33 @@ function crayon.draw()
     local cur_top = get_block(cursor_x, cursor_z)
     local cursor_y = cur_top + 0.5 + math.sin(timer * 6.0) * 0.08
 
-    crayon.graphics.set_shading_mode("unlit")
-    crayon.graphics.set_color(1.0, 0.8, 0.1, 0.7)
-    crayon.graphics.draw_cube(cursor_x, cursor_y, cursor_z, 0, 0, 0, 1.02, 1.02, 1.02)
-    crayon.graphics.set_shading_mode("gouraud")
+    crayon.graphics.setShadingMode("unlit")
+    crayon.graphics.setColor(1.0, 0.8, 0.1, 0.7)
+    crayon.graphics.drawCube(cursor_x, cursor_y, cursor_z, 1.02, 1.02, 1.02, 0, 0, 0, 0)
+    crayon.graphics.setShadingMode("gouraud")
 
     -- ========================================================================
     -- 2D HUD OVERLAY
     -- ========================================================================
-    crayon.graphics.set_color(0.06, 0.08, 0.14, 0.85)
-    crayon.graphics.draw_rect("fill", 4, 4, 312, 22)
-    crayon.graphics.set_color(0.3, 0.5, 0.8, 1.0)
-    crayon.graphics.draw_rect("line", 4, 4, 312, 22)
+    crayon.graphics.setColor(0.06, 0.08, 0.14, 0.85)
+    crayon.graphics.drawRect("fill", 4, 4, 312, 22)
+    crayon.graphics.setColor(0.3, 0.5, 0.8, 1.0)
+    crayon.graphics.drawRect("line", 4, 4, 312, 22)
 
-    crayon.graphics.set_color(1.0, 0.9, 0.3, 1.0)
-    crayon.graphics.draw_text("3D ISOMETRIC (ORTHOGRAPHIC)", 8, 10, 1.0)
+    crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
+    crayon.graphics.drawText("3D ISOMETRIC (ORTHOGRAPHIC)", 8, 10, 1.0)
 
-    crayon.graphics.set_color(0.4, 1.0, 0.5, 1.0)
-    crayon.graphics.draw_text("Cursor: (" .. cursor_x .. ", " .. cursor_z .. ")", 215, 10, 1.0)
+    crayon.graphics.setColor(0.4, 1.0, 0.5, 1.0)
+    crayon.graphics.drawText("Cursor: (" .. cursor_x .. ", " .. cursor_z .. ")", 215, 10, 1.0)
 
     -- Bottom Controls
-    crayon.graphics.set_color(0.06, 0.08, 0.14, 0.85)
-    crayon.graphics.draw_rect("fill", 4, 204, 312, 32)
-    crayon.graphics.set_color(0.25, 0.35, 0.6, 1.0)
-    crayon.graphics.draw_rect("line", 4, 204, 312, 32)
+    crayon.graphics.setColor(0.06, 0.08, 0.14, 0.85)
+    crayon.graphics.drawRect("fill", 4, 204, 312, 32)
+    crayon.graphics.setColor(0.25, 0.35, 0.6, 1.0)
+    crayon.graphics.drawRect("line", 4, 204, 312, 32)
 
-    crayon.graphics.set_color(0.9, 0.9, 0.95, 1.0)
-    crayon.graphics.draw_text("Arrows: Move | [SPACE]: Place | [X]: Delete", 10, 208, 1.0)
-    crayon.graphics.set_color(0.6, 0.75, 0.9, 1.0)
-    crayon.graphics.draw_text("Q/E: Rotate View 90 deg | Scroll/R/F: Zoom", 10, 222, 1.0)
+    crayon.graphics.setColor(0.9, 0.9, 0.95, 1.0)
+    crayon.graphics.drawText("Arrows: Move | [SPACE]: Place | [X]: Delete", 10, 208, 1.0)
+    crayon.graphics.setColor(0.6, 0.75, 0.9, 1.0)
+    crayon.graphics.drawText("Q/E: Rotate View 90 deg | Scroll/R/F: Zoom", 10, 222, 1.0)
 end

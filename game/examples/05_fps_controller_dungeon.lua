@@ -43,58 +43,58 @@ local map = {
 }
 
 function crayon.init()
-    crayon.window.set_resolution(320, 240)
-    crayon.window.set_title("05 - FPS Dungeon [WASD: Move, Mouse: Look, M: Mouse Lock]")
+    crayon.window.setResolution(320, 240)
+    crayon.window.setTitle("05 - FPS Dungeon [WASD: Move, Mouse: Look, M: Mouse Lock]")
 
-    textures.crate = crayon.graphics.load_texture("game/assets/textures/crate.bmp")
-    textures.brick = crayon.graphics.load_texture("game/assets/textures/brick.bmp")
-    textures.coin  = crayon.graphics.load_texture("game/assets/textures/coin.bmp")
+    textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
+    textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
+    textures.coin  = crayon.graphics.loadTexture("game/assets/textures/coin.bmp")
 
-    crayon.graphics.set_retro_effects({
-        jitter_resolution = {160, 120},
+    crayon.graphics.setRetroEffects({
+        jitterResolution = {160, 120},
         affine = 1.0,
         dither = true,
-        fog = { start = 4.0, ["end"] = 18.0, color = {0.04, 0.04, 0.07} }
+        fog = { startDist = 4.0, endDist = 18.0, color = {0.04, 0.04, 0.07} }
     })
 
     -- Low dark ambient light for moody dungeon atmosphere
-    crayon.graphics.set_light(
+    crayon.graphics.setLight(
         -0.2, -1.0, -0.2,
         0.2, 0.2, 0.25,      -- Dim directional
         0.1, 0.1, 0.15       -- Ambient
     )
 
     -- Enable torch point light
-    crayon.graphics.set_point_light_enabled(0, true)
+    crayon.graphics.setPointLightEnabled(0, true)
 
     -- Lock mouse cursor for FPS look
-    crayon.window.set_mouse_relative(true)
-    crayon.window.show_cursor(false)
+    crayon.window.setMouseRelative(true)
+    crayon.window.showCursor(false)
 end
 
 function crayon.update(dt)
     timer = timer + dt
 
     -- Toggle mouse capture with 'M'
-    if crayon.input.is_pressed("m") then
+    if crayon.input.isPressed("m") then
         mouse_captured = not mouse_captured
-        crayon.window.set_mouse_relative(mouse_captured)
-        crayon.window.show_cursor(not mouse_captured)
+        crayon.window.setMouseRelative(mouse_captured)
+        crayon.window.showCursor(not mouse_captured)
     end
 
     -- Mouse Look
     if mouse_captured then
-        local mdx, mdy = crayon.input.get_mouse_delta()
+        local mdx, mdy = crayon.input.getMouseDelta()
         local sensitivity = 0.22
         cam.yaw = cam.yaw + mdx * sensitivity
         cam.pitch = math.max(-85.0, math.min(85.0, cam.pitch - mdy * sensitivity))
     end
 
     -- Arrow keys fallback look
-    if crayon.input.is_down("left") then cam.yaw = cam.yaw - 90.0 * dt end
-    if crayon.input.is_down("right") then cam.yaw = cam.yaw + 90.0 * dt end
-    if crayon.input.is_down("up") then cam.pitch = math.min(85.0, cam.pitch + 70.0 * dt) end
-    if crayon.input.is_down("down") then cam.pitch = math.max(-85.0, cam.pitch - 70.0 * dt) end
+    if crayon.input.isDown("left") then cam.yaw = cam.yaw - 90.0 * dt end
+    if crayon.input.isDown("right") then cam.yaw = cam.yaw + 90.0 * dt end
+    if crayon.input.isDown("up") then cam.pitch = math.min(85.0, cam.pitch + 70.0 * dt) end
+    if crayon.input.isDown("down") then cam.pitch = math.max(-85.0, cam.pitch - 70.0 * dt) end
 
     -- FPS WASD Movement
     local move_spd = 3.5 * dt
@@ -105,19 +105,19 @@ function crayon.update(dt)
     local right_z = math.sin(rad_yaw)
 
     local move_x, move_z = 0, 0
-    if crayon.input.is_down("w") then
+    if crayon.input.isDown("w") then
         move_x = move_x + fwd_x * move_spd
         move_z = move_z + fwd_z * move_spd
     end
-    if crayon.input.is_down("s") then
+    if crayon.input.isDown("s") then
         move_x = move_x - fwd_x * move_spd
         move_z = move_z - fwd_z * move_spd
     end
-    if crayon.input.is_down("a") then
+    if crayon.input.isDown("a") then
         move_x = move_x - right_x * move_spd
         move_z = move_z - right_z * move_spd
     end
-    if crayon.input.is_down("d") then
+    if crayon.input.isDown("d") then
         move_x = move_x + right_x * move_spd
         move_z = move_z + right_z * move_spd
     end
@@ -141,7 +141,7 @@ function crayon.update(dt)
 
     -- Dynamic Flickering Torch Light at player position
     local flicker = math.sin(timer * 15.0) * 0.05 + math.cos(timer * 23.0) * 0.04
-    crayon.graphics.set_point_light(
+    crayon.graphics.setPointLight(
         0,
         cam.x, cam.y, cam.z,
         1.0, 0.75 + flicker, 0.4, -- Warm firelight
@@ -160,11 +160,11 @@ function crayon.update(dt)
         end
     end
 
-    if crayon.input.is_pressed("escape") then
+    if crayon.input.isPressed("escape") then
         if mouse_captured then
             mouse_captured = false
-            crayon.window.set_mouse_relative(false)
-            crayon.window.show_cursor(true)
+            crayon.window.setMouseRelative(false)
+            crayon.window.showCursor(true)
         else
             crayon.window.quit()
         end
@@ -181,7 +181,7 @@ function crayon.draw()
     local look_y = math.sin(rad_pitch)
     local look_z = -math.cos(rad_yaw) * math.cos(rad_pitch)
 
-    crayon.graphics.set_camera3d({
+    crayon.graphics.setCamera3d({
         position = {cam.x, cam.y, cam.z},
         target = {cam.x + look_x, cam.y + look_y, cam.z + look_z},
         up = {0, 1, 0},
@@ -191,29 +191,32 @@ function crayon.draw()
     })
 
     -- 1. Dungeon Floor & Ceiling
-    crayon.graphics.set_color(0.5, 0.5, 0.55, 1.0)
-    crayon.graphics.draw_plane(0, 0, 0, 20, 20, textures.brick)
-    crayon.graphics.draw_plane(0, 2.0, 0, 20, 20, textures.brick, math.pi, 0, 0)
+    -- drawPlane(x, y, z, w, d, tex, rx, ry, rz)
+    crayon.graphics.setColor(0.5, 0.5, 0.55, 1.0)
+    crayon.graphics.drawPlane(0, 0, 0, 20, 20, textures.brick, 0, 0, 0)
+    crayon.graphics.drawPlane(0, 2.0, 0, 20, 20, textures.brick, math.pi, 0, 0)
 
     -- 2. Dungeon Brick Walls
+    -- drawCube(x, y, z, sx, sy, sz, tex, rx, ry, rz)
     for cz = 1, map_h do
         for cx = 1, map_w do
             local idx = (cz - 1) * map_w + cx
             if map[idx] == 1 then
                 local wx = (cx - 1) * 2 - 8
                 local wz = (cz - 1) * 2 - 8
-                crayon.graphics.set_color(0.8, 0.8, 0.85, 1.0)
-                crayon.graphics.draw_cube(wx, 1.0, wz, 2.0, 2.0, 2.0, textures.brick)
+                crayon.graphics.setColor(0.8, 0.8, 0.85, 1.0)
+                crayon.graphics.drawCube(wx, 1.0, wz, 2.0, 2.0, 2.0, textures.brick, 0, 0, 0)
             end
         end
     end
 
     -- 3. Animated Floating Coin Pickups
+    -- drawBillboard(x, y, z, w, h, tex, mode, u0, v0, u1, v1)
     for _, c in ipairs(coins) do
         if c.active then
             local float_y = 0.7 + math.sin(timer * 4.0) * 0.1
-            crayon.graphics.set_color(1.0, 0.95, 0.3, 1.0)
-            crayon.graphics.draw_billboard(c.x, float_y, c.z, 0.8, 0.8, textures.coin, "spherical")
+            crayon.graphics.setColor(1.0, 0.95, 0.3, 1.0)
+            crayon.graphics.drawBillboard(c.x, float_y, c.z, 0.8, 0.8, textures.coin, "spherical")
         end
     end
 
@@ -222,29 +225,29 @@ function crayon.draw()
     -- ========================================================================
     -- Crosshair
     local cx, cy = 160, 120
-    crayon.graphics.set_color(1.0, 1.0, 1.0, 0.7)
-    crayon.graphics.draw_line(cx - 5, cy, cx + 5, cy, 1.0)
-    crayon.graphics.draw_line(cx, cy - 5, cx, cy + 5, 1.0)
+    crayon.graphics.setColor(1.0, 1.0, 1.0, 0.7)
+    crayon.graphics.drawLine(cx - 5, cy, cx + 5, cy, 1.0)
+    crayon.graphics.drawLine(cx, cy - 5, cx, cy + 5, 1.0)
 
     -- Top Header Panel
-    crayon.graphics.set_color(0.06, 0.08, 0.12, 0.85)
-    crayon.graphics.draw_rect("fill", 4, 4, 312, 22)
-    crayon.graphics.set_color(0.3, 0.5, 0.8, 1.0)
-    crayon.graphics.draw_rect("line", 4, 4, 312, 22)
+    crayon.graphics.setColor(0.06, 0.08, 0.12, 0.85)
+    crayon.graphics.drawRect("fill", 4, 4, 312, 22)
+    crayon.graphics.setColor(0.3, 0.5, 0.8, 1.0)
+    crayon.graphics.drawRect("line", 4, 4, 312, 22)
 
-    crayon.graphics.set_color(1.0, 0.9, 0.3, 1.0)
-    crayon.graphics.draw_text("3D FPS DUNGEON CRAWLER", 8, 10, 1.0)
+    crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
+    crayon.graphics.drawText("3D FPS DUNGEON CRAWLER", 8, 10, 1.0)
 
-    crayon.graphics.set_color(0.4, 1.0, 0.5, 1.0)
-    crayon.graphics.draw_text("SCORE: " .. score, 235, 10, 1.0)
+    crayon.graphics.setColor(0.4, 1.0, 0.5, 1.0)
+    crayon.graphics.drawText("SCORE: " .. score, 235, 10, 1.0)
 
     -- Bottom Controls & Status
-    crayon.graphics.set_color(0.06, 0.08, 0.12, 0.85)
-    crayon.graphics.draw_rect("fill", 4, 218, 312, 18)
-    crayon.graphics.set_color(0.3, 0.5, 0.8, 1.0)
-    crayon.graphics.draw_rect("line", 4, 218, 312, 18)
+    crayon.graphics.setColor(0.06, 0.08, 0.12, 0.85)
+    crayon.graphics.drawRect("fill", 4, 218, 312, 18)
+    crayon.graphics.setColor(0.3, 0.5, 0.8, 1.0)
+    crayon.graphics.drawRect("line", 4, 218, 312, 18)
 
-    crayon.graphics.set_color(0.85, 0.9, 0.95, 1.0)
+    crayon.graphics.setColor(0.85, 0.9, 0.95, 1.0)
     local status = mouse_captured and "Mouse: LOCKED (FPS Look)" or "Mouse: UNLOCKED"
-    crayon.graphics.draw_text(status .. " | [M]: Toggle Lock | [ESC]: Quit", 8, 222, 1.0)
+    crayon.graphics.drawText(status .. " | [M]: Toggle Lock | [ESC]: Quit", 8, 222, 1.0)
 end

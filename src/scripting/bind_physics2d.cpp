@@ -151,24 +151,6 @@ static void register_body2d_metatable(lua_State* L) {
     lua_pushcfunction(L, l_body2d_destroy);
     lua_setfield(L, -2, "destroy");
 
-    // snake_case aliases
-    lua_pushcfunction(L, l_body2d_get_position);
-    lua_setfield(L, -2, "get_position");
-    lua_pushcfunction(L, l_body2d_set_position);
-    lua_setfield(L, -2, "set_position");
-    lua_pushcfunction(L, l_body2d_get_velocity);
-    lua_setfield(L, -2, "get_velocity");
-    lua_pushcfunction(L, l_body2d_set_velocity);
-    lua_setfield(L, -2, "set_velocity");
-    lua_pushcfunction(L, l_body2d_get_angle);
-    lua_setfield(L, -2, "get_angle");
-    lua_pushcfunction(L, l_body2d_set_angle);
-    lua_setfield(L, -2, "set_angle");
-    lua_pushcfunction(L, l_body2d_apply_force);
-    lua_setfield(L, -2, "apply_force");
-    lua_pushcfunction(L, l_body2d_is_valid);
-    lua_setfield(L, -2, "is_valid");
-
     lua_pushcfunction(L, l_body2d_tostring);
     lua_setfield(L, -2, "__tostring");
     lua_pushcfunction(L, l_body2d_gc);
@@ -185,8 +167,6 @@ void register_physics2d_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_physics2d_create_body);
     lua_setfield(L, -2, "createBody");
-    lua_pushcfunction(L, l_physics2d_create_body);
-    lua_setfield(L, -2, "create_body");
 
     lua_setfield(L, -2, "physics2d");
     lua_pop(L, 1);

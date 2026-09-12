@@ -153,22 +153,20 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("Crayon Engine - 3D Jolt Ragdoll Sandbox")
 
-    models.cube = crayon.graphics.loadModel("cube")
-    models.sphere = crayon.graphics.loadModel("sphere")
+    models.cube     = crayon.graphics.loadModel("cube")
+    models.sphere   = crayon.graphics.loadModel("sphere")
     models.cylinder = crayon.graphics.loadModel("cylinder")
-    models.capsule = crayon.graphics.loadModel("capsule")
-    models.plane = crayon.graphics.loadModel("plane")
+    models.capsule  = crayon.graphics.loadModel("capsule")
+    models.plane    = crayon.graphics.loadModel("plane")
 
     textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
     textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
 
     crayon.graphics.setRetroEffects({
-        pixelation = 1,
-        depth_fog = true,
-        lighting = true,
+        jitterResolution = {160, 120},
         affine = 0.8,
         dither = true,
-        fog = { start = 14, ["end"] = 45, color = {0.07, 0.09, 0.14} }
+        fog = { startDist = 14, endDist = 45, color = {0.07, 0.09, 0.14} }
     })
 
     crayon.graphics.setLight(-0.5, -0.8, -0.6, 1.0, 0.95, 0.9, 0.3, 0.3, 0.38)
@@ -334,7 +332,7 @@ function crayon.draw()
     crayon.graphics.drawRect("line", 4, 4, 205, 54)
 
     local total_bodies, active_bodies = crayon.physics3d.getBodyCount()
-    local fps = math.floor(crayon.window.get_fps() + 0.5)
+    local fps = math.floor(crayon.window.getFps() + 0.5)
 
     crayon.graphics.setColor(1.0, 0.85, 0.2, 1.0)
     crayon.graphics.drawText("3D JOLT RAGDOLL SHOWCASE", 8, 8, 1.0)
