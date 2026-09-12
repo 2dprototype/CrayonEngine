@@ -56,7 +56,7 @@ function crayon.update(dt)
     -- Send to the vehicle
 	print(3)
     if car and car:isValid() then
-        -- car:setInputWheeled(throttle, steer, brake, false)
+        car:setInputWheeled(throttle, steer, brake, false)
     end
 	print(4)
 

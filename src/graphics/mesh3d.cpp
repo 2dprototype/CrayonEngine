@@ -16,6 +16,7 @@
 #endif
 
 #include <glm/gtc/matrix_transform.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <cmath>
 
 namespace crayon {
@@ -332,22 +333,24 @@ std::shared_ptr<Mesh3D> Mesh3D::create_sphere(float radius, int rings, int secto
 }
 
 std::shared_ptr<Mesh3D> Mesh3D::create_cylinder(float radius, float height, int sectors) {
+    if (sectors < 3) sectors = 12;
+
     std::vector<Vertex3D> vertices;
     std::vector<GLuint> indices;
 
     float half_h = height * 0.5f;
     float step = (2.0f * 3.14159265f) / sectors;
 
-    // Side vertices
+    // ----------------------------------------------------------------
+    // 1. Side wall (as before)
+    // ----------------------------------------------------------------
     for (int i = 0; i <= sectors; ++i) {
         float angle = i * step;
         float x = std::cos(angle);
         float z = std::sin(angle);
         float u = static_cast<float>(i) / sectors;
 
-        // Top vertex
         vertices.push_back({ {x * radius, half_h, z * radius}, {x, 0.0f, z}, {u, 0.0f}, {1.0f, 1.0f, 1.0f, 1.0f} });
-        // Bottom vertex
         vertices.push_back({ {x * radius, -half_h, z * radius}, {x, 0.0f, z}, {u, 1.0f}, {1.0f, 1.0f, 1.0f, 1.0f} });
     }
 
@@ -364,6 +367,57 @@ std::shared_ptr<Mesh3D> Mesh3D::create_cylinder(float radius, float height, int 
         indices.push_back(i2);
         indices.push_back(i1);
         indices.push_back(i3);
+    }
+
+    // ----------------------------------------------------------------
+    // 2. Top cap (fan around a center vertex, +Y normal)
+    // ----------------------------------------------------------------
+    {
+        glm::vec3 up(0.0f, 1.0f, 0.0f);
+        GLuint center_idx = static_cast<GLuint>(vertices.size());
+        vertices.push_back({ {0.0f, half_h, 0.0f}, up, {0.5f, 0.5f}, {1, 1, 1, 1} });
+
+        for (int i = 0; i <= sectors; ++i) {
+            float angle = i * step;
+            float x = std::cos(angle) * radius;
+            float z = std::sin(angle) * radius;
+            // Map circle to a [0..1] UV square centered on the cap
+            float u = 0.5f + std::cos(angle) * 0.5f;
+            float v = 0.5f + std::sin(angle) * 0.5f;
+            vertices.push_back({ {x, half_h, z}, up, {u, v}, {1, 1, 1, 1} });
+        }
+
+        for (int i = 0; i < sectors; ++i) {
+            // +1 because center vertex was inserted first
+            indices.push_back(center_idx);
+            indices.push_back(center_idx + 1 + i);
+            indices.push_back(center_idx + 1 + (i + 1));
+        }
+    }
+
+    // ----------------------------------------------------------------
+    // 3. Bottom cap (fan around a center vertex, -Y normal, reversed winding)
+    // ----------------------------------------------------------------
+    {
+        glm::vec3 down(0.0f, -1.0f, 0.0f);
+        GLuint center_idx = static_cast<GLuint>(vertices.size());
+        vertices.push_back({ {0.0f, -half_h, 0.0f}, down, {0.5f, 0.5f}, {1, 1, 1, 1} });
+
+        for (int i = 0; i <= sectors; ++i) {
+            float angle = i * step;
+            float x = std::cos(angle) * radius;
+            float z = std::sin(angle) * radius;
+            float u = 0.5f + std::cos(angle) * 0.5f;
+            float v = 0.5f + std::sin(angle) * 0.5f;
+            vertices.push_back({ {x, -half_h, z}, down, {u, v}, {1, 1, 1, 1} });
+        }
+
+        for (int i = 0; i < sectors; ++i) {
+            // Reverse winding for correct front-facing orientation
+            indices.push_back(center_idx);
+            indices.push_back(center_idx + 1 + (i + 1));
+            indices.push_back(center_idx + 1 + i);
+        }
     }
 
     auto mesh = std::make_shared<Mesh3D>();
@@ -615,7 +669,7 @@ bool MeshRenderer3D::init() {
     glGenBuffers(1, &m_dyn_vbo);
     glBindVertexArray(m_dyn_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_dyn_vbo);
-    glBufferData(GL_ARRAY_BUFFER, 4096 * sizeof(Vertex3D), nullptr, GL_DYNAMIC_DRAW);
+    glBufferData(GL_ARRAY_BUFFER, 65536 * sizeof(Vertex3D), nullptr, GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), reinterpret_cast<void*>(offsetof(Vertex3D, position)));
@@ -917,11 +971,199 @@ void MeshRenderer3D::draw_line_3d(const glm::vec3& p1, const glm::vec3& p2, cons
     m_shader->unbind();
 }
 
+void MeshRenderer3D::draw_lines_3d_batched(const Vertex3D* vertices, size_t count) {
+    if (!vertices || count < 2) return;
+
+    m_shader->bind();
+    m_shader->set_mat4("u_model", glm::mat4(1.0f));
+    m_shader->set_mat4("u_view", m_view);
+    m_shader->set_mat4("u_proj", m_proj);
+    m_shader->set_int("u_jitter_enabled", m_retro.jitter_enabled ? 1 : 0);
+    m_shader->set_vec2("u_jitter_res", m_retro.jitter_resolution);
+    m_shader->set_float("u_affine_blend", 0.0f);
+    m_shader->set_int("u_shading_mode", 2);
+    m_shader->set_int("u_fog_enabled", m_retro.fog_enabled ? 1 : 0);
+    m_shader->set_float("u_fog_start", m_retro.fog_start);
+    m_shader->set_float("u_fog_end", m_retro.fog_end);
+    m_shader->set_vec3("u_fog_color", m_retro.fog_color);
+
+    m_shader->set_int("u_texture", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, m_white_texture->get_id());
+
+    glBindVertexArray(m_dyn_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_dyn_vbo);
+
+    size_t offset = 0;
+    while (offset < count) {
+        size_t chunk = std::min(count - offset, size_t(65536));
+        glBufferSubData(GL_ARRAY_BUFFER, 0, chunk * sizeof(Vertex3D), vertices + offset);
+        glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(chunk));
+        offset += chunk;
+    }
+
+    glBindVertexArray(0);
+    m_shader->unbind();
+}
+
+void MeshRenderer3D::begin_line_batch() {
+    m_line_batch.clear();
+}
+
+void MeshRenderer3D::add_line_to_batch(const glm::vec3& p1, const glm::vec3& p2, const glm::vec4& color) {
+    m_line_batch.push_back({ p1, {0, 1, 0}, {0, 0}, color });
+    m_line_batch.push_back({ p2, {0, 1, 0}, {1, 1}, color });
+}
+
+void MeshRenderer3D::batch_wire_box(const glm::vec3& center, const glm::vec3& half_extent, const glm::quat& rot, const glm::vec4& color) {
+    glm::vec3 corners[8] = {
+        rot * glm::vec3(-half_extent.x, -half_extent.y, -half_extent.z) + center,
+        rot * glm::vec3( half_extent.x, -half_extent.y, -half_extent.z) + center,
+        rot * glm::vec3( half_extent.x,  half_extent.y, -half_extent.z) + center,
+        rot * glm::vec3(-half_extent.x,  half_extent.y, -half_extent.z) + center,
+        rot * glm::vec3(-half_extent.x, -half_extent.y,  half_extent.z) + center,
+        rot * glm::vec3( half_extent.x, -half_extent.y,  half_extent.z) + center,
+        rot * glm::vec3( half_extent.x,  half_extent.y,  half_extent.z) + center,
+        rot * glm::vec3(-half_extent.x,  half_extent.y,  half_extent.z) + center
+    };
+
+    // Bottom
+    add_line_to_batch(corners[0], corners[1], color);
+    add_line_to_batch(corners[1], corners[2], color);
+    add_line_to_batch(corners[2], corners[3], color);
+    add_line_to_batch(corners[3], corners[0], color);
+    // Top
+    add_line_to_batch(corners[4], corners[5], color);
+    add_line_to_batch(corners[5], corners[6], color);
+    add_line_to_batch(corners[6], corners[7], color);
+    add_line_to_batch(corners[7], corners[4], color);
+    // Pillars
+    add_line_to_batch(corners[0], corners[4], color);
+    add_line_to_batch(corners[1], corners[5], color);
+    add_line_to_batch(corners[2], corners[6], color);
+    add_line_to_batch(corners[3], corners[7], color);
+}
+
+void MeshRenderer3D::batch_wire_sphere(const glm::vec3& center, float radius, const glm::vec4& color, int rings, int sectors) {
+    if (rings < 4) rings = 8;
+    if (sectors < 4) sectors = 12;
+
+    float step = 6.2831853f / sectors;
+    // 3 orthogonal main circles
+    for (int i = 0; i < sectors; ++i) {
+        float a1 = i * step;
+        float a2 = (i + 1) * step;
+
+        // XY circle
+        add_line_to_batch(center + glm::vec3(std::cos(a1) * radius, std::sin(a1) * radius, 0.0f),
+                          center + glm::vec3(std::cos(a2) * radius, std::sin(a2) * radius, 0.0f), color);
+        // XZ circle
+        add_line_to_batch(center + glm::vec3(std::cos(a1) * radius, 0.0f, std::sin(a1) * radius),
+                          center + glm::vec3(std::cos(a2) * radius, 0.0f, std::sin(a2) * radius), color);
+        // YZ circle
+        add_line_to_batch(center + glm::vec3(0.0f, std::cos(a1) * radius, std::sin(a1) * radius),
+                          center + glm::vec3(0.0f, std::cos(a2) * radius, std::sin(a2) * radius), color);
+    }
+}
+
+void MeshRenderer3D::batch_wire_capsule(const glm::vec3& center, float radius, float half_height, const glm::quat& rot, const glm::vec4& color, int segments) {
+    if (segments < 6) segments = 12;
+    float step = 6.2831853f / segments;
+
+    glm::vec3 top_cap = rot * glm::vec3(0.0f, half_height, 0.0f) + center;
+    glm::vec3 bot_cap = rot * glm::vec3(0.0f, -half_height, 0.0f) + center;
+
+    // Rings around cylinder ends
+    for (int i = 0; i < segments; ++i) {
+        float a1 = i * step;
+        float a2 = (i + 1) * step;
+
+        glm::vec3 p1 = rot * glm::vec3(std::cos(a1) * radius, half_height, std::sin(a1) * radius) + center;
+        glm::vec3 p2 = rot * glm::vec3(std::cos(a2) * radius, half_height, std::sin(a2) * radius) + center;
+        add_line_to_batch(p1, p2, color);
+
+        glm::vec3 b1 = rot * glm::vec3(std::cos(a1) * radius, -half_height, std::sin(a1) * radius) + center;
+        glm::vec3 b2 = rot * glm::vec3(std::cos(a2) * radius, -half_height, std::sin(a2) * radius) + center;
+        add_line_to_batch(b1, b2, color);
+    }
+
+    // 4 vertical side lines
+    glm::vec3 sides[4] = { {radius, 0, 0}, {-radius, 0, 0}, {0, 0, radius}, {0, 0, -radius} };
+    for (int i = 0; i < 4; ++i) {
+        glm::vec3 s_top = rot * (sides[i] + glm::vec3(0, half_height, 0)) + center;
+        glm::vec3 s_bot = rot * (sides[i] - glm::vec3(0, half_height, 0)) + center;
+        add_line_to_batch(s_top, s_bot, color);
+    }
+
+    // Hemisphere arcs
+    int half_segs = segments / 2;
+    float half_step = 3.14159265f / half_segs;
+    for (int i = 0; i < half_segs; ++i) {
+        float a1 = i * half_step;
+        float a2 = (i + 1) * half_step;
+
+        // Top cap arcs (XY and ZY)
+        glm::vec3 t1_xy = rot * glm::vec3(std::cos(a1) * radius, half_height + std::sin(a1) * radius, 0.0f) + center;
+        glm::vec3 t2_xy = rot * glm::vec3(std::cos(a2) * radius, half_height + std::sin(a2) * radius, 0.0f) + center;
+        add_line_to_batch(t1_xy, t2_xy, color);
+
+        glm::vec3 t1_zy = rot * glm::vec3(0.0f, half_height + std::sin(a1) * radius, std::cos(a1) * radius) + center;
+        glm::vec3 t2_zy = rot * glm::vec3(0.0f, half_height + std::sin(a2) * radius, std::cos(a2) * radius) + center;
+        add_line_to_batch(t1_zy, t2_zy, color);
+
+        // Bottom cap arcs (XY and ZY)
+        glm::vec3 b1_xy = rot * glm::vec3(std::cos(a1) * radius, -half_height - std::sin(a1) * radius, 0.0f) + center;
+        glm::vec3 b2_xy = rot * glm::vec3(std::cos(a2) * radius, -half_height - std::sin(a2) * radius, 0.0f) + center;
+        add_line_to_batch(b1_xy, b2_xy, color);
+
+        glm::vec3 b1_zy = rot * glm::vec3(0.0f, -half_height - std::sin(a1) * radius, std::cos(a1) * radius) + center;
+        glm::vec3 b2_zy = rot * glm::vec3(0.0f, -half_height - std::sin(a2) * radius, std::cos(a2) * radius) + center;
+        add_line_to_batch(b1_zy, b2_zy, color);
+    }
+}
+
+void MeshRenderer3D::batch_wire_cylinder(const glm::vec3& center, float radius, float half_height, const glm::quat& rot, const glm::vec4& color, int segments) {
+    if (segments < 6) segments = 12;
+    float step = 6.2831853f / segments;
+
+    for (int i = 0; i < segments; ++i) {
+        float a1 = i * step;
+        float a2 = (i + 1) * step;
+
+        glm::vec3 p1 = rot * glm::vec3(std::cos(a1) * radius, half_height, std::sin(a1) * radius) + center;
+        glm::vec3 p2 = rot * glm::vec3(std::cos(a2) * radius, half_height, std::sin(a2) * radius) + center;
+        add_line_to_batch(p1, p2, color);
+
+        glm::vec3 b1 = rot * glm::vec3(std::cos(a1) * radius, -half_height, std::sin(a1) * radius) + center;
+        glm::vec3 b2 = rot * glm::vec3(std::cos(a2) * radius, -half_height, std::sin(a2) * radius) + center;
+        add_line_to_batch(b1, b2, color);
+    }
+
+    // 4 vertical side lines
+    glm::vec3 sides[4] = { {radius, 0, 0}, {-radius, 0, 0}, {0, 0, radius}, {0, 0, -radius} };
+    for (int i = 0; i < 4; ++i) {
+        glm::vec3 s_top = rot * (sides[i] + glm::vec3(0, half_height, 0)) + center;
+        glm::vec3 s_bot = rot * (sides[i] - glm::vec3(0, half_height, 0)) + center;
+        add_line_to_batch(s_top, s_bot, color);
+    }
+}
+
+void MeshRenderer3D::end_line_batch() {
+    if (!m_line_batch.empty()) {
+        draw_lines_3d_batched(m_line_batch.data(), m_line_batch.size());
+        m_line_batch.clear();
+    }
+}
+
 void MeshRenderer3D::draw_lines_3d(const std::vector<glm::vec3>& points, const glm::vec4& color) {
     if (points.size() < 2) return;
+    std::vector<Vertex3D> verts;
+    verts.reserve((points.size() - 1) * 2);
     for (size_t i = 0; i + 1 < points.size(); ++i) {
-        draw_line_3d(points[i], points[i + 1], color);
+        verts.push_back({ points[i], {0, 1, 0}, {0, 0}, color });
+        verts.push_back({ points[i + 1], {0, 1, 0}, {1, 1}, color });
     }
+    draw_lines_3d_batched(verts.data(), verts.size());
 }
 
 void MeshRenderer3D::draw_grid_3d(float size, int divisions, float y_level, const glm::vec4& color) {

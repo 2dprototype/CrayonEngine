@@ -50,6 +50,12 @@
 #include <Jolt/Physics/Vehicle/TrackedVehicleController.h>
 #include <Jolt/Physics/Vehicle/MotorcycleController.h>
 #include <Jolt/Physics/Vehicle/VehicleCollisionTester.h>
+#include <Jolt/Physics/SoftBody/SoftBodyCreationSettings.h>
+#include <Jolt/Physics/SoftBody/SoftBodySharedSettings.h>
+#include <Jolt/Physics/SoftBody/SoftBodyMotionProperties.h>
+#include <Jolt/Physics/SoftBody/SoftBodyShape.h>
+#include <Jolt/Physics/SoftBody/SoftBodyContactListener.h>
+#include <Jolt/Physics/SoftBody/SoftBodyManifold.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 #ifndef GLM_ENABLE_EXPERIMENTAL
@@ -217,6 +223,29 @@ struct PhysicsSystem::Impl {
     std::unordered_map<uint32_t, RagdollRecord> ragdolls;
     uint32_t next_ragdoll_id = 1;
 
+    // Soft Bodies
+    struct SoftBodyRecord {
+        JPH::BodyID body_id;
+        JPH::Ref<JPH::SoftBodySharedSettings> shared_settings;
+        uint32_t vertex_count = 0;
+        uint32_t face_count = 0;
+        uint32_t rod_count = 0;
+        std::vector<glm::mat4> inv_bind_matrices;
+    };
+    std::unordered_map<uint32_t, SoftBodyRecord> soft_bodies;
+    std::unordered_map<uint32_t, uint32_t> body_id_to_soft_body_id;
+    uint32_t next_soft_body_id = 1;
+
+    class SoftBodyContactListenerImpl : public JPH::SoftBodyContactListener {
+    public:
+        virtual JPH::SoftBodyValidateResult OnSoftBodyContactValidate(const JPH::Body&, const JPH::Body&, JPH::SoftBodyContactSettings&) override {
+            return JPH::SoftBodyValidateResult::AcceptContact;
+        }
+        virtual void OnSoftBodyContactAdded(const JPH::Body&, const JPH::SoftBodyManifold&) override {
+        }
+    };
+    SoftBodyContactListenerImpl soft_body_listener;
+
     bool initialized = false;
 };
 
@@ -251,6 +280,7 @@ bool PhysicsSystem::init(const PhysicsConfig& config) {
     );
 
     m_impl->physics_system.SetGravity(JPH::Vec3(config.gravity.x, config.gravity.y, config.gravity.z));
+    m_impl->physics_system.SetSoftBodyContactListener(&m_impl->soft_body_listener);
     m_impl->initialized = true;
 
     CRAYON_LOG_INFO("Jolt Physics 3D System initialized (threads: {})", threads);
@@ -487,6 +517,12 @@ bool PhysicsSystem::destroy_body(uint32_t body_id) {
         bi.RemoveBody(id);
         bi.DestroyBody(id);
         m_impl->alive_bodies.erase(body_id);
+
+        if (m_impl->body_id_to_soft_body_id.count(body_id)) {
+            uint32_t sbid = m_impl->body_id_to_soft_body_id[body_id];
+            m_impl->soft_bodies.erase(sbid);
+            m_impl->body_id_to_soft_body_id.erase(body_id);
+        }
         return true;
     }
     return false;
@@ -494,6 +530,10 @@ bool PhysicsSystem::destroy_body(uint32_t body_id) {
 
 void PhysicsSystem::destroy_all_bodies() {
     if (!m_impl || !m_impl->initialized) return;
+
+    // Remove soft bodies tracking
+    m_impl->soft_bodies.clear();
+    m_impl->body_id_to_soft_body_id.clear();
 
     // Remove vehicles
     for (auto& [id, v] : m_impl->vehicles) {
@@ -530,7 +570,7 @@ void PhysicsSystem::destroy_all_bodies() {
     }
     m_impl->constraints.clear();
 
-    // Remove all rigid bodies
+    // Remove all bodies (including soft bodies)
     auto& bi = m_impl->physics_system.GetBodyInterface();
     for (uint32_t raw_id : m_impl->alive_bodies) {
         JPH::BodyID id(raw_id);
@@ -710,122 +750,245 @@ bool PhysicsSystem::raycast(const glm::vec3& origin, const glm::vec3& direction,
     return false;
 }
 
-void PhysicsSystem::draw_debug(MeshRenderer3D& renderer, const glm::vec4& active_color, const glm::vec4& sleeping_color) {
+void PhysicsSystem::draw_debug(MeshRenderer3D& renderer, const glm::vec4& active_color, const glm::vec4& sleeping_color, const PhysicsDebugDrawFlags& flags) {
     if (!m_impl->initialized) return;
 
     auto& bi = m_impl->physics_system.GetBodyInterface();
-    std::vector<glm::vec3> line_points;
-    line_points.reserve(m_impl->alive_bodies.size() * 24);
+    renderer.begin_line_batch();
 
-    for (uint32_t raw_id : m_impl->alive_bodies) {
-        JPH::BodyID id(raw_id);
-        if (!bi.IsAdded(id)) continue;
+    // 1. Draw Rigid Bodies
+    if (flags.draw_shapes || flags.draw_bounding_boxes) {
+        for (uint32_t raw_id : m_impl->alive_bodies) {
+            // If this is a soft body, skip here; we draw soft bodies in their dedicated pass below
+            if (m_impl->body_id_to_soft_body_id.count(raw_id)) continue;
 
-        bool active = bi.IsActive(id);
-        glm::vec4 color = active ? active_color : sleeping_color;
+            JPH::BodyID id(raw_id);
+            if (!bi.IsAdded(id)) continue;
 
-        JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), id);
-        if (!lock.Succeeded()) continue;
-        const JPH::Body& body = lock.GetBody();
-        JPH::AABox aabb = body.GetWorldSpaceBounds();
-        glm::vec3 min(aabb.mMin.GetX(), aabb.mMin.GetY(), aabb.mMin.GetZ());
-        glm::vec3 max(aabb.mMax.GetX(), aabb.mMax.GetY(), aabb.mMax.GetZ());
+            bool active = bi.IsActive(id);
+            glm::vec4 color = active ? active_color : sleeping_color;
 
-        // 8 corners
-        glm::vec3 p0(min.x, min.y, min.z);
-        glm::vec3 p1(max.x, min.y, min.z);
-        glm::vec3 p2(max.x, max.y, min.z);
-        glm::vec3 p3(min.x, max.y, min.z);
-        glm::vec3 p4(min.x, min.y, max.z);
-        glm::vec3 p5(max.x, min.y, max.z);
-        glm::vec3 p6(max.x, max.y, max.z);
-        glm::vec3 p7(min.x, max.y, max.z);
+            JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), id);
+            if (!lock.Succeeded()) continue;
+            const JPH::Body& body = lock.GetBody();
 
-        // 12 edges
-        auto add_line = [&](const glm::vec3& a, const glm::vec3& b) {
-            line_points.push_back(a);
-            line_points.push_back(b);
-        };
+            if (flags.draw_shapes && body.GetShape()) {
+                glm::vec3 pos = to_glm_vec3(body.GetPosition());
+                glm::quat rot = to_glm_quat(body.GetRotation());
 
-        add_line(p0, p1); add_line(p1, p2); add_line(p2, p3); add_line(p3, p0); // bottom
-        add_line(p4, p5); add_line(p5, p6); add_line(p6, p7); add_line(p7, p4); // top
-        add_line(p0, p4); add_line(p1, p5); add_line(p2, p6); add_line(p3, p7); // pillars
+                switch (body.GetShape()->GetSubType()) {
+                    case JPH::EShapeSubType::Box: {
+                        const auto* box = static_cast<const JPH::BoxShape*>(body.GetShape());
+                        renderer.batch_wire_box(pos, to_glm_vec3(box->GetHalfExtent()), rot, color);
+                        break;
+                    }
+                    case JPH::EShapeSubType::Sphere: {
+                        const auto* sp = static_cast<const JPH::SphereShape*>(body.GetShape());
+                        renderer.batch_wire_sphere(pos, sp->GetRadius(), color);
+                        break;
+                    }
+                    case JPH::EShapeSubType::Capsule: {
+                        const auto* cap = static_cast<const JPH::CapsuleShape*>(body.GetShape());
+                        renderer.batch_wire_capsule(pos, cap->GetRadius(), cap->GetHalfHeightOfCylinder(), rot, color);
+                        break;
+                    }
+                    case JPH::EShapeSubType::Cylinder: {
+                        const auto* cyl = static_cast<const JPH::CylinderShape*>(body.GetShape());
+                        renderer.batch_wire_cylinder(pos, cyl->GetRadius(), cyl->GetHalfHeight(), rot, color);
+                        break;
+                    }
+                    default: {
+                        // Fallback to world bounding box
+                        JPH::AABox aabb = body.GetWorldSpaceBounds();
+                        glm::vec3 c = to_glm_vec3(aabb.GetCenter());
+                        glm::vec3 ext = to_glm_vec3(aabb.GetExtent()) * 0.5f;
+                        renderer.batch_wire_box(c, ext, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), color);
+                        break;
+                    }
+                }
+            } else if (flags.draw_bounding_boxes) {
+                JPH::AABox aabb = body.GetWorldSpaceBounds();
+                glm::vec3 c = to_glm_vec3(aabb.GetCenter());
+                glm::vec3 ext = to_glm_vec3(aabb.GetExtent()) * 0.5f;
+                renderer.batch_wire_box(c, ext, glm::quat(1.0f, 0.0f, 0.0f, 0.0f), color);
+            }
 
-        if (!line_points.empty()) {
-            renderer.draw_lines_3d(line_points, color);
-            line_points.clear();
-        }
-    }
-
-    // 2. Draw Characters
-    for (const auto& [id, ch] : m_impl->characters) {
-        if (!ch) continue;
-        JPH::RVec3 cpos;
-        JPH::Quat crot;
-        ch->GetPositionAndRotation(cpos, crot);
-        glm::vec3 pos = to_glm_vec3(cpos);
-        glm::quat q = to_glm_quat(crot);
-        glm::vec3 euler = glm::eulerAngles(q);
-        auto it_h = m_impl->character_half_heights.find(id);
-        auto it_r = m_impl->character_radii.find(id);
-        float rh = (it_h != m_impl->character_half_heights.end()) ? it_h->second : 0.6f;
-        float rr = (it_r != m_impl->character_radii.end()) ? it_r->second : 0.4f;
-        renderer.draw_capsule_wires(pos, rr, rh, glm::vec4(0.3f, 0.8f, 1.0f, 1.0f), euler);
-        if (ch->IsSupported()) {
-            renderer.draw_ray_3d(to_glm_vec3(ch->GetGroundPosition()), to_glm_vec3(ch->GetGroundNormal()), 0.5f, glm::vec4(1.0f, 1.0f, 0.2f, 1.0f));
-        }
-    }
-
-    // 3. Draw Virtual Characters
-    for (const auto& [id, vch] : m_impl->virtual_characters) {
-        if (!vch) continue;
-        JPH::RVec3 cpos = vch->GetPosition();
-        JPH::Quat crot = vch->GetRotation();
-        glm::vec3 pos = to_glm_vec3(cpos);
-        glm::quat q = to_glm_quat(crot);
-        glm::vec3 euler = glm::eulerAngles(q);
-        auto it_h = m_impl->virtual_char_half_heights.find(id);
-        auto it_r = m_impl->virtual_char_radii.find(id);
-        float rh = (it_h != m_impl->virtual_char_half_heights.end()) ? it_h->second : 0.6f;
-        float rr = (it_r != m_impl->virtual_char_radii.end()) ? it_r->second : 0.4f;
-        renderer.draw_capsule_wires(pos, rr, rh, glm::vec4(0.9f, 0.4f, 1.0f, 1.0f), euler);
-        if (vch->IsSupported()) {
-            renderer.draw_ray_3d(to_glm_vec3(vch->GetGroundPosition()), to_glm_vec3(vch->GetGroundNormal()), 0.5f, glm::vec4(1.0f, 1.0f, 0.2f, 1.0f));
-        }
-    }
-
-    // 4. Draw Vehicles
-    for (const auto& [id, v] : m_impl->vehicles) {
-        if (!v.constraint) continue;
-        size_t num_wheels = v.constraint->GetWheels().size();
-        for (size_t w = 0; w < num_wheels; ++w) {
-            JPH::RMat44 wt = v.constraint->GetWheelWorldTransform(static_cast<JPH::uint>(w), JPH::Vec3::sAxisX(), JPH::Vec3::sAxisY());
-            glm::mat4 gwt = to_glm_mat4(wt);
-            glm::vec3 wpos = glm::vec3(gwt[3]);
-            glm::quat wrot = glm::quat_cast(gwt);
-            glm::vec3 weuler = glm::eulerAngles(wrot);
-            float wr = (w < v.wheel_radii.size()) ? v.wheel_radii[w] : 0.3f;
-            float ww = (w < v.wheel_widths.size()) ? v.wheel_widths[w] : 0.15f;
-            renderer.draw_cylinder_wires(wpos, wr, ww * 0.5f, glm::vec4(1.0f, 0.6f, 0.1f, 1.0f), weuler);
-        }
-    }
-
-    // 5. Draw Ragdolls
-    for (const auto& [id, r] : m_impl->ragdolls) {
-        if (!r.ragdoll) continue;
-        std::vector<glm::vec3> joint_positions;
-        std::vector<std::pair<int, int>> connections;
-        size_t body_count = r.ragdoll->GetBodyCount();
-        joint_positions.resize(body_count);
-        for (size_t b = 0; b < body_count; ++b) {
-            JPH::BodyID bid = r.ragdoll->GetBodyID(static_cast<int>(b));
-            joint_positions[b] = to_glm_vec3(bi.GetPosition(bid));
-            if (b < r.parts.size() && r.parts[b].parent_joint_index >= 0 && r.parts[b].parent_joint_index < (int)body_count) {
-                connections.emplace_back(r.parts[b].parent_joint_index, static_cast<int>(b));
+            if (flags.draw_velocities && active) {
+                glm::vec3 pos = to_glm_vec3(body.GetPosition());
+                glm::vec3 vel = to_glm_vec3(body.GetLinearVelocity());
+                renderer.add_line_to_batch(pos, pos + vel * 0.25f, glm::vec4(1.0f, 1.0f, 0.1f, 1.0f));
             }
         }
-        renderer.draw_skeleton_3d(joint_positions, connections, glm::vec4(0.2f, 1.0f, 0.9f, 1.0f));
     }
+
+    // 2. Draw Soft Bodies (Cloth, Soft Balls, Volumetric Jellies, Cosserat Rods)
+    if (flags.draw_soft_bodies) {
+        glm::vec4 edge_color(0.2f, 0.85f, 1.0f, 0.9f);
+        glm::vec4 bend_color(1.0f, 0.35f, 0.85f, 0.7f);
+        glm::vec4 vol_color(0.3f, 1.0f, 0.6f, 0.5f);
+        glm::vec4 lra_color(1.0f, 0.85f, 0.2f, 0.6f);
+        glm::vec4 rod_color(0.1f, 1.0f, 0.3f, 1.0f);
+        glm::vec4 frame_x(1.0f, 0.2f, 0.2f, 0.9f);
+        glm::vec4 frame_y(0.2f, 0.4f, 1.0f, 0.9f);
+
+        for (const auto& [sb_id, rec] : m_impl->soft_bodies) {
+            JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), rec.body_id);
+            if (!lock.Succeeded()) continue;
+            const JPH::Body& body = lock.GetBody();
+            const auto* mp = static_cast<const JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+            if (!mp) continue;
+
+            const auto& verts = mp->GetVertices();
+            const auto* settings = mp->GetSettings();
+            if (!settings) continue;
+
+            // Draw Edge Constraints
+            for (const auto& edge : settings->mEdgeConstraints) {
+                if (edge.mVertex[0] < verts.size() && edge.mVertex[1] < verts.size()) {
+                    renderer.add_line_to_batch(
+                        to_glm_vec3(verts[edge.mVertex[0]].mPosition),
+                        to_glm_vec3(verts[edge.mVertex[1]].mPosition),
+                        edge_color
+                    );
+                }
+            }
+
+            // Draw Dihedral Bend Constraints
+            if (flags.draw_soft_body_constraints) {
+                for (const auto& bend : settings->mDihedralBendConstraints) {
+                    if (bend.mVertex[2] < verts.size() && bend.mVertex[3] < verts.size()) {
+                        renderer.add_line_to_batch(
+                            to_glm_vec3(verts[bend.mVertex[2]].mPosition),
+                            to_glm_vec3(verts[bend.mVertex[3]].mPosition),
+                            bend_color
+                        );
+                    }
+                }
+
+                // Draw Tetrahedron Volume Constraints
+                for (const auto& vol : settings->mVolumeConstraints) {
+                    if (vol.mVertex[0] < verts.size() && vol.mVertex[1] < verts.size() &&
+                        vol.mVertex[2] < verts.size() && vol.mVertex[3] < verts.size()) {
+                        glm::vec3 p0 = to_glm_vec3(verts[vol.mVertex[0]].mPosition);
+                        glm::vec3 p1 = to_glm_vec3(verts[vol.mVertex[1]].mPosition);
+                        glm::vec3 p2 = to_glm_vec3(verts[vol.mVertex[2]].mPosition);
+                        glm::vec3 p3 = to_glm_vec3(verts[vol.mVertex[3]].mPosition);
+                        renderer.add_line_to_batch(p0, p1, vol_color);
+                        renderer.add_line_to_batch(p0, p2, vol_color);
+                        renderer.add_line_to_batch(p0, p3, vol_color);
+                        renderer.add_line_to_batch(p1, p2, vol_color);
+                        renderer.add_line_to_batch(p2, p3, vol_color);
+                        renderer.add_line_to_batch(p3, p1, vol_color);
+                    }
+                }
+
+                // Draw Long Range Attachment (LRA) Tethers
+                for (const auto& lra : settings->mLRAConstraints) {
+                    if (lra.mVertex[0] < verts.size() && lra.mVertex[1] < verts.size()) {
+                        renderer.add_line_to_batch(
+                            to_glm_vec3(verts[lra.mVertex[0]].mPosition),
+                            to_glm_vec3(verts[lra.mVertex[1]].mPosition),
+                            lra_color
+                        );
+                    }
+                }
+            }
+
+            // Draw Cosserat Rods (Stretch-Shear edges and Bishop frame orientation frames)
+            if (flags.draw_soft_body_rods) {
+                for (size_t r = 0; r < settings->mRodStretchShearConstraints.size(); ++r) {
+                    const auto& rod = settings->mRodStretchShearConstraints[r];
+                    if (rod.mVertex[0] < verts.size() && rod.mVertex[1] < verts.size()) {
+                        glm::vec3 p0 = to_glm_vec3(verts[rod.mVertex[0]].mPosition);
+                        glm::vec3 p1 = to_glm_vec3(verts[rod.mVertex[1]].mPosition);
+                        renderer.add_line_to_batch(p0, p1, rod_color);
+
+                        glm::vec3 mid = (p0 + p1) * 0.5f;
+                        glm::quat q = to_glm_quat(mp->GetRodRotation(static_cast<JPH::uint>(r)));
+                        float tick = std::max(0.08f, glm::length(p1 - p0) * 0.35f);
+                        renderer.add_line_to_batch(mid, mid + q * glm::vec3(tick, 0.0f, 0.0f), frame_x);
+                        renderer.add_line_to_batch(mid, mid + q * glm::vec3(0.0f, tick, 0.0f), frame_y);
+                    }
+                }
+            }
+        }
+    }
+
+    // 3. Draw Rigid Body Characters
+    if (flags.draw_characters) {
+        for (const auto& [id, ch] : m_impl->characters) {
+            if (!ch) continue;
+            JPH::RVec3 cpos;
+            JPH::Quat crot;
+            ch->GetPositionAndRotation(cpos, crot);
+            glm::vec3 pos = to_glm_vec3(cpos);
+            glm::quat q = to_glm_quat(crot);
+            auto it_h = m_impl->character_half_heights.find(id);
+            auto it_r = m_impl->character_radii.find(id);
+            float rh = (it_h != m_impl->character_half_heights.end()) ? it_h->second : 0.6f;
+            float rr = (it_r != m_impl->character_radii.end()) ? it_r->second : 0.4f;
+            renderer.batch_wire_capsule(pos, rr, rh, q, glm::vec4(0.3f, 0.8f, 1.0f, 1.0f));
+            if (ch->IsSupported()) {
+                renderer.add_line_to_batch(to_glm_vec3(ch->GetGroundPosition()),
+                                           to_glm_vec3(ch->GetGroundPosition()) + to_glm_vec3(ch->GetGroundNormal()) * 0.5f,
+                                           glm::vec4(1.0f, 1.0f, 0.2f, 1.0f));
+            }
+        }
+    }
+
+    // 4. Draw Virtual Characters
+    if (flags.draw_characters) {
+        for (const auto& [id, vch] : m_impl->virtual_characters) {
+            if (!vch) continue;
+            glm::vec3 pos = to_glm_vec3(vch->GetPosition());
+            glm::quat q = to_glm_quat(vch->GetRotation());
+            auto it_h = m_impl->virtual_char_half_heights.find(id);
+            auto it_r = m_impl->virtual_char_radii.find(id);
+            float rh = (it_h != m_impl->virtual_char_half_heights.end()) ? it_h->second : 0.6f;
+            float rr = (it_r != m_impl->virtual_char_radii.end()) ? it_r->second : 0.4f;
+            renderer.batch_wire_capsule(pos, rr, rh, q, glm::vec4(0.9f, 0.4f, 1.0f, 1.0f));
+            if (vch->IsSupported()) {
+                renderer.add_line_to_batch(to_glm_vec3(vch->GetGroundPosition()),
+                                           to_glm_vec3(vch->GetGroundPosition()) + to_glm_vec3(vch->GetGroundNormal()) * 0.5f,
+                                           glm::vec4(1.0f, 1.0f, 0.2f, 1.0f));
+            }
+        }
+    }
+
+    // 5. Draw Vehicles
+    if (flags.draw_vehicles) {
+        for (const auto& [id, v] : m_impl->vehicles) {
+            if (!v.constraint) continue;
+            size_t num_wheels = v.constraint->GetWheels().size();
+            for (size_t w = 0; w < num_wheels; ++w) {
+                JPH::RMat44 wt = v.constraint->GetWheelWorldTransform(static_cast<JPH::uint>(w), JPH::Vec3::sAxisX(), JPH::Vec3::sAxisY());
+                glm::mat4 gwt = to_glm_mat4(wt);
+                glm::vec3 wpos = glm::vec3(gwt[3]);
+                glm::quat wrot = glm::quat_cast(gwt);
+                float wr = (w < v.wheel_radii.size()) ? v.wheel_radii[w] : 0.3f;
+                float ww = (w < v.wheel_widths.size()) ? v.wheel_widths[w] : 0.15f;
+                renderer.batch_wire_cylinder(wpos, wr, ww * 0.5f, wrot, glm::vec4(1.0f, 0.6f, 0.1f, 1.0f));
+            }
+        }
+    }
+
+    // 6. Draw Ragdolls
+    if (flags.draw_ragdolls) {
+        for (const auto& [id, r] : m_impl->ragdolls) {
+            if (!r.ragdoll) continue;
+            size_t body_count = r.ragdoll->GetBodyCount();
+            std::vector<glm::vec3> joint_positions(body_count);
+            for (size_t b = 0; b < body_count; ++b) {
+                JPH::BodyID bid = r.ragdoll->GetBodyID(static_cast<int>(b));
+                joint_positions[b] = to_glm_vec3(bi.GetPosition(bid));
+                if (b < r.parts.size() && r.parts[b].parent_joint_index >= 0 && r.parts[b].parent_joint_index < (int)body_count) {
+                    renderer.add_line_to_batch(joint_positions[r.parts[b].parent_joint_index], joint_positions[b], glm::vec4(0.2f, 1.0f, 0.9f, 1.0f));
+                }
+            }
+        }
+    }
+
+    renderer.end_line_batch();
 }
 
 uint32_t PhysicsSystem::get_num_bodies() const {
@@ -1930,6 +2093,611 @@ uint32_t PhysicsSystem::ragdoll_get_skeleton_id(uint32_t ragdoll_id) const {
         return it->second.skeleton_id;
     }
     return 0;
+}
+
+// ============================================================================
+// Soft Body Implementation
+// ============================================================================
+
+uint32_t PhysicsSystem::create_soft_body(const SoftBodyConfig& config) {
+    if (!m_impl || !m_impl->initialized) return 0;
+
+    JPH::Ref<JPH::SoftBodySharedSettings> shared_settings = new JPH::SoftBodySharedSettings();
+
+    // 1. Add Vertices
+    shared_settings->mVertices.reserve(config.vertices.size());
+    for (const auto& v : config.vertices) {
+        shared_settings->mVertices.push_back(JPH::SoftBodySharedSettings::Vertex(
+            JPH::Float3(v.position.x, v.position.y, v.position.z),
+            JPH::Float3(v.velocity.x, v.velocity.y, v.velocity.z),
+            v.inv_mass
+        ));
+    }
+
+    // 2. Add Faces
+    for (const auto& f : config.faces) {
+        if (f.v[0] < shared_settings->mVertices.size() &&
+            f.v[1] < shared_settings->mVertices.size() &&
+            f.v[2] < shared_settings->mVertices.size()) {
+            shared_settings->AddFace(JPH::SoftBodySharedSettings::Face(f.v[0], f.v[1], f.v[2], f.material_index));
+        }
+    }
+
+    // 3. Auto-generate constraints if requested
+    if (config.auto_generate_constraints && !shared_settings->mFaces.empty()) {
+        JPH::SoftBodySharedSettings::VertexAttributes attr;
+        attr.mCompliance = config.auto_compliance;
+        attr.mShearCompliance = config.auto_shear_compliance;
+        attr.mBendCompliance = config.auto_bend_compliance;
+        attr.mLRAType = (config.auto_lra_type == SoftBodyLRAType::EuclideanDistance) ? JPH::SoftBodySharedSettings::ELRAType::EuclideanDistance :
+                        (config.auto_lra_type == SoftBodyLRAType::GeodesicDistance)  ? JPH::SoftBodySharedSettings::ELRAType::GeodesicDistance :
+                        JPH::SoftBodySharedSettings::ELRAType::None;
+        attr.mLRAMaxDistanceMultiplier = config.auto_lra_multiplier;
+
+        JPH::SoftBodySharedSettings::EBendType bend_type =
+            (config.auto_bend_type == SoftBodyBendType::Dihedral) ? JPH::SoftBodySharedSettings::EBendType::Dihedral :
+            (config.auto_bend_type == SoftBodyBendType::Distance) ? JPH::SoftBodySharedSettings::EBendType::Distance :
+            JPH::SoftBodySharedSettings::EBendType::None;
+
+        shared_settings->CreateConstraints(&attr, 1, bend_type);
+    }
+
+    // 4. Add Explicit Edge Constraints
+    for (const auto& e : config.edge_constraints) {
+        shared_settings->mEdgeConstraints.push_back(JPH::SoftBodySharedSettings::Edge(e.v[0], e.v[1], e.compliance));
+    }
+
+    // 5. Add Dihedral Bend Constraints
+    for (const auto& b : config.dihedral_bend_constraints) {
+        shared_settings->mDihedralBendConstraints.push_back(JPH::SoftBodySharedSettings::DihedralBend(b.v[0], b.v[1], b.v[2], b.v[3], b.compliance));
+    }
+
+    // 6. Add Tetrahedron Volume Constraints
+    for (const auto& vol : config.volume_constraints) {
+        shared_settings->mVolumeConstraints.push_back(JPH::SoftBodySharedSettings::Volume(vol.v[0], vol.v[1], vol.v[2], vol.v[3], vol.compliance));
+    }
+
+    // 7. Add Long Range Attachment (LRA) Constraints (Tethers)
+    for (const auto& lra : config.lra_constraints) {
+        shared_settings->mLRAConstraints.push_back(JPH::SoftBodySharedSettings::LRA(lra.kinematic_v, lra.dynamic_v, lra.max_distance));
+    }
+
+    // 8. Add Skinned Vertex Constraints
+    for (const auto& sk : config.skinned_constraints) {
+        JPH::SoftBodySharedSettings::Skinned skinned(sk.vertex, sk.max_distance, sk.backstop_distance, sk.backstop_radius);
+        for (size_t w = 0; w < sk.weights.size() && w < JPH::SoftBodySharedSettings::Skinned::cMaxSkinWeights; ++w) {
+            skinned.mWeights[w] = JPH::SoftBodySharedSettings::SkinWeight(sk.weights[w].joint_index, sk.weights[w].weight);
+        }
+        skinned.NormalizeWeights();
+        shared_settings->mSkinnedConstraints.push_back(skinned);
+    }
+
+    // 9. Add Cosserat Rods (Stretch-Shear and Bend-Twist)
+    for (const auto& r : config.rod_stretch_shear_constraints) {
+        shared_settings->mRodStretchShearConstraints.push_back(JPH::SoftBodySharedSettings::RodStretchShear(r.v[0], r.v[1], r.compliance));
+    }
+    for (const auto& r : config.rod_bend_twist_constraints) {
+        shared_settings->mRodBendTwistConstraints.push_back(JPH::SoftBodySharedSettings::RodBendTwist(r.rod[0], r.rod[1], r.compliance));
+    }
+
+    // 10. Calculate properties for any manually added constraints
+    if (!config.auto_generate_constraints) {
+        if (!shared_settings->mEdgeConstraints.empty()) shared_settings->CalculateEdgeLengths();
+        if (!shared_settings->mRodStretchShearConstraints.empty()) shared_settings->CalculateRodProperties();
+        if (!shared_settings->mLRAConstraints.empty()) shared_settings->CalculateLRALengths(config.auto_lra_multiplier);
+        if (!shared_settings->mDihedralBendConstraints.empty()) shared_settings->CalculateBendConstraintConstants();
+        if (!shared_settings->mVolumeConstraints.empty()) shared_settings->CalculateVolumeConstraintVolumes();
+        if (!shared_settings->mSkinnedConstraints.empty()) shared_settings->CalculateSkinnedConstraintNormals();
+    }
+
+    // Optimize constraints for parallel XPBD solving
+    shared_settings->Optimize();
+
+    // 11. Create Jolt Soft Body
+    JPH::SoftBodyCreationSettings sb_settings(
+        shared_settings,
+        to_jolt_rvec3(config.position),
+        to_jolt_quat(config.rotation),
+        Layers::MOVING
+    );
+    sb_settings.mPressure = config.pressure;
+    sb_settings.mVertexRadius = config.vertex_radius;
+    sb_settings.mLinearDamping = config.linear_damping;
+    sb_settings.mMaxLinearVelocity = config.max_linear_velocity;
+    sb_settings.mFriction = config.friction;
+    sb_settings.mRestitution = config.restitution;
+    sb_settings.mGravityFactor = config.gravity_factor;
+    sb_settings.mNumIterations = config.num_iterations;
+    sb_settings.mUpdatePosition = config.update_position;
+    sb_settings.mMakeRotationIdentity = config.make_rotation_identity;
+    sb_settings.mAllowSleeping = config.allow_sleeping;
+    sb_settings.mFacesDoubleSided = config.faces_double_sided;
+
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    JPH::Body* body = bi.CreateSoftBody(sb_settings);
+    if (!body) {
+        CRAYON_LOG_ERROR("Failed to create SoftBody in Jolt");
+        return 0;
+    }
+
+    JPH::BodyID body_id = body->GetID();
+    bi.AddBody(body_id, JPH::EActivation::Activate);
+
+    uint32_t raw_id = body_id.GetIndexAndSequenceNumber();
+    m_impl->alive_bodies.insert(raw_id);
+
+    uint32_t sb_id = m_impl->next_soft_body_id++;
+    Impl::SoftBodyRecord rec;
+    rec.body_id = body_id;
+    rec.shared_settings = shared_settings;
+    rec.vertex_count = static_cast<uint32_t>(shared_settings->mVertices.size());
+    rec.face_count = static_cast<uint32_t>(shared_settings->mFaces.size());
+    rec.rod_count = static_cast<uint32_t>(shared_settings->mRodStretchShearConstraints.size());
+    m_impl->soft_bodies[sb_id] = rec;
+    m_impl->body_id_to_soft_body_id[raw_id] = sb_id;
+
+    return sb_id;
+}
+
+uint32_t PhysicsSystem::create_soft_body_cloth(const glm::vec3& origin, float width, float height, int segments_x, int segments_y, float compliance, float bend_compliance, bool pin_top_corners, bool add_lra) {
+    if (segments_x < 2) segments_x = 2;
+    if (segments_y < 2) segments_y = 2;
+
+    SoftBodyConfig config;
+    config.position = origin;
+    config.auto_generate_constraints = true;
+    config.auto_bend_type = (bend_compliance >= 0.0f) ? SoftBodyBendType::Dihedral : SoftBodyBendType::None;
+    config.auto_compliance = compliance;
+    config.auto_bend_compliance = (bend_compliance >= 0.0f) ? bend_compliance : 1e30f;
+    config.auto_shear_compliance = compliance;
+    config.auto_lra_type = add_lra ? SoftBodyLRAType::EuclideanDistance : SoftBodyLRAType::None;
+    config.faces_double_sided = true;
+
+    float dx = width / (segments_x - 1);
+    float dy = height / (segments_y - 1);
+
+    config.vertices.resize(segments_x * segments_y);
+    for (int y = 0; y < segments_y; ++y) {
+        for (int x = 0; x < segments_x; ++x) {
+            int idx = y * segments_x + x;
+            config.vertices[idx].position = glm::vec3(x * dx - width * 0.5f, -y * dy, 0.0f);
+            config.vertices[idx].velocity = glm::vec3(0.0f);
+            if (y == 0 && (pin_top_corners ? (x == 0 || x == segments_x - 1) : true)) {
+                config.vertices[idx].inv_mass = 0.0f; // Kinematic anchor
+            } else {
+                config.vertices[idx].inv_mass = 1.0f;
+            }
+        }
+    }
+
+    for (int y = 0; y < segments_y - 1; ++y) {
+        for (int x = 0; x < segments_x - 1; ++x) {
+            uint32_t v0 = y * segments_x + x;
+            uint32_t v1 = y * segments_x + (x + 1);
+            uint32_t v2 = (y + 1) * segments_x + x;
+            uint32_t v3 = (y + 1) * segments_x + (x + 1);
+
+            config.faces.push_back({ {v0, v2, v1}, 0 });
+            config.faces.push_back({ {v1, v2, v3}, 0 });
+        }
+    }
+
+    return create_soft_body(config);
+}
+
+uint32_t PhysicsSystem::create_soft_body_cube(const glm::vec3& origin, float size, int grid_size, float compliance, float pressure) {
+    if (grid_size < 2) grid_size = 2;
+    float spacing = size / (grid_size - 1);
+    JPH::Ref<JPH::SoftBodySharedSettings> shared_settings = JPH::SoftBodySharedSettings::sCreateCube(static_cast<JPH::uint>(grid_size), spacing);
+
+    if (compliance > 0.0f) {
+        for (auto& e : shared_settings->mEdgeConstraints) e.mCompliance = compliance;
+        for (auto& v : shared_settings->mVolumeConstraints) v.mCompliance = compliance;
+    }
+    shared_settings->Optimize();
+
+    JPH::SoftBodyCreationSettings sb_settings(
+        shared_settings,
+        to_jolt_rvec3(origin),
+        JPH::Quat::sIdentity(),
+        Layers::MOVING
+    );
+    sb_settings.mPressure = pressure;
+    sb_settings.mFriction = 0.5f;
+    sb_settings.mRestitution = 0.3f;
+    sb_settings.mNumIterations = 6;
+
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    JPH::Body* body = bi.CreateSoftBody(sb_settings);
+    if (!body) return 0;
+    JPH::BodyID body_id = body->GetID();
+    bi.AddBody(body_id, JPH::EActivation::Activate);
+
+    uint32_t raw_id = body_id.GetIndexAndSequenceNumber();
+    m_impl->alive_bodies.insert(raw_id);
+
+    uint32_t sb_id = m_impl->next_soft_body_id++;
+    Impl::SoftBodyRecord rec;
+    rec.body_id = body_id;
+    rec.shared_settings = shared_settings;
+    rec.vertex_count = static_cast<uint32_t>(shared_settings->mVertices.size());
+    rec.face_count = static_cast<uint32_t>(shared_settings->mFaces.size());
+    rec.rod_count = 0;
+    m_impl->soft_bodies[sb_id] = rec;
+    m_impl->body_id_to_soft_body_id[raw_id] = sb_id;
+    return sb_id;
+}
+
+uint32_t PhysicsSystem::create_soft_body_sphere(const glm::vec3& origin, float radius, int rings, int sectors, float compliance, float pressure) {
+    if (rings < 4) rings = 8;
+    if (sectors < 4) sectors = 12;
+
+    SoftBodyConfig config;
+    config.position = origin;
+    config.pressure = pressure;
+    config.auto_generate_constraints = true;
+    config.auto_bend_type = SoftBodyBendType::Dihedral;
+    config.auto_compliance = compliance;
+    config.auto_shear_compliance = compliance;
+    config.auto_bend_compliance = (compliance > 0.0f) ? compliance : 0.001f;
+    config.faces_double_sided = true;
+
+    for (int r = 0; r <= rings; ++r) {
+        float phi = 3.14159265f * float(r) / float(rings);
+        float y = radius * std::cos(phi);
+        float r_sin = radius * std::sin(phi);
+
+        for (int s = 0; s <= sectors; ++s) {
+            float theta = 2.0f * 3.14159265f * float(s) / float(sectors);
+            float x = r_sin * std::cos(theta);
+            float z = r_sin * std::sin(theta);
+            config.vertices.push_back({ glm::vec3(x, y, z), glm::vec3(0.0f), 1.0f });
+        }
+    }
+
+    for (int r = 0; r < rings; ++r) {
+        for (int s = 0; s < sectors; ++s) {
+            uint32_t cur = r * (sectors + 1) + s;
+            uint32_t next = cur + sectors + 1;
+            config.faces.push_back({ {cur, next, cur + 1}, 0 });
+            config.faces.push_back({ {cur + 1, next, next + 1}, 0 });
+        }
+    }
+
+    return create_soft_body(config);
+}
+
+uint32_t PhysicsSystem::create_soft_body_rod(const std::vector<glm::vec3>& points, float stretch_compliance, float bend_twist_compliance, bool pin_root) {
+    if (points.size() < 2) return 0;
+
+    SoftBodyConfig config;
+    config.position = glm::vec3(0.0f);
+    config.vertices.resize(points.size());
+    for (size_t i = 0; i < points.size(); ++i) {
+        config.vertices[i].position = points[i];
+        config.vertices[i].velocity = glm::vec3(0.0f);
+        config.vertices[i].inv_mass = (pin_root && i == 0) ? 0.0f : 1.0f;
+    }
+
+    size_t num_rods = points.size() - 1;
+    for (size_t i = 0; i < num_rods; ++i) {
+        config.rod_stretch_shear_constraints.push_back({ {static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1)}, stretch_compliance });
+    }
+    for (size_t i = 0; i + 1 < num_rods; ++i) {
+        config.rod_bend_twist_constraints.push_back({ {static_cast<uint32_t>(i), static_cast<uint32_t>(i + 1)}, bend_twist_compliance });
+    }
+
+    return create_soft_body(config);
+}
+
+bool PhysicsSystem::destroy_soft_body(uint32_t id) {
+    if (!m_impl->initialized) return false;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return false;
+
+    JPH::BodyID body_id = it->second.body_id;
+    uint32_t raw_id = body_id.GetIndexAndSequenceNumber();
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    if (bi.IsAdded(body_id)) {
+        bi.RemoveBody(body_id);
+        bi.DestroyBody(body_id);
+    }
+    m_impl->alive_bodies.erase(raw_id);
+    m_impl->body_id_to_soft_body_id.erase(raw_id);
+    m_impl->soft_bodies.erase(it);
+    return true;
+}
+
+bool PhysicsSystem::is_soft_body(uint32_t id) const {
+    if (!m_impl->initialized) return false;
+    return m_impl->soft_bodies.count(id) > 0;
+}
+
+uint32_t PhysicsSystem::get_soft_body_vertex_count(uint32_t id) const {
+    if (!m_impl->initialized) return 0;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return 0;
+    return it->second.vertex_count;
+}
+
+glm::vec3 PhysicsSystem::get_soft_body_vertex_position(uint32_t id, uint32_t v_idx) const {
+    if (!m_impl->initialized) return glm::vec3(0.0f);
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return glm::vec3(0.0f);
+
+    JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return glm::vec3(0.0f);
+    const JPH::Body& body = lock.GetBody();
+    const auto* mp = static_cast<const JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp || v_idx >= mp->GetVertices().size()) return glm::vec3(0.0f);
+
+    JPH::RMat44 com = body.GetCenterOfMassTransform();
+    JPH::RVec3 world_pos = com * mp->GetVertex(v_idx).mPosition;
+    return to_glm_vec3(world_pos);
+}
+
+void PhysicsSystem::set_soft_body_vertex_position(uint32_t id, uint32_t v_idx, const glm::vec3& pos) {
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return;
+    JPH::Body& body = lock.GetBody();
+    auto* mp = static_cast<JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp || v_idx >= mp->GetVertices().size()) return;
+
+    JPH::RVec3 local_pos = body.GetInverseCenterOfMassTransform() * to_jolt_rvec3(pos);
+    mp->GetVertex(v_idx).mPosition = JPH::Vec3(local_pos);
+    mp->GetVertex(v_idx).mPreviousPosition = mp->GetVertex(v_idx).mPosition;
+}
+
+glm::vec3 PhysicsSystem::get_soft_body_vertex_velocity(uint32_t id, uint32_t v_idx) const {
+    if (!m_impl->initialized) return glm::vec3(0.0f);
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return glm::vec3(0.0f);
+
+    JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return glm::vec3(0.0f);
+    const JPH::Body& body = lock.GetBody();
+    const auto* mp = static_cast<const JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp || v_idx >= mp->GetVertices().size()) return glm::vec3(0.0f);
+
+    JPH::RMat44 com = body.GetCenterOfMassTransform();
+    return to_glm_vec3(com.Multiply3x3(mp->GetVertex(v_idx).mVelocity));
+}
+
+void PhysicsSystem::set_soft_body_vertex_velocity(uint32_t id, uint32_t v_idx, const glm::vec3& vel) {
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return;
+    JPH::Body& body = lock.GetBody();
+    auto* mp = static_cast<JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp || v_idx >= mp->GetVertices().size()) return;
+
+    mp->GetVertex(v_idx).mVelocity = body.GetInverseCenterOfMassTransform().Multiply3x3(to_jolt_vec3(vel));
+}
+
+float PhysicsSystem::get_soft_body_vertex_inv_mass(uint32_t id, uint32_t v_idx) const {
+    if (!m_impl->initialized) return 0.0f;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return 0.0f;
+
+    JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return 0.0f;
+    const JPH::Body& body = lock.GetBody();
+    const auto* mp = static_cast<const JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp || v_idx >= mp->GetVertices().size()) return 0.0f;
+    return mp->GetVertex(v_idx).mInvMass;
+}
+
+void PhysicsSystem::set_soft_body_vertex_inv_mass(uint32_t id, uint32_t v_idx, float inv_mass) {
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return;
+    JPH::Body& body = lock.GetBody();
+    auto* mp = static_cast<JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp || v_idx >= mp->GetVertices().size()) return;
+    mp->GetVertex(v_idx).mInvMass = inv_mass;
+}
+
+void PhysicsSystem::get_soft_body_vertices(uint32_t id, std::vector<glm::vec3>& out_positions) const {
+    out_positions.clear();
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+
+    JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return;
+    const JPH::Body& body = lock.GetBody();
+    const auto* mp = static_cast<const JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp) return;
+
+    const auto& verts = mp->GetVertices();
+    out_positions.resize(verts.size());
+    JPH::RMat44 com = body.GetCenterOfMassTransform();
+    for (size_t i = 0; i < verts.size(); ++i) {
+        out_positions[i] = to_glm_vec3(com * verts[i].mPosition);
+    }
+}
+
+void PhysicsSystem::get_soft_body_faces(uint32_t id, std::vector<uint32_t>& out_indices) const {
+    out_indices.clear();
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end() || !it->second.shared_settings) return;
+
+    const auto& faces = it->second.shared_settings->mFaces;
+    out_indices.reserve(faces.size() * 3);
+    for (const auto& f : faces) {
+        out_indices.push_back(f.mVertex[0]);
+        out_indices.push_back(f.mVertex[1]);
+        out_indices.push_back(f.mVertex[2]);
+    }
+}
+
+void PhysicsSystem::set_soft_body_pressure(uint32_t id, float pressure) {
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return;
+    JPH::Body& body = lock.GetBody();
+    auto* mp = static_cast<JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (mp) mp->SetPressure(pressure);
+}
+
+float PhysicsSystem::get_soft_body_pressure(uint32_t id) const {
+    if (!m_impl->initialized) return 0.0f;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return 0.0f;
+
+    JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return 0.0f;
+    const JPH::Body& body = lock.GetBody();
+    const auto* mp = static_cast<const JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    return mp ? mp->GetPressure() : 0.0f;
+}
+
+void PhysicsSystem::set_soft_body_num_iterations(uint32_t id, uint32_t iters) {
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return;
+    JPH::Body& body = lock.GetBody();
+    auto* mp = static_cast<JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (mp) mp->SetNumIterations(iters);
+}
+
+uint32_t PhysicsSystem::get_soft_body_num_iterations(uint32_t id) const {
+    if (!m_impl->initialized) return 0;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return 0;
+
+    JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return 0;
+    const JPH::Body& body = lock.GetBody();
+    const auto* mp = static_cast<const JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    return mp ? mp->GetNumIterations() : 0;
+}
+
+float PhysicsSystem::get_soft_body_volume(uint32_t id) const {
+    if (!m_impl->initialized) return 0.0f;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return 0.0f;
+
+    JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return 0.0f;
+    const JPH::Body& body = lock.GetBody();
+    const auto* mp = static_cast<const JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    return mp ? mp->GetVolume() : 0.0f;
+}
+
+void PhysicsSystem::add_soft_body_impulse_to_vertex(uint32_t id, uint32_t v_idx, const glm::vec3& impulse) {
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return;
+    JPH::Body& body = lock.GetBody();
+    auto* mp = static_cast<JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp || v_idx >= mp->GetVertices().size()) return;
+
+    auto& vert = mp->GetVertex(v_idx);
+    if (vert.mInvMass > 0.0f) {
+        JPH::Vec3 local_impulse = body.GetInverseCenterOfMassTransform().Multiply3x3(to_jolt_vec3(impulse));
+        vert.mVelocity += local_impulse * vert.mInvMass;
+    }
+}
+
+void PhysicsSystem::add_soft_body_force_to_vertex(uint32_t id, uint32_t v_idx, const glm::vec3& force) {
+    // F * dt will be handled by setting velocity delta or continuous impulse
+    add_soft_body_impulse_to_vertex(id, v_idx, force * (1.0f / 60.0f));
+}
+
+void PhysicsSystem::skin_soft_body_vertices(uint32_t id, const std::vector<glm::mat4>& joint_matrices, bool hard_skin) {
+    if (!m_impl->initialized || joint_matrices.empty()) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return;
+    JPH::Body& body = lock.GetBody();
+    auto* mp = static_cast<JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp) return;
+
+    std::vector<JPH::Mat44> jph_mats(joint_matrices.size());
+    for (size_t i = 0; i < joint_matrices.size(); ++i) {
+        jph_mats[i] = to_jolt_mat4(joint_matrices[i]);
+    }
+    mp->SkinVertices(body.GetCenterOfMassTransform(), jph_mats.data(), static_cast<JPH::uint>(jph_mats.size()), hard_skin, *m_impl->temp_allocator);
+}
+
+void PhysicsSystem::set_soft_body_skinned_max_distance_multiplier(uint32_t id, float multiplier) {
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return;
+    JPH::Body& body = lock.GetBody();
+    auto* mp = static_cast<JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (mp) mp->SetSkinnedMaxDistanceMultiplier(multiplier);
+}
+
+bool PhysicsSystem::get_soft_body_rod_transform(uint32_t id, uint32_t rod_idx, glm::vec3& out_pos, glm::quat& out_rot) const {
+    if (!m_impl->initialized) return false;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end() || !it->second.shared_settings) return false;
+    if (rod_idx >= it->second.rod_count) return false;
+
+    JPH::BodyLockRead lock(m_impl->physics_system.GetBodyLockInterface(), it->second.body_id);
+    if (!lock.Succeeded()) return false;
+    const JPH::Body& body = lock.GetBody();
+    const auto* mp = static_cast<const JPH::SoftBodyMotionProperties*>(body.GetMotionProperties());
+    if (!mp) return false;
+
+    const auto& verts = mp->GetVertices();
+    const auto& rod = it->second.shared_settings->mRodStretchShearConstraints[rod_idx];
+    if (rod.mVertex[0] >= verts.size() || rod.mVertex[1] >= verts.size()) return false;
+
+    JPH::RMat44 com = body.GetCenterOfMassTransform();
+    glm::vec3 p0 = to_glm_vec3(com * verts[rod.mVertex[0]].mPosition);
+    glm::vec3 p1 = to_glm_vec3(com * verts[rod.mVertex[1]].mPosition);
+    out_pos = (p0 + p1) * 0.5f;
+    out_rot = to_glm_quat(mp->GetRodRotation(static_cast<JPH::uint>(rod_idx)));
+    return true;
+}
+
+uint32_t PhysicsSystem::soft_body_get_body_id(uint32_t id) const {
+    if (!m_impl->initialized) return 0;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return 0;
+    return it->second.body_id.GetIndexAndSequenceNumber();
+}
+
+void PhysicsSystem::activate_soft_body(uint32_t id) {
+    if (!m_impl->initialized) return;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return;
+    m_impl->physics_system.GetBodyInterface().ActivateBody(it->second.body_id);
+}
+
+bool PhysicsSystem::is_soft_body_active(uint32_t id) const {
+    if (!m_impl->initialized) return false;
+    auto it = m_impl->soft_bodies.find(id);
+    if (it == m_impl->soft_bodies.end()) return false;
+    return m_impl->physics_system.GetBodyInterface().IsActive(it->second.body_id);
 }
 
 } // namespace crayon

@@ -16,6 +16,9 @@ local demo_list = {
     { key = "X", title = "11: 3D Jolt Physics Sandbox",           file = "game/examples/11_3d_physics_sandbox.lua", desc = "Rigid bodies, stacking, cannonball shooting, impulses, raycast" },
     { key = "C", title = "12: 3D Jolt Ragdoll Showcase",          file = "game/examples/12_3d_ragdoll_sandbox.lua", desc = "Articulated humanoids, stairs tumbling, joint constraints, zero-G" },
     { key = "V", title = "13: Transparent Screenpet & Full Input", file = "game/examples/14_transparent_screenpet_and_input.lua", desc = "Transparent window, drag window, text typing, clipboard, gradients" },
+    { key = "B", title = "14: 3D Soft Body Cloth Simulation",     file = "game/examples/15_3d_softbody_cloth.lua", desc = "Cloth curtain, wind gusts, LRA tethers, dihedral bends, cannonballs" },
+    { key = "N", title = "15: 3D Soft Ball & Jelly Cubes",        file = "game/examples/16_3d_softbody_ball_and_jelly.lua", desc = "Pressurized ball, tetrahedron volume constraints, rigid collision" },
+    { key = "M", title = "16: 3D Cosserat Rod Plant Simulation",   file = "game/examples/17_3d_softbody_cosserat_rod_plant.lua", desc = "Stretch-shear & bend-twist rod, Bishop frame leaves, wind sway" },
     { key = "P", title = "Featured: Retro 3D World Showcase",     file = "showcase", desc = "Interactive 3D orbit world with matrix hierarchy & coin HUD" }
 }
 
@@ -113,8 +116,20 @@ function crayon.update(dt)
             launch_demo(13)
             return
         end
-        if (crayon.input.isPressed("p")) then
+        if (crayon.input.isPressed("b")) then
             launch_demo(14)
+            return
+        end
+        if (crayon.input.isPressed("n")) then
+            launch_demo(15)
+            return
+        end
+        if (crayon.input.isPressed("m")) then
+            launch_demo(16)
+            return
+        end
+        if (crayon.input.isPressed("p")) then
+            launch_demo(17)
             return
         end
 
@@ -176,44 +191,44 @@ function draw_menu()
     crayon.graphics.drawText("FPS: " .. fps, 265, 8, 1.0)
 
     -- Menu Item List
-    local start_y = 27
-    local item_h = 13
+    local start_y = 26
+    local item_h = 10.5
     for i, item in ipairs(demo_list) do
-        local iy = start_y + (i - 1) * item_h
+        local iy = math.floor(start_y + (i - 1) * item_h)
         local is_selected = (i == selected_idx)
 
         if is_selected then
             -- Highlight bar
             local pulse = math.sin(timer * 8.0) * 0.15 + 0.85
             crayon.graphics.setColor(0.2 * pulse, 0.35 * pulse, 0.7 * pulse, 0.85)
-            crayon.graphics.drawRoundedRect("fill", 6, iy - 1, 308, item_h - 1, 3)
+            crayon.graphics.drawRoundedRect("fill", 6, iy - 1, 308, 10, 2)
             crayon.graphics.setColor(0.5, 0.75, 1.0, 1.0)
-            crayon.graphics.drawRoundedRect("line", 6, iy - 1, 308, item_h - 1, 3)
+            crayon.graphics.drawRoundedRect("line", 6, iy - 1, 308, 10, 2)
 
             -- Cursor arrow
             crayon.graphics.setColor(1.0, 0.9, 0.2, 1.0)
-            crayon.graphics.drawText(">", 10, iy + 1, 1.0)
+            crayon.graphics.drawText(">", 8, iy, 1.0)
 
             crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-            crayon.graphics.drawText("[" .. item.key .. "] " .. item.title, 20, iy + 1, 1.0)
+            crayon.graphics.drawText("[" .. item.key .. "] " .. item.title, 18, iy, 1.0)
         else
             crayon.graphics.setColor(0.7, 0.75, 0.85, 0.9)
-            crayon.graphics.drawText("[" .. item.key .. "] " .. item.title, 20, iy + 1, 1.0)
+            crayon.graphics.drawText("[" .. item.key .. "] " .. item.title, 18, iy, 1.0)
         end
     end
 
     -- Bottom Description Box
     local cur_item = demo_list[selected_idx]
     crayon.graphics.setColor(0.08, 0.1, 0.18, 0.9)
-    crayon.graphics.drawRoundedRect("fill", 6, 210, 308, 26, 3)
+    crayon.graphics.drawRoundedRect("fill", 6, 208, 308, 28, 3)
     crayon.graphics.setColor(0.25, 0.4, 0.7, 1.0)
-    crayon.graphics.drawRoundedRect("line", 6, 210, 308, 26, 3)
+    crayon.graphics.drawRoundedRect("line", 6, 208, 308, 28, 3)
 
     crayon.graphics.setColor(0.4, 0.85, 1.0, 1.0)
-    crayon.graphics.drawText(cur_item.desc, 12, 214, 1.0)
+    crayon.graphics.drawText(cur_item.desc, 10, 211, 1.0)
 
     crayon.graphics.setColor(0.65, 0.7, 0.8, 1.0)
-    crayon.graphics.drawText("[ENTER/SPACE]: Launch | [1-9,0,X,C,V,P]: Quick Jump | [ESC]: Quit", 12, 224, 1.0)
+    crayon.graphics.drawText("[ENTER/SPACE]: Launch | [1-9,0,X,C,V,B,N,M,P]: Jump | [ESC]: Quit", 10, 223, 1.0)
 end
 
 function draw_showcase()

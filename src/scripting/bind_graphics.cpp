@@ -313,9 +313,35 @@ static int l_graphics_set_retro_effects(lua_State* L) {
 }
 
 static int l_graphics_set_camera3d(lua_State* L) {
-    if (!lua_istable(L, 1)) return 0;
-
     auto& cam = Engine::get().get_camera();
+
+    if (!lua_istable(L, 1)) {
+        if (lua_isnumber(L, 1) && lua_isnumber(L, 2) && lua_isnumber(L, 3)) {
+            float x = static_cast<float>(lua_tonumber(L, 1));
+            float y = static_cast<float>(lua_tonumber(L, 2));
+            float z = static_cast<float>(lua_tonumber(L, 3));
+            cam.set_position(glm::vec3(x, y, z));
+
+            int top = lua_gettop(L);
+            if (top >= 5) {
+                float yaw = static_cast<float>(lua_tonumber(L, 4));
+                float pitch = static_cast<float>(lua_tonumber(L, 5));
+                float rad_yaw = glm::radians(yaw);
+                float rad_pitch = glm::radians(pitch);
+                glm::vec3 fwd(
+                    std::cos(rad_pitch) * std::sin(rad_yaw),
+                    std::sin(rad_pitch),
+                    -std::cos(rad_pitch) * std::cos(rad_yaw)
+                );
+                cam.set_target(glm::vec3(x, y, z) + fwd);
+                cam.set_up(glm::vec3(0.0f, 1.0f, 0.0f));
+                if (top >= 6 && lua_isnumber(L, 6)) {
+                    cam.set_fov(static_cast<float>(lua_tonumber(L, 6)));
+                }
+            }
+        }
+        return 0;
+    }
 
     // cam.position = {x, y, z}
     lua_getfield(L, 1, "position");
@@ -1168,6 +1194,10 @@ static int l_graphics_reset_scissor(lua_State* L) {
 }
 
 static int l_graphics_set_camera2d(lua_State* L) {
+    if (lua_gettop(L) == 0 || lua_isnil(L, 1)) {
+        Engine::get().get_batch2d().reset_camera2d();
+        return 0;
+    }
     if (!lua_istable(L, 1)) return 0;
 
     float x = 0.0f, y = 0.0f, zoom = 1.0f, angle = 0.0f, ox = 0.0f, oy = 0.0f;

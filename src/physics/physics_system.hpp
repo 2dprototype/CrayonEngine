@@ -34,6 +34,19 @@ struct PhysicsConfig {
     size_t temp_allocator_size = 8 * 1024 * 1024;
 };
 
+struct PhysicsDebugDrawFlags {
+    bool draw_shapes = true;
+    bool draw_soft_bodies = true;
+    bool draw_soft_body_constraints = true;
+    bool draw_soft_body_rods = true;
+    bool draw_constraints = true;
+    bool draw_characters = true;
+    bool draw_vehicles = true;
+    bool draw_ragdolls = true;
+    bool draw_bounding_boxes = false;
+    bool draw_velocities = false;
+};
+
 class PhysicsSystem {
 public:
     PhysicsSystem();
@@ -113,7 +126,9 @@ public:
     std::vector<uint32_t> overlap_sphere(const glm::vec3& center, float radius);
 
     // Debug visualization
-    void draw_debug(MeshRenderer3D& renderer, const glm::vec4& active_color = glm::vec4(0.2f, 1.0f, 0.4f, 1.0f), const glm::vec4& sleeping_color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f));
+    using PhysicsDebugDrawFlags = crayon::PhysicsDebugDrawFlags;
+
+    void draw_debug(MeshRenderer3D& renderer, const glm::vec4& active_color = glm::vec4(0.2f, 1.0f, 0.4f, 1.0f), const glm::vec4& sleeping_color = glm::vec4(0.5f, 0.5f, 0.5f, 1.0f), const PhysicsDebugDrawFlags& flags = PhysicsDebugDrawFlags{});
 
     // Stats
     uint32_t get_num_bodies() const;
@@ -317,6 +332,150 @@ public:
     uint32_t ragdoll_get_body_id(uint32_t ragdoll_id, int part_idx) const;
     int ragdoll_get_part_count(uint32_t ragdoll_id) const;
     uint32_t ragdoll_get_skeleton_id(uint32_t ragdoll_id) const;
+
+    // ========================================================================
+    // Soft Body Simulation (Cloth, Soft Balls, Volumetric Jellies, Cosserat Rods)
+    // ========================================================================
+    struct SoftBodyVertexConfig {
+        glm::vec3 position{0.0f};
+        glm::vec3 velocity{0.0f};
+        float inv_mass = 1.0f; // 0.0f = kinematic / pinned
+    };
+
+    struct SoftBodyFaceConfig {
+        uint32_t v[3] = {0, 0, 0};
+        uint32_t material_index = 0;
+    };
+
+    struct SoftBodyEdgeConfig {
+        uint32_t v[2] = {0, 0};
+        float compliance = 0.0f; // 0 = rigid spring
+    };
+
+    struct SoftBodyDihedralBendConfig {
+        uint32_t v[4] = {0, 0, 0, 0}; // v0, v1 shared edge; v2, v3 opposing vertices
+        float compliance = 0.0f;
+    };
+
+    struct SoftBodyVolumeConfig {
+        uint32_t v[4] = {0, 0, 0, 0}; // 4 vertices of tetrahedron
+        float compliance = 0.0f;
+    };
+
+    struct SoftBodyLRAConfig {
+        uint32_t kinematic_v = 0;
+        uint32_t dynamic_v = 0;
+        float max_distance = 0.0f; // 0.0 means calculate from rest pose
+    };
+
+    struct SoftBodySkinnedWeightConfig {
+        uint32_t joint_index = 0;
+        float weight = 0.0f;
+    };
+
+    struct SoftBodySkinnedConfig {
+        uint32_t vertex = 0;
+        float max_distance = 1e30f;      // FLT_MAX = disabled, 0 = hard skin
+        float backstop_distance = 1e30f; // distance behind vertex normal
+        float backstop_radius = 40.0f;
+        std::vector<SoftBodySkinnedWeightConfig> weights;
+    };
+
+    struct SoftBodyRodStretchShearConfig {
+        uint32_t v[2] = {0, 0};
+        float compliance = 0.0f;
+    };
+
+    struct SoftBodyRodBendTwistConfig {
+        uint32_t rod[2] = {0, 0};
+        float compliance = 0.0f;
+    };
+
+    enum class SoftBodyBendType {
+        None = 0,
+        Distance = 1,
+        Dihedral = 2
+    };
+
+    enum class SoftBodyLRAType {
+        None = 0,
+        EuclideanDistance = 1,
+        GeodesicDistance = 2
+    };
+
+    struct SoftBodyConfig {
+        glm::vec3 position{0.0f};
+        glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+        std::vector<SoftBodyVertexConfig> vertices;
+        std::vector<SoftBodyFaceConfig> faces;
+        std::vector<SoftBodyEdgeConfig> edge_constraints;
+        std::vector<SoftBodyDihedralBendConfig> dihedral_bend_constraints;
+        std::vector<SoftBodyVolumeConfig> volume_constraints;
+        std::vector<SoftBodyLRAConfig> lra_constraints;
+        std::vector<SoftBodySkinnedConfig> skinned_constraints;
+        std::vector<SoftBodyRodStretchShearConfig> rod_stretch_shear_constraints;
+        std::vector<SoftBodyRodBendTwistConfig> rod_bend_twist_constraints;
+
+        // Dynamics & Material
+        float pressure = 0.0f; // n * R * T ideal gas internal pressure
+        float vertex_radius = 0.0f;
+        float linear_damping = 0.1f;
+        float max_linear_velocity = 500.0f;
+        float friction = 0.2f;
+        float restitution = 0.0f;
+        float gravity_factor = 1.0f;
+        uint32_t num_iterations = 5;
+        bool update_position = true;
+        bool make_rotation_identity = true;
+        bool allow_sleeping = true;
+        bool faces_double_sided = true;
+
+        // Auto constraint generation options
+        bool auto_generate_constraints = false;
+        SoftBodyBendType auto_bend_type = SoftBodyBendType::Distance;
+        SoftBodyLRAType auto_lra_type = SoftBodyLRAType::None;
+        float auto_compliance = 0.0f;
+        float auto_shear_compliance = 0.0f;
+        float auto_bend_compliance = 0.01f;
+        float auto_lra_multiplier = 1.0f;
+    };
+
+    // Soft Body Creation & Management
+    uint32_t create_soft_body(const SoftBodyConfig& config);
+    uint32_t create_soft_body_cloth(const glm::vec3& origin, float width, float height, int segments_x, int segments_y, float compliance = 0.0f, float bend_compliance = 0.01f, bool pin_top_corners = true, bool add_lra = true);
+    uint32_t create_soft_body_cube(const glm::vec3& origin, float size, int grid_size = 3, float compliance = 0.0f, float pressure = 0.0f);
+    uint32_t create_soft_body_sphere(const glm::vec3& origin, float radius, int rings = 8, int sectors = 12, float compliance = 0.0f, float pressure = 500.0f);
+    uint32_t create_soft_body_rod(const std::vector<glm::vec3>& points, float stretch_compliance = 0.0f, float bend_twist_compliance = 0.001f, bool pin_root = true);
+    bool destroy_soft_body(uint32_t id);
+    bool is_soft_body(uint32_t id) const;
+
+    // Soft Body State Queries & Modification
+    uint32_t get_soft_body_vertex_count(uint32_t id) const;
+    glm::vec3 get_soft_body_vertex_position(uint32_t id, uint32_t v_idx) const;
+    void set_soft_body_vertex_position(uint32_t id, uint32_t v_idx, const glm::vec3& pos);
+    glm::vec3 get_soft_body_vertex_velocity(uint32_t id, uint32_t v_idx) const;
+    void set_soft_body_vertex_velocity(uint32_t id, uint32_t v_idx, const glm::vec3& vel);
+    float get_soft_body_vertex_inv_mass(uint32_t id, uint32_t v_idx) const;
+    void set_soft_body_vertex_inv_mass(uint32_t id, uint32_t v_idx, float inv_mass);
+
+    void get_soft_body_vertices(uint32_t id, std::vector<glm::vec3>& out_positions) const;
+    void get_soft_body_faces(uint32_t id, std::vector<uint32_t>& out_indices) const;
+
+    void set_soft_body_pressure(uint32_t id, float pressure);
+    float get_soft_body_pressure(uint32_t id) const;
+    void set_soft_body_num_iterations(uint32_t id, uint32_t iters);
+    uint32_t get_soft_body_num_iterations(uint32_t id) const;
+    float get_soft_body_volume(uint32_t id) const;
+
+    void add_soft_body_impulse_to_vertex(uint32_t id, uint32_t v_idx, const glm::vec3& impulse);
+    void add_soft_body_force_to_vertex(uint32_t id, uint32_t v_idx, const glm::vec3& force);
+
+    void skin_soft_body_vertices(uint32_t id, const std::vector<glm::mat4>& joint_matrices, bool hard_skin = false);
+    void set_soft_body_skinned_max_distance_multiplier(uint32_t id, float multiplier);
+    bool get_soft_body_rod_transform(uint32_t id, uint32_t rod_idx, glm::vec3& out_pos, glm::quat& out_rot) const;
+    uint32_t soft_body_get_body_id(uint32_t id) const;
+    void activate_soft_body(uint32_t id);
+    bool is_soft_body_active(uint32_t id) const;
 
 private:
     struct Impl;

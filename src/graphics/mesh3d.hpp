@@ -5,6 +5,7 @@
 #include <memory>
 #include <stack>
 #include <glm/glm.hpp>
+#include <glm/gtc/quaternion.hpp>
 #include <glad/glad.h>
 #include "shader.hpp"
 #include "camera.hpp"
@@ -122,6 +123,17 @@ public:
     // 3D Immediate Geometry & Lines
     void draw_line_3d(const glm::vec3& p1, const glm::vec3& p2, const glm::vec4& color = glm::vec4(1.0f));
     void draw_lines_3d(const std::vector<glm::vec3>& points, const glm::vec4& color = glm::vec4(1.0f));
+    void draw_lines_3d_batched(const Vertex3D* vertices, size_t count);
+
+    // Fast batch line accumulator for debug renderers
+    void begin_line_batch();
+    void add_line_to_batch(const glm::vec3& p1, const glm::vec3& p2, const glm::vec4& color);
+    void batch_wire_box(const glm::vec3& center, const glm::vec3& half_extent, const glm::quat& rot, const glm::vec4& color);
+    void batch_wire_sphere(const glm::vec3& center, float radius, const glm::vec4& color, int rings = 12, int sectors = 12);
+    void batch_wire_capsule(const glm::vec3& center, float radius, float half_height, const glm::quat& rot, const glm::vec4& color, int segments = 12);
+    void batch_wire_cylinder(const glm::vec3& center, float radius, float half_height, const glm::quat& rot, const glm::vec4& color, int segments = 12);
+    void end_line_batch();
+
     void draw_grid_3d(float size, int divisions, float y_level = 0.0f, const glm::vec4& color = glm::vec4(0.4f, 0.4f, 0.5f, 1.0f));
     void draw_axes_3d(const glm::vec3& pos, float size = 1.0f);
     void draw_cube_wires(const glm::vec3& pos, const glm::vec3& size, const glm::vec4& color = glm::vec4(1.0f), const glm::vec3& rot = glm::vec3(0.0f));
@@ -199,6 +211,7 @@ private:
     // Immediate dynamic buffer for 3D lines, triangles, billboards
     GLuint m_dyn_vao = 0;
     GLuint m_dyn_vbo = 0;
+    std::vector<Vertex3D> m_line_batch;
 };
 
 } // namespace crayon

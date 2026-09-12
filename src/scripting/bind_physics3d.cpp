@@ -61,6 +61,12 @@ struct LuaPhysics3DRagdoll {
     bool valid;
 };
 
+struct LuaPhysics3DSoftBody {
+    uint32_t id;
+    PhysicsSystem* physics;
+    bool valid;
+};
+
 static MotionType parse_motion_type(lua_State* L, int index) {
     if (lua_isstring(L, index)) {
         const char* str = lua_tostring(L, index);
@@ -248,6 +254,24 @@ static void push_ragdoll_userdata(lua_State* L, uint32_t id, PhysicsSystem* phys
     udata->physics = physics;
     udata->valid = true;
     luaL_getmetatable(L, "Physics3D.Ragdoll");
+    lua_setmetatable(L, -2);
+}
+
+static LuaPhysics3DSoftBody* check_soft_body(lua_State* L, int idx) {
+    auto* sb = static_cast<LuaPhysics3DSoftBody*>(luaL_checkudata(L, idx, "Physics3D.SoftBody"));
+    if (!sb || !sb->valid || !sb->physics || !sb->physics->is_soft_body(sb->id)) {
+        luaL_error(L, "attempt to use destroyed Physics3D.SoftBody");
+        return nullptr;
+    }
+    return sb;
+}
+
+static void push_soft_body_userdata(lua_State* L, uint32_t id, PhysicsSystem* physics) {
+    auto* udata = static_cast<LuaPhysics3DSoftBody*>(lua_newuserdata(L, sizeof(LuaPhysics3DSoftBody)));
+    udata->id = id;
+    udata->physics = physics;
+    udata->valid = true;
+    luaL_getmetatable(L, "Physics3D.SoftBody");
     lua_setmetatable(L, -2);
 }
 
@@ -1569,21 +1593,42 @@ static int l_physics_raycast(lua_State* L) {
 static int l_physics_draw_debug(lua_State* L) {
     glm::vec4 active_col(0.2f, 1.0f, 0.4f, 1.0f);
     glm::vec4 sleep_col(0.5f, 0.5f, 0.5f, 1.0f);
+    PhysicsSystem::PhysicsDebugDrawFlags flags;
 
-    if (lua_gettop(L) >= 4) {
-        active_col.r = static_cast<float>(luaL_checknumber(L, 1));
-        active_col.g = static_cast<float>(luaL_checknumber(L, 2));
-        active_col.b = static_cast<float>(luaL_checknumber(L, 3));
-        active_col.a = static_cast<float>(luaL_optnumber(L, 4, 1.0));
-    }
-    if (lua_gettop(L) >= 8) {
-        sleep_col.r = static_cast<float>(luaL_checknumber(L, 5));
-        sleep_col.g = static_cast<float>(luaL_checknumber(L, 6));
-        sleep_col.b = static_cast<float>(luaL_checknumber(L, 7));
-        sleep_col.a = static_cast<float>(luaL_optnumber(L, 8, 1.0));
+    int top = lua_gettop(L);
+    if (top >= 1 && lua_istable(L, 1)) {
+        lua_getfield(L, 1, "shapes"); if (!lua_isnil(L, -1)) flags.draw_shapes = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, 1, "softBodies"); if (!lua_isnil(L, -1)) flags.draw_soft_bodies = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, 1, "constraints"); if (!lua_isnil(L, -1)) flags.draw_constraints = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, 1, "softBodyConstraints"); if (!lua_isnil(L, -1)) flags.draw_soft_body_constraints = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, 1, "softBodyRods"); if (!lua_isnil(L, -1)) flags.draw_soft_body_rods = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, 1, "bounds"); if (!lua_isnil(L, -1)) flags.draw_bounding_boxes = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, 1, "velocities"); if (!lua_isnil(L, -1)) flags.draw_velocities = lua_toboolean(L, -1); lua_pop(L, 1);
+    } else {
+        if (top >= 4) {
+            active_col.r = static_cast<float>(luaL_checknumber(L, 1));
+            active_col.g = static_cast<float>(luaL_checknumber(L, 2));
+            active_col.b = static_cast<float>(luaL_checknumber(L, 3));
+            active_col.a = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+        }
+        if (top >= 8) {
+            sleep_col.r = static_cast<float>(luaL_checknumber(L, 5));
+            sleep_col.g = static_cast<float>(luaL_checknumber(L, 6));
+            sleep_col.b = static_cast<float>(luaL_checknumber(L, 7));
+            sleep_col.a = static_cast<float>(luaL_optnumber(L, 8, 1.0));
+        }
+        if (top >= 9 && lua_istable(L, 9)) {
+            lua_getfield(L, 9, "shapes"); if (!lua_isnil(L, -1)) flags.draw_shapes = lua_toboolean(L, -1); lua_pop(L, 1);
+            lua_getfield(L, 9, "softBodies"); if (!lua_isnil(L, -1)) flags.draw_soft_bodies = lua_toboolean(L, -1); lua_pop(L, 1);
+            lua_getfield(L, 9, "constraints"); if (!lua_isnil(L, -1)) flags.draw_constraints = lua_toboolean(L, -1); lua_pop(L, 1);
+            lua_getfield(L, 9, "softBodyConstraints"); if (!lua_isnil(L, -1)) flags.draw_soft_body_constraints = lua_toboolean(L, -1); lua_pop(L, 1);
+            lua_getfield(L, 9, "softBodyRods"); if (!lua_isnil(L, -1)) flags.draw_soft_body_rods = lua_toboolean(L, -1); lua_pop(L, 1);
+            lua_getfield(L, 9, "bounds"); if (!lua_isnil(L, -1)) flags.draw_bounding_boxes = lua_toboolean(L, -1); lua_pop(L, 1);
+            lua_getfield(L, 9, "velocities"); if (!lua_isnil(L, -1)) flags.draw_velocities = lua_toboolean(L, -1); lua_pop(L, 1);
+        }
     }
 
-    Engine::get().get_physics().draw_debug(Engine::get().get_mesh_renderer(), active_col, sleep_col);
+    Engine::get().get_physics().draw_debug(Engine::get().get_mesh_renderer(), active_col, sleep_col, flags);
     return 0;
 }
 
@@ -2424,6 +2469,836 @@ static void register_ragdoll_metatable(lua_State* L) {
     lua_pop(L, 1);
 }
 
+// ============================================================================
+// Physics3D.SoftBody Userdata Methods
+// ============================================================================
+
+static int l_soft_body_destroy(lua_State* L) {
+    auto* sb = static_cast<LuaPhysics3DSoftBody*>(luaL_checkudata(L, 1, "Physics3D.SoftBody"));
+    if (sb && sb->valid && sb->physics) {
+        sb->physics->destroy_soft_body(sb->id);
+        sb->valid = false;
+        lua_pushboolean(L, true);
+        return 1;
+    }
+    lua_pushboolean(L, false);
+    return 1;
+}
+
+static int l_soft_body_is_valid(lua_State* L) {
+    auto* sb = static_cast<LuaPhysics3DSoftBody*>(luaL_checkudata(L, 1, "Physics3D.SoftBody"));
+    lua_pushboolean(L, sb && sb->valid && sb->physics && sb->physics->is_soft_body(sb->id));
+    return 1;
+}
+
+static int l_soft_body_get_id(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    lua_pushinteger(L, sb->id);
+    return 1;
+}
+
+static int l_soft_body_get_body_id(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    lua_pushinteger(L, sb->physics->soft_body_get_body_id(sb->id));
+    return 1;
+}
+
+static int l_soft_body_get_position(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    uint32_t bid = sb->physics->soft_body_get_body_id(sb->id);
+    glm::vec3 pos = sb->physics->get_position(bid);
+    lua_pushnumber(L, pos.x);
+    lua_pushnumber(L, pos.y);
+    lua_pushnumber(L, pos.z);
+    return 3;
+}
+
+static int l_soft_body_set_position(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float z = static_cast<float>(luaL_checknumber(L, 4));
+    uint32_t bid = sb->physics->soft_body_get_body_id(sb->id);
+    sb->physics->set_position(bid, glm::vec3(x, y, z));
+    return 0;
+}
+
+static int l_soft_body_get_rotation(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    uint32_t bid = sb->physics->soft_body_get_body_id(sb->id);
+    glm::quat q = sb->physics->get_rotation(bid);
+    lua_pushnumber(L, q.x);
+    lua_pushnumber(L, q.y);
+    lua_pushnumber(L, q.z);
+    lua_pushnumber(L, q.w);
+    return 4;
+}
+
+static int l_soft_body_set_rotation(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float z = static_cast<float>(luaL_checknumber(L, 4));
+    float w = static_cast<float>(luaL_checknumber(L, 5));
+    uint32_t bid = sb->physics->soft_body_get_body_id(sb->id);
+    sb->physics->set_rotation(bid, glm::quat(w, x, y, z));
+    return 0;
+}
+
+static int l_soft_body_get_vertex_count(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    lua_pushinteger(L, sb->physics->get_soft_body_vertex_count(sb->id));
+    return 1;
+}
+
+static int l_soft_body_get_vertex(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    int idx = static_cast<int>(luaL_checkinteger(L, 2)) - 1; // 1-indexed for Lua
+    uint32_t count = sb->physics->get_soft_body_vertex_count(sb->id);
+    if (idx < 0 || static_cast<uint32_t>(idx) >= count) {
+        luaL_error(L, "vertex index %d out of range [1, %d]", idx + 1, count);
+        return 0;
+    }
+    glm::vec3 pos = sb->physics->get_soft_body_vertex_position(sb->id, static_cast<uint32_t>(idx));
+    glm::vec3 vel = sb->physics->get_soft_body_vertex_velocity(sb->id, static_cast<uint32_t>(idx));
+    float inv_mass = sb->physics->get_soft_body_vertex_inv_mass(sb->id, static_cast<uint32_t>(idx));
+
+    lua_pushnumber(L, pos.x);
+    lua_pushnumber(L, pos.y);
+    lua_pushnumber(L, pos.z);
+    lua_pushnumber(L, vel.x);
+    lua_pushnumber(L, vel.y);
+    lua_pushnumber(L, vel.z);
+    lua_pushnumber(L, inv_mass);
+    return 7;
+}
+
+static int l_soft_body_set_vertex(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    int idx = static_cast<int>(luaL_checkinteger(L, 2)) - 1;
+    uint32_t count = sb->physics->get_soft_body_vertex_count(sb->id);
+    if (idx < 0 || static_cast<uint32_t>(idx) >= count) {
+        luaL_error(L, "vertex index %d out of range [1, %d]", idx + 1, count);
+        return 0;
+    }
+    float x = static_cast<float>(luaL_checknumber(L, 3));
+    float y = static_cast<float>(luaL_checknumber(L, 4));
+    float z = static_cast<float>(luaL_checknumber(L, 5));
+    sb->physics->set_soft_body_vertex_position(sb->id, static_cast<uint32_t>(idx), glm::vec3(x, y, z));
+
+    if (lua_gettop(L) >= 8) {
+        float vx = static_cast<float>(luaL_checknumber(L, 6));
+        float vy = static_cast<float>(luaL_checknumber(L, 7));
+        float vz = static_cast<float>(luaL_checknumber(L, 8));
+        sb->physics->set_soft_body_vertex_velocity(sb->id, static_cast<uint32_t>(idx), glm::vec3(vx, vy, vz));
+    }
+    if (lua_gettop(L) >= 9) {
+        float inv_mass = static_cast<float>(luaL_checknumber(L, 9));
+        sb->physics->set_soft_body_vertex_inv_mass(sb->id, static_cast<uint32_t>(idx), inv_mass);
+    }
+    return 0;
+}
+
+static int l_soft_body_get_vertices(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    std::vector<glm::vec3> positions;
+    sb->physics->get_soft_body_vertices(sb->id, positions);
+
+    lua_createtable(L, static_cast<int>(positions.size()), 0);
+    for (size_t i = 0; i < positions.size(); ++i) {
+        lua_createtable(L, 3, 0);
+        lua_pushnumber(L, positions[i].x); lua_rawseti(L, -2, 1);
+        lua_pushnumber(L, positions[i].y); lua_rawseti(L, -2, 2);
+        lua_pushnumber(L, positions[i].z); lua_rawseti(L, -2, 3);
+        lua_rawseti(L, -2, static_cast<int>(i + 1));
+    }
+    return 1;
+}
+
+static int l_soft_body_get_vertices_flat(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    std::vector<glm::vec3> positions;
+    sb->physics->get_soft_body_vertices(sb->id, positions);
+
+    lua_createtable(L, static_cast<int>(positions.size() * 3), 0);
+    for (size_t i = 0; i < positions.size(); ++i) {
+        lua_pushnumber(L, positions[i].x); lua_rawseti(L, -2, static_cast<int>(i * 3 + 1));
+        lua_pushnumber(L, positions[i].y); lua_rawseti(L, -2, static_cast<int>(i * 3 + 2));
+        lua_pushnumber(L, positions[i].z); lua_rawseti(L, -2, static_cast<int>(i * 3 + 3));
+    }
+    return 1;
+}
+
+static int l_soft_body_get_faces(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    std::vector<uint32_t> indices;
+    sb->physics->get_soft_body_faces(sb->id, indices);
+
+    int num_faces = static_cast<int>(indices.size() / 3);
+    lua_createtable(L, num_faces, 0);
+    for (int i = 0; i < num_faces; ++i) {
+        lua_createtable(L, 3, 0);
+        lua_pushinteger(L, indices[i * 3 + 0] + 1); lua_rawseti(L, -2, 1);
+        lua_pushinteger(L, indices[i * 3 + 1] + 1); lua_rawseti(L, -2, 2);
+        lua_pushinteger(L, indices[i * 3 + 2] + 1); lua_rawseti(L, -2, 3);
+        lua_rawseti(L, -2, i + 1);
+    }
+    return 1;
+}
+
+static int l_soft_body_get_faces_flat(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    std::vector<uint32_t> indices;
+    sb->physics->get_soft_body_faces(sb->id, indices);
+
+    lua_createtable(L, static_cast<int>(indices.size()), 0);
+    for (size_t i = 0; i < indices.size(); ++i) {
+        lua_pushinteger(L, indices[i] + 1); // 1-indexed for Lua
+        lua_rawseti(L, -2, static_cast<int>(i + 1));
+    }
+    return 1;
+}
+
+static int l_soft_body_get_pressure(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    lua_pushnumber(L, sb->physics->get_soft_body_pressure(sb->id));
+    return 1;
+}
+
+static int l_soft_body_set_pressure(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    float pressure = static_cast<float>(luaL_checknumber(L, 2));
+    sb->physics->set_soft_body_pressure(sb->id, pressure);
+    return 0;
+}
+
+static int l_soft_body_get_num_iterations(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    lua_pushinteger(L, sb->physics->get_soft_body_num_iterations(sb->id));
+    return 1;
+}
+
+static int l_soft_body_set_num_iterations(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    uint32_t iters = static_cast<uint32_t>(luaL_checkinteger(L, 2));
+    sb->physics->set_soft_body_num_iterations(sb->id, iters);
+    return 0;
+}
+
+static int l_soft_body_get_volume(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    lua_pushnumber(L, sb->physics->get_soft_body_volume(sb->id));
+    return 1;
+}
+
+static int l_soft_body_apply_impulse(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    int top = lua_gettop(L);
+    if (top >= 5) {
+        int v_idx = static_cast<int>(luaL_checkinteger(L, 2)) - 1;
+        float ix = static_cast<float>(luaL_checknumber(L, 3));
+        float iy = static_cast<float>(luaL_checknumber(L, 4));
+        float iz = static_cast<float>(luaL_checknumber(L, 5));
+        sb->physics->add_soft_body_impulse_to_vertex(sb->id, static_cast<uint32_t>(v_idx), glm::vec3(ix, iy, iz));
+    } else if (top >= 4) {
+        float ix = static_cast<float>(luaL_checknumber(L, 2));
+        float iy = static_cast<float>(luaL_checknumber(L, 3));
+        float iz = static_cast<float>(luaL_checknumber(L, 4));
+        uint32_t count = sb->physics->get_soft_body_vertex_count(sb->id);
+        for (uint32_t i = 0; i < count; ++i) {
+            sb->physics->add_soft_body_impulse_to_vertex(sb->id, i, glm::vec3(ix, iy, iz));
+        }
+    }
+    return 0;
+}
+
+static int l_soft_body_apply_force(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    int top = lua_gettop(L);
+    if (top >= 5) {
+        int v_idx = static_cast<int>(luaL_checkinteger(L, 2)) - 1;
+        float fx = static_cast<float>(luaL_checknumber(L, 3));
+        float fy = static_cast<float>(luaL_checknumber(L, 4));
+        float fz = static_cast<float>(luaL_checknumber(L, 5));
+        sb->physics->add_soft_body_force_to_vertex(sb->id, static_cast<uint32_t>(v_idx), glm::vec3(fx, fy, fz));
+    } else if (top >= 4) {
+        float fx = static_cast<float>(luaL_checknumber(L, 2));
+        float fy = static_cast<float>(luaL_checknumber(L, 3));
+        float fz = static_cast<float>(luaL_checknumber(L, 4));
+        uint32_t count = sb->physics->get_soft_body_vertex_count(sb->id);
+        for (uint32_t i = 0; i < count; ++i) {
+            sb->physics->add_soft_body_force_to_vertex(sb->id, i, glm::vec3(fx, fy, fz));
+        }
+    }
+    return 0;
+}
+
+static int l_soft_body_skin_vertices(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    luaL_checktype(L, 2, LUA_TTABLE);
+    bool hard_skin = (lua_gettop(L) >= 3) ? (lua_toboolean(L, 3) != 0) : false;
+
+    std::vector<glm::mat4> joint_matrices;
+    int len = static_cast<int>(lua_objlen(L, 2));
+    joint_matrices.reserve(len);
+
+    for (int i = 1; i <= len; ++i) {
+        lua_rawgeti(L, 2, i);
+        if (lua_istable(L, -1)) {
+            glm::mat4 m(1.0f);
+            for (int e = 1; e <= 16; ++e) {
+                lua_rawgeti(L, -1, e);
+                int col = (e - 1) / 4;
+                int row = (e - 1) % 4;
+                m[col][row] = static_cast<float>(lua_tonumber(L, -1));
+                lua_pop(L, 1);
+            }
+            joint_matrices.push_back(m);
+        }
+        lua_pop(L, 1);
+    }
+
+    sb->physics->skin_soft_body_vertices(sb->id, joint_matrices, hard_skin);
+    return 0;
+}
+
+static int l_soft_body_set_skinned_max_distance_multiplier(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    float mult = static_cast<float>(luaL_checknumber(L, 2));
+    sb->physics->set_soft_body_skinned_max_distance_multiplier(sb->id, mult);
+    return 0;
+}
+
+static int l_soft_body_get_rod_transform(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    int rod_idx = static_cast<int>(luaL_checkinteger(L, 2)) - 1; // 1-indexed
+    glm::vec3 pos;
+    glm::quat rot;
+    if (sb->physics->get_soft_body_rod_transform(sb->id, static_cast<uint32_t>(rod_idx), pos, rot)) {
+        lua_pushnumber(L, pos.x);
+        lua_pushnumber(L, pos.y);
+        lua_pushnumber(L, pos.z);
+        lua_pushnumber(L, rot.x);
+        lua_pushnumber(L, rot.y);
+        lua_pushnumber(L, rot.z);
+        lua_pushnumber(L, rot.w);
+        return 7;
+    }
+    return 0;
+}
+
+static int l_soft_body_activate(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    sb->physics->activate_soft_body(sb->id);
+    return 0;
+}
+
+static int l_soft_body_is_active(lua_State* L) {
+    auto* sb = check_soft_body(L, 1);
+    lua_pushboolean(L, sb->physics->is_soft_body_active(sb->id));
+    return 1;
+}
+
+static int l_soft_body_tostring(lua_State* L) {
+    auto* sb = static_cast<LuaPhysics3DSoftBody*>(luaL_checkudata(L, 1, "Physics3D.SoftBody"));
+    char buf[64];
+    if (sb && sb->valid) {
+        std::snprintf(buf, sizeof(buf), "Physics3D.SoftBody(%u)", sb->id);
+    } else {
+        std::snprintf(buf, sizeof(buf), "Physics3D.SoftBody(destroyed)");
+    }
+    lua_pushstring(L, buf);
+    return 1;
+}
+
+static int l_soft_body_gc(lua_State* L) {
+    auto* sb = static_cast<LuaPhysics3DSoftBody*>(luaL_checkudata(L, 1, "Physics3D.SoftBody"));
+    if (sb) {
+        sb->valid = false;
+        sb->physics = nullptr;
+    }
+    return 0;
+}
+
+static void register_soft_body_metatable(lua_State* L) {
+    luaL_newmetatable(L, "Physics3D.SoftBody");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+
+    lua_pushcfunction(L, l_soft_body_destroy); lua_setfield(L, -2, "destroy");
+    lua_pushcfunction(L, l_soft_body_is_valid); lua_setfield(L, -2, "isValid");
+    lua_pushcfunction(L, l_soft_body_get_id); lua_setfield(L, -2, "getId");
+    lua_pushcfunction(L, l_soft_body_get_body_id); lua_setfield(L, -2, "getBodyId");
+    lua_pushcfunction(L, l_soft_body_get_position); lua_setfield(L, -2, "getPosition");
+    lua_pushcfunction(L, l_soft_body_set_position); lua_setfield(L, -2, "setPosition");
+    lua_pushcfunction(L, l_soft_body_get_rotation); lua_setfield(L, -2, "getRotation");
+    lua_pushcfunction(L, l_soft_body_set_rotation); lua_setfield(L, -2, "setRotation");
+    lua_pushcfunction(L, l_soft_body_get_vertex_count); lua_setfield(L, -2, "getVertexCount");
+    lua_pushcfunction(L, l_soft_body_get_vertex); lua_setfield(L, -2, "getVertex");
+    lua_pushcfunction(L, l_soft_body_set_vertex); lua_setfield(L, -2, "setVertex");
+    lua_pushcfunction(L, l_soft_body_get_vertices); lua_setfield(L, -2, "getVertices");
+    lua_pushcfunction(L, l_soft_body_get_vertices_flat); lua_setfield(L, -2, "getVerticesFlat");
+    lua_pushcfunction(L, l_soft_body_get_faces); lua_setfield(L, -2, "getFaces");
+    lua_pushcfunction(L, l_soft_body_get_faces_flat); lua_setfield(L, -2, "getFacesFlat");
+    lua_pushcfunction(L, l_soft_body_get_pressure); lua_setfield(L, -2, "getPressure");
+    lua_pushcfunction(L, l_soft_body_set_pressure); lua_setfield(L, -2, "setPressure");
+    lua_pushcfunction(L, l_soft_body_get_num_iterations); lua_setfield(L, -2, "getNumIterations");
+    lua_pushcfunction(L, l_soft_body_set_num_iterations); lua_setfield(L, -2, "setNumIterations");
+    lua_pushcfunction(L, l_soft_body_get_volume); lua_setfield(L, -2, "getVolume");
+    lua_pushcfunction(L, l_soft_body_apply_impulse); lua_setfield(L, -2, "applyImpulse");
+    lua_pushcfunction(L, l_soft_body_apply_force); lua_setfield(L, -2, "applyForce");
+    lua_pushcfunction(L, l_soft_body_skin_vertices); lua_setfield(L, -2, "skinVertices");
+    lua_pushcfunction(L, l_soft_body_set_skinned_max_distance_multiplier); lua_setfield(L, -2, "setSkinnedMaxDistanceMultiplier");
+    lua_pushcfunction(L, l_soft_body_get_rod_transform); lua_setfield(L, -2, "getRodTransform");
+    lua_pushcfunction(L, l_soft_body_activate); lua_setfield(L, -2, "activate");
+    lua_pushcfunction(L, l_soft_body_is_active); lua_setfield(L, -2, "isActive");
+
+    lua_pushcfunction(L, l_soft_body_tostring); lua_setfield(L, -2, "__tostring");
+    lua_pushcfunction(L, l_soft_body_gc); lua_setfield(L, -2, "__gc");
+    lua_pop(L, 1);
+}
+
+// ============================================================================
+// Soft Body Factory Functions
+// ============================================================================
+
+static int l_physics_create_soft_body(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    PhysicsSystem::SoftBodyConfig config;
+
+    // Position
+    lua_getfield(L, 1, "position");
+    if (lua_istable(L, -1)) {
+        lua_rawgeti(L, -1, 1); config.position.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 2); config.position.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 3); config.position.z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+
+    // Rotation
+    lua_getfield(L, 1, "rotation");
+    if (lua_istable(L, -1)) {
+        lua_rawgeti(L, -1, 1); float qx = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 2); float qy = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 3); float qz = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, -1, 4); float qw = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        config.rotation = glm::quat(qw, qx, qy, qz);
+    }
+    lua_pop(L, 1);
+
+    // Vertices
+    lua_getfield(L, 1, "vertices");
+    if (lua_istable(L, -1)) {
+        int num_v = static_cast<int>(lua_objlen(L, -1));
+        config.vertices.reserve(num_v);
+        for (int i = 1; i <= num_v; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                PhysicsSystem::SoftBodyVertexConfig v;
+                lua_rawgeti(L, -1, 1); v.position.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 2); v.position.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 3); v.position.z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+
+                lua_getfield(L, -1, "invMass");
+                if (!lua_isnil(L, -1)) v.inv_mass = static_cast<float>(lua_tonumber(L, -1));
+                lua_pop(L, 1);
+
+                lua_getfield(L, -1, "mass");
+                if (!lua_isnil(L, -1)) {
+                    float m = static_cast<float>(lua_tonumber(L, -1));
+                    v.inv_mass = (m > 0.0f) ? (1.0f / m) : 0.0f;
+                }
+                lua_pop(L, 1);
+
+                config.vertices.push_back(v);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    // Faces
+    lua_getfield(L, 1, "faces");
+    if (lua_istable(L, -1)) {
+        int num_f = static_cast<int>(lua_objlen(L, -1));
+        config.faces.reserve(num_f);
+        for (int i = 1; i <= num_f; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                PhysicsSystem::SoftBodyFaceConfig f;
+                lua_rawgeti(L, -1, 1); int v0 = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 2); int v1 = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 3); int v2 = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                // Convert 1-indexed to 0-indexed if positive
+                f.v[0] = static_cast<uint32_t>(v0 > 0 ? v0 - 1 : 0);
+                f.v[1] = static_cast<uint32_t>(v1 > 0 ? v1 - 1 : 0);
+                f.v[2] = static_cast<uint32_t>(v2 > 0 ? v2 - 1 : 0);
+                config.faces.push_back(f);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    // Edge Constraints
+    lua_getfield(L, 1, "edges");
+    if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_getfield(L, 1, "edgeConstraints"); }
+    if (lua_istable(L, -1)) {
+        int num_e = static_cast<int>(lua_objlen(L, -1));
+        config.edge_constraints.reserve(num_e);
+        for (int i = 1; i <= num_e; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                PhysicsSystem::SoftBodyEdgeConfig e;
+                lua_rawgeti(L, -1, 1); int v0 = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 2); int v1 = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                e.v[0] = static_cast<uint32_t>(v0 > 0 ? v0 - 1 : 0);
+                e.v[1] = static_cast<uint32_t>(v1 > 0 ? v1 - 1 : 0);
+                lua_rawgeti(L, -1, 3); if (!lua_isnil(L, -1)) e.compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                config.edge_constraints.push_back(e);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    // Dihedral Bend Constraints
+    lua_getfield(L, 1, "bends");
+    if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_getfield(L, 1, "dihedralBendConstraints"); }
+    if (lua_istable(L, -1)) {
+        int num_b = static_cast<int>(lua_objlen(L, -1));
+        config.dihedral_bend_constraints.reserve(num_b);
+        for (int i = 1; i <= num_b; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                PhysicsSystem::SoftBodyDihedralBendConfig b;
+                for (int c = 0; c < 4; ++c) {
+                    lua_rawgeti(L, -1, c + 1);
+                    int vi = static_cast<int>(lua_tointeger(L, -1));
+                    b.v[c] = static_cast<uint32_t>(vi > 0 ? vi - 1 : 0);
+                    lua_pop(L, 1);
+                }
+                lua_rawgeti(L, -1, 5); if (!lua_isnil(L, -1)) b.compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                config.dihedral_bend_constraints.push_back(b);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    // Volume Constraints (Tetrahedrons)
+    lua_getfield(L, 1, "volumes");
+    if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_getfield(L, 1, "volumeConstraints"); }
+    if (lua_istable(L, -1)) {
+        int num_v = static_cast<int>(lua_objlen(L, -1));
+        config.volume_constraints.reserve(num_v);
+        for (int i = 1; i <= num_v; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                PhysicsSystem::SoftBodyVolumeConfig vol;
+                for (int c = 0; c < 4; ++c) {
+                    lua_rawgeti(L, -1, c + 1);
+                    int vi = static_cast<int>(lua_tointeger(L, -1));
+                    vol.v[c] = static_cast<uint32_t>(vi > 0 ? vi - 1 : 0);
+                    lua_pop(L, 1);
+                }
+                lua_rawgeti(L, -1, 5); if (!lua_isnil(L, -1)) vol.compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                config.volume_constraints.push_back(vol);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    // LRA Constraints (Tethers)
+    lua_getfield(L, 1, "tethers");
+    if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_getfield(L, 1, "lraConstraints"); }
+    if (lua_istable(L, -1)) {
+        int num_l = static_cast<int>(lua_objlen(L, -1));
+        config.lra_constraints.reserve(num_l);
+        for (int i = 1; i <= num_l; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                PhysicsSystem::SoftBodyLRAConfig lra;
+                lua_rawgeti(L, -1, 1); int k = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 2); int d = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                lra.kinematic_v = static_cast<uint32_t>(k > 0 ? k - 1 : 0);
+                lra.dynamic_v = static_cast<uint32_t>(d > 0 ? d - 1 : 0);
+                lua_rawgeti(L, -1, 3); if (!lua_isnil(L, -1)) lra.max_distance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                config.lra_constraints.push_back(lra);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    // Cosserat Rods (Stretch-Shear and Bend-Twist)
+    lua_getfield(L, 1, "rods");
+    if (lua_isnil(L, -1)) { lua_pop(L, 1); lua_getfield(L, 1, "rodStretchShearConstraints"); }
+    if (lua_istable(L, -1)) {
+        int num_r = static_cast<int>(lua_objlen(L, -1));
+        config.rod_stretch_shear_constraints.reserve(num_r);
+        for (int i = 1; i <= num_r; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                PhysicsSystem::SoftBodyRodStretchShearConfig r;
+                lua_rawgeti(L, -1, 1); int v0 = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 2); int v1 = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                r.v[0] = static_cast<uint32_t>(v0 > 0 ? v0 - 1 : 0);
+                r.v[1] = static_cast<uint32_t>(v1 > 0 ? v1 - 1 : 0);
+                lua_rawgeti(L, -1, 3); if (!lua_isnil(L, -1)) r.compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                config.rod_stretch_shear_constraints.push_back(r);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "rodBendTwistConstraints");
+    if (lua_istable(L, -1)) {
+        int num_bt = static_cast<int>(lua_objlen(L, -1));
+        config.rod_bend_twist_constraints.reserve(num_bt);
+        for (int i = 1; i <= num_bt; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                PhysicsSystem::SoftBodyRodBendTwistConfig bt;
+                lua_rawgeti(L, -1, 1); int r0 = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 2); int r1 = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+                bt.rod[0] = static_cast<uint32_t>(r0 > 0 ? r0 - 1 : 0);
+                bt.rod[1] = static_cast<uint32_t>(r1 > 0 ? r1 - 1 : 0);
+                lua_rawgeti(L, -1, 3); if (!lua_isnil(L, -1)) bt.compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                config.rod_bend_twist_constraints.push_back(bt);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    // Dynamics, Material & Solver
+    lua_getfield(L, 1, "pressure"); if (!lua_isnil(L, -1)) config.pressure = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "vertexRadius"); if (!lua_isnil(L, -1)) config.vertex_radius = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "linearDamping"); if (!lua_isnil(L, -1)) config.linear_damping = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "maxLinearVelocity"); if (!lua_isnil(L, -1)) config.max_linear_velocity = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "friction"); if (!lua_isnil(L, -1)) config.friction = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "restitution"); if (!lua_isnil(L, -1)) config.restitution = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "gravityFactor"); if (!lua_isnil(L, -1)) config.gravity_factor = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "numIterations"); if (!lua_isnil(L, -1)) config.num_iterations = static_cast<uint32_t>(lua_tointeger(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "updatePosition"); if (!lua_isnil(L, -1)) config.update_position = (lua_toboolean(L, -1) != 0); lua_pop(L, 1);
+    lua_getfield(L, 1, "allowSleeping"); if (!lua_isnil(L, -1)) config.allow_sleeping = (lua_toboolean(L, -1) != 0); lua_pop(L, 1);
+    lua_getfield(L, 1, "facesDoubleSided"); if (!lua_isnil(L, -1)) config.faces_double_sided = (lua_toboolean(L, -1) != 0); lua_pop(L, 1);
+
+    // Auto Constraint Settings
+    lua_getfield(L, 1, "autoGenerateConstraints");
+    if (!lua_isnil(L, -1)) config.auto_generate_constraints = (lua_toboolean(L, -1) != 0);
+    else if (!config.faces.empty() && config.edge_constraints.empty()) config.auto_generate_constraints = true;
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "compliance"); if (!lua_isnil(L, -1)) config.auto_compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "shearCompliance"); if (!lua_isnil(L, -1)) config.auto_shear_compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "bendCompliance"); if (!lua_isnil(L, -1)) config.auto_bend_compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    lua_getfield(L, 1, "lraMultiplier"); if (!lua_isnil(L, -1)) config.auto_lra_multiplier = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+
+    lua_getfield(L, 1, "bendType");
+    if (lua_isstring(L, -1)) {
+        const char* bt = lua_tostring(L, -1);
+        if (std::strcmp(bt, "dihedral") == 0) config.auto_bend_type = PhysicsSystem::SoftBodyBendType::Dihedral;
+        else if (std::strcmp(bt, "distance") == 0) config.auto_bend_type = PhysicsSystem::SoftBodyBendType::Distance;
+        else config.auto_bend_type = PhysicsSystem::SoftBodyBendType::None;
+    }
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "lraType");
+    if (lua_isstring(L, -1)) {
+        const char* lt = lua_tostring(L, -1);
+        if (std::strcmp(lt, "euclidean") == 0) config.auto_lra_type = PhysicsSystem::SoftBodyLRAType::EuclideanDistance;
+        else if (std::strcmp(lt, "geodesic") == 0) config.auto_lra_type = PhysicsSystem::SoftBodyLRAType::GeodesicDistance;
+        else config.auto_lra_type = PhysicsSystem::SoftBodyLRAType::None;
+    }
+    lua_pop(L, 1);
+
+    auto& ps = Engine::get().get_physics();
+    uint32_t id = ps.create_soft_body(config);
+    if (id != 0) {
+        push_soft_body_userdata(L, id, &ps);
+        return 1;
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+static int l_physics_create_soft_body_cloth(lua_State* L) {
+    auto& ps = Engine::get().get_physics();
+    glm::vec3 origin(0.0f);
+    float width = 4.0f, height = 4.0f;
+    int seg_x = 10, seg_y = 10;
+    float compliance = 0.0f;
+    float bend_compliance = 0.01f;
+    bool pin_corners = true;
+    bool add_lra = true;
+
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "x"); if (!lua_isnil(L, -1)) origin.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "y"); if (!lua_isnil(L, -1)) origin.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "z"); if (!lua_isnil(L, -1)) origin.z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "width"); if (!lua_isnil(L, -1)) width = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "height"); if (!lua_isnil(L, -1)) height = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "segmentsX"); if (!lua_isnil(L, -1)) seg_x = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "segmentsY"); if (!lua_isnil(L, -1)) seg_y = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "compliance"); if (!lua_isnil(L, -1)) compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "bendCompliance"); if (!lua_isnil(L, -1)) bend_compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "pinCorners"); if (!lua_isnil(L, -1)) pin_corners = (lua_toboolean(L, -1) != 0); lua_pop(L, 1);
+        lua_getfield(L, 1, "addLra"); if (!lua_isnil(L, -1)) add_lra = (lua_toboolean(L, -1) != 0); lua_pop(L, 1);
+    } else {
+        origin.x = static_cast<float>(luaL_checknumber(L, 1));
+        origin.y = static_cast<float>(luaL_checknumber(L, 2));
+        origin.z = static_cast<float>(luaL_checknumber(L, 3));
+        width = static_cast<float>(luaL_optnumber(L, 4, 4.0));
+        height = static_cast<float>(luaL_optnumber(L, 5, 4.0));
+        seg_x = static_cast<int>(luaL_optinteger(L, 6, 10));
+        seg_y = static_cast<int>(luaL_optinteger(L, 7, 10));
+        compliance = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+        bend_compliance = static_cast<float>(luaL_optnumber(L, 9, 0.01));
+        if (lua_gettop(L) >= 10) pin_corners = (lua_toboolean(L, 10) != 0);
+        if (lua_gettop(L) >= 11) add_lra = (lua_toboolean(L, 11) != 0);
+    }
+
+    uint32_t id = ps.create_soft_body_cloth(origin, width, height, seg_x, seg_y, compliance, bend_compliance, pin_corners, add_lra);
+    if (id != 0) {
+        push_soft_body_userdata(L, id, &ps);
+        return 1;
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+static int l_physics_create_soft_body_cube(lua_State* L) {
+    auto& ps = Engine::get().get_physics();
+    glm::vec3 origin(0.0f);
+    float size = 2.0f;
+    int grid_size = 3;
+    float compliance = 0.0f;
+    float pressure = 0.0f;
+
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "x"); if (!lua_isnil(L, -1)) origin.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "y"); if (!lua_isnil(L, -1)) origin.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "z"); if (!lua_isnil(L, -1)) origin.z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "size"); if (!lua_isnil(L, -1)) size = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "gridSize"); if (!lua_isnil(L, -1)) grid_size = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "compliance"); if (!lua_isnil(L, -1)) compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "pressure"); if (!lua_isnil(L, -1)) pressure = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    } else {
+        origin.x = static_cast<float>(luaL_checknumber(L, 1));
+        origin.y = static_cast<float>(luaL_checknumber(L, 2));
+        origin.z = static_cast<float>(luaL_checknumber(L, 3));
+        size = static_cast<float>(luaL_optnumber(L, 4, 2.0));
+        grid_size = static_cast<int>(luaL_optinteger(L, 5, 3));
+        compliance = static_cast<float>(luaL_optnumber(L, 6, 0.0));
+        pressure = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    }
+
+    uint32_t id = ps.create_soft_body_cube(origin, size, grid_size, compliance, pressure);
+    if (id != 0) {
+        push_soft_body_userdata(L, id, &ps);
+        return 1;
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+static int l_physics_create_soft_body_sphere(lua_State* L) {
+    auto& ps = Engine::get().get_physics();
+    glm::vec3 origin(0.0f);
+    float radius = 1.0f;
+    int rings = 8, sectors = 12;
+    float compliance = 0.0f;
+    float pressure = 500.0f;
+
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "x"); if (!lua_isnil(L, -1)) origin.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "y"); if (!lua_isnil(L, -1)) origin.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "z"); if (!lua_isnil(L, -1)) origin.z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "radius"); if (!lua_isnil(L, -1)) radius = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "rings"); if (!lua_isnil(L, -1)) rings = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "sectors"); if (!lua_isnil(L, -1)) sectors = static_cast<int>(lua_tointeger(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "compliance"); if (!lua_isnil(L, -1)) compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "pressure"); if (!lua_isnil(L, -1)) pressure = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    } else {
+        origin.x = static_cast<float>(luaL_checknumber(L, 1));
+        origin.y = static_cast<float>(luaL_checknumber(L, 2));
+        origin.z = static_cast<float>(luaL_checknumber(L, 3));
+        radius = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+        rings = static_cast<int>(luaL_optinteger(L, 5, 8));
+        sectors = static_cast<int>(luaL_optinteger(L, 6, 12));
+        compliance = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+        pressure = static_cast<float>(luaL_optnumber(L, 8, 500.0));
+    }
+
+    uint32_t id = ps.create_soft_body_sphere(origin, radius, rings, sectors, compliance, pressure);
+    if (id != 0) {
+        push_soft_body_userdata(L, id, &ps);
+        return 1;
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+static int l_physics_create_soft_body_rod(lua_State* L) {
+    auto& ps = Engine::get().get_physics();
+    std::vector<glm::vec3> points;
+    float stretch_compliance = 0.0f;
+    float bend_twist_compliance = 0.001f;
+    bool pin_root = true;
+
+    if (lua_istable(L, 1)) {
+        lua_getfield(L, 1, "points");
+        if (lua_istable(L, -1)) {
+            int len = static_cast<int>(lua_objlen(L, -1));
+            points.reserve(len);
+            for (int i = 1; i <= len; ++i) {
+                lua_rawgeti(L, -1, i);
+                if (lua_istable(L, -1)) {
+                    glm::vec3 pt;
+                    lua_rawgeti(L, -1, 1); pt.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 2); pt.y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    lua_rawgeti(L, -1, 3); pt.z = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                    points.push_back(pt);
+                }
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "stretchCompliance"); if (!lua_isnil(L, -1)) stretch_compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "bendTwistCompliance"); if (!lua_isnil(L, -1)) bend_twist_compliance = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_getfield(L, 1, "pinRoot"); if (!lua_isnil(L, -1)) pin_root = (lua_toboolean(L, -1) != 0); lua_pop(L, 1);
+    }
+
+    uint32_t id = ps.create_soft_body_rod(points, stretch_compliance, bend_twist_compliance, pin_root);
+    if (id != 0) {
+        push_soft_body_userdata(L, id, &ps);
+        return 1;
+    }
+    lua_pushnil(L);
+    return 1;
+}
+
+static int l_physics_destroy_soft_body(lua_State* L) {
+    auto& ps = Engine::get().get_physics();
+    uint32_t id = 0;
+    if (lua_isuserdata(L, 1)) {
+        auto* sb = static_cast<LuaPhysics3DSoftBody*>(luaL_checkudata(L, 1, "Physics3D.SoftBody"));
+        if (sb && sb->valid) {
+            id = sb->id;
+            sb->valid = false;
+        }
+    } else {
+        id = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    }
+    lua_pushboolean(L, ps.destroy_soft_body(id));
+    return 1;
+}
+
 void register_physics3d_bindings(lua_State* L) {
     register_body_metatable(L);
     register_constraint_metatable(L);
@@ -2434,6 +3309,7 @@ void register_physics3d_bindings(lua_State* L) {
     register_skeleton_pose_metatable(L);
     register_skeleton_mapper_metatable(L);
     register_ragdoll_metatable(L);
+    register_soft_body_metatable(L);
 
     lua_getglobal(L, "crayon");
     lua_newtable(L);
@@ -2521,6 +3397,37 @@ void register_physics3d_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_physics_destroy_constraint);
     lua_setfield(L, -2, "destroyConstraint");
+
+    // Soft Bodies (camelCase & snake_case)
+    lua_pushcfunction(L, l_physics_create_soft_body);
+    lua_setfield(L, -2, "createSoftBody");
+    lua_pushcfunction(L, l_physics_create_soft_body);
+    lua_setfield(L, -2, "create_soft_body");
+
+    lua_pushcfunction(L, l_physics_create_soft_body_cloth);
+    lua_setfield(L, -2, "createSoftBodyCloth");
+    lua_pushcfunction(L, l_physics_create_soft_body_cloth);
+    lua_setfield(L, -2, "create_soft_body_cloth");
+
+    lua_pushcfunction(L, l_physics_create_soft_body_cube);
+    lua_setfield(L, -2, "createSoftBodyCube");
+    lua_pushcfunction(L, l_physics_create_soft_body_cube);
+    lua_setfield(L, -2, "create_soft_body_cube");
+
+    lua_pushcfunction(L, l_physics_create_soft_body_sphere);
+    lua_setfield(L, -2, "createSoftBodySphere");
+    lua_pushcfunction(L, l_physics_create_soft_body_sphere);
+    lua_setfield(L, -2, "create_soft_body_sphere");
+
+    lua_pushcfunction(L, l_physics_create_soft_body_rod);
+    lua_setfield(L, -2, "createSoftBodyRod");
+    lua_pushcfunction(L, l_physics_create_soft_body_rod);
+    lua_setfield(L, -2, "create_soft_body_rod");
+
+    lua_pushcfunction(L, l_physics_destroy_soft_body);
+    lua_setfield(L, -2, "destroySoftBody");
+    lua_pushcfunction(L, l_physics_destroy_soft_body);
+    lua_setfield(L, -2, "destroy_soft_body");
 
     lua_setfield(L, -2, "physics3d");
     lua_pop(L, 1);
