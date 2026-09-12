@@ -4,15 +4,186 @@
 #include <unordered_map>
 #include <glm/gtc/matrix_transform.hpp>
 
+#include <cstdio>
+#include <new>
+
 namespace crayon {
 
-static std::unordered_map<int, std::shared_ptr<Mesh3D>> s_model_handles;
-static int s_next_model_id = 1;
+struct LuaTexture {
+    GLuint id = 0;
+    int width = 0;
+    int height = 0;
+};
 
-static int register_mesh_handle(std::shared_ptr<Mesh3D> mesh) {
-    int id = s_next_model_id++;
-    s_model_handles[id] = mesh;
-    return id;
+struct LuaModel {
+    std::shared_ptr<Mesh3D> mesh;
+};
+
+static void push_texture_userdata(lua_State* L, GLuint id, int width, int height) {
+    auto* udata = static_cast<LuaTexture*>(lua_newuserdata(L, sizeof(LuaTexture)));
+    udata->id = id;
+    udata->width = width;
+    udata->height = height;
+    luaL_getmetatable(L, "Graphics.Texture");
+    lua_setmetatable(L, -2);
+}
+
+static void push_model_userdata(lua_State* L, std::shared_ptr<Mesh3D> mesh) {
+    void* mem = lua_newuserdata(L, sizeof(LuaModel));
+    new (mem) LuaModel{ std::move(mesh) };
+    luaL_getmetatable(L, "Graphics.Model");
+    lua_setmetatable(L, -2);
+}
+
+static GLuint check_texture(lua_State* L, int idx) {
+    if (lua_isuserdata(L, idx)) {
+        auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, idx, "Graphics.Texture"));
+        return tex ? tex->id : 0;
+    }
+    return static_cast<GLuint>(luaL_checkinteger(L, idx));
+}
+
+static GLuint opt_texture(lua_State* L, int idx, GLuint fallback = 0) {
+    if (lua_isnoneornil(L, idx)) return fallback;
+    if (lua_isuserdata(L, idx)) {
+        auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, idx, "Graphics.Texture"));
+        return tex ? tex->id : fallback;
+    }
+    if (lua_isnumber(L, idx)) {
+        return static_cast<GLuint>(lua_tointeger(L, idx));
+    }
+    return fallback;
+}
+
+static std::shared_ptr<Mesh3D> check_model(lua_State* L, int idx) {
+    auto* model = static_cast<LuaModel*>(luaL_checkudata(L, idx, "Graphics.Model"));
+    if (!model || !model->mesh) {
+        luaL_error(L, "attempt to use invalid Graphics.Model");
+        return nullptr;
+    }
+    return model->mesh;
+}
+
+// ---------------- Metatables ----------------
+
+static int l_texture_get_size(lua_State* L) {
+    auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, 1, "Graphics.Texture"));
+    lua_pushinteger(L, tex->width);
+    lua_pushinteger(L, tex->height);
+    return 2;
+}
+
+static int l_texture_get_width(lua_State* L) {
+    auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, 1, "Graphics.Texture"));
+    lua_pushinteger(L, tex->width);
+    return 1;
+}
+
+static int l_texture_get_height(lua_State* L) {
+    auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, 1, "Graphics.Texture"));
+    lua_pushinteger(L, tex->height);
+    return 1;
+}
+
+static int l_texture_get_id(lua_State* L) {
+    auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, 1, "Graphics.Texture"));
+    lua_pushinteger(L, tex->id);
+    return 1;
+}
+
+static int l_texture_is_valid(lua_State* L) {
+    auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, 1, "Graphics.Texture"));
+    lua_pushboolean(L, tex && tex->id != 0);
+    return 1;
+}
+
+static int l_texture_tostring(lua_State* L) {
+    auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, 1, "Graphics.Texture"));
+    char buf[80];
+    std::snprintf(buf, sizeof(buf), "Graphics.Texture(ID: %u, %dx%d)", tex ? tex->id : 0, tex ? tex->width : 0, tex ? tex->height : 0);
+    lua_pushstring(L, buf);
+    return 1;
+}
+
+static int l_texture_gc(lua_State* /*L*/) {
+    return 0;
+}
+
+static void register_texture_metatable(lua_State* L) {
+    luaL_newmetatable(L, "Graphics.Texture");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+
+    // camelCase
+    lua_pushcfunction(L, l_texture_get_size);
+    lua_setfield(L, -2, "getSize");
+    lua_pushcfunction(L, l_texture_get_width);
+    lua_setfield(L, -2, "getWidth");
+    lua_pushcfunction(L, l_texture_get_height);
+    lua_setfield(L, -2, "getHeight");
+    lua_pushcfunction(L, l_texture_get_id);
+    lua_setfield(L, -2, "getId");
+    lua_pushcfunction(L, l_texture_is_valid);
+    lua_setfield(L, -2, "isValid");
+
+    // snake_case
+    lua_pushcfunction(L, l_texture_get_size);
+    lua_setfield(L, -2, "get_size");
+    lua_pushcfunction(L, l_texture_get_width);
+    lua_setfield(L, -2, "get_width");
+    lua_pushcfunction(L, l_texture_get_height);
+    lua_setfield(L, -2, "get_height");
+    lua_pushcfunction(L, l_texture_get_id);
+    lua_setfield(L, -2, "get_id");
+    lua_pushcfunction(L, l_texture_is_valid);
+    lua_setfield(L, -2, "is_valid");
+
+    lua_pushcfunction(L, l_texture_tostring);
+    lua_setfield(L, -2, "__tostring");
+    lua_pushcfunction(L, l_texture_gc);
+    lua_setfield(L, -2, "__gc");
+
+    lua_pop(L, 1);
+}
+
+static int l_model_is_valid(lua_State* L) {
+    auto* model = static_cast<LuaModel*>(luaL_checkudata(L, 1, "Graphics.Model"));
+    lua_pushboolean(L, model && model->mesh != nullptr);
+    return 1;
+}
+
+static int l_model_tostring(lua_State* L) {
+    auto* model = static_cast<LuaModel*>(luaL_checkudata(L, 1, "Graphics.Model"));
+    char buf[64];
+    std::snprintf(buf, sizeof(buf), "Graphics.Model(%p)", model ? model->mesh.get() : nullptr);
+    lua_pushstring(L, buf);
+    return 1;
+}
+
+static int l_model_gc(lua_State* L) {
+    auto* model = static_cast<LuaModel*>(luaL_checkudata(L, 1, "Graphics.Model"));
+    if (model) {
+        model->~LuaModel();
+    }
+    return 0;
+}
+
+static void register_model_metatable(lua_State* L) {
+    luaL_newmetatable(L, "Graphics.Model");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+
+    lua_pushcfunction(L, l_model_is_valid);
+    lua_setfield(L, -2, "isValid");
+    lua_pushcfunction(L, l_model_is_valid);
+    lua_setfield(L, -2, "is_valid");
+
+    lua_pushcfunction(L, l_model_tostring);
+    lua_setfield(L, -2, "__tostring");
+    lua_pushcfunction(L, l_model_gc);
+    lua_setfield(L, -2, "__gc");
+
+    lua_pop(L, 1);
 }
 
 static int l_graphics_clear(lua_State* L) {
@@ -263,11 +434,19 @@ static int l_graphics_get_camera_ray(lua_State* L) {
 static int l_graphics_load_texture(lua_State* L) {
     const char* path = luaL_checkstring(L, 1);
     GLuint id = Engine::get().load_texture(path);
-    lua_pushinteger(L, id);
+    int w = 0, h = 0;
+    Engine::get().get_texture_size(id, w, h);
+    push_texture_userdata(L, id, w, h);
     return 1;
 }
 
 static int l_graphics_get_texture_size(lua_State* L) {
+    if (lua_isuserdata(L, 1)) {
+        auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, 1, "Graphics.Texture"));
+        lua_pushinteger(L, tex->width);
+        lua_pushinteger(L, tex->height);
+        return 2;
+    }
     GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
     int w = 0, h = 0;
     Engine::get().get_texture_size(tex_id, w, h);
@@ -303,8 +482,7 @@ static int l_graphics_load_model(lua_State* L) {
         mesh = Engine::get().load_model(p);
     }
 
-    int handle = register_mesh_handle(mesh);
-    lua_pushinteger(L, handle);
+    push_model_userdata(L, mesh);
     return 1;
 }
 
@@ -380,15 +558,16 @@ static int l_graphics_create_mesh(lua_State* L) {
 
     auto mesh = std::make_shared<Mesh3D>();
     mesh->create_from_data(vertices, indices);
-    int handle = register_mesh_handle(mesh);
-    lua_pushinteger(L, handle);
+    push_model_userdata(L, mesh);
     return 1;
 }
 
 // ---------------- 3D Primitives Direct Draw ----------------
 
 static int l_graphics_draw_model(lua_State* L) {
-    int model_id = static_cast<int>(luaL_checkinteger(L, 1));
+    auto mesh = check_model(L, 1);
+    if (!mesh) return 0;
+
     float x = static_cast<float>(luaL_optnumber(L, 2, 0.0));
     float y = static_cast<float>(luaL_optnumber(L, 3, 0.0));
     float z = static_cast<float>(luaL_optnumber(L, 4, 0.0));
@@ -401,12 +580,7 @@ static int l_graphics_draw_model(lua_State* L) {
     float sy = static_cast<float>(luaL_optnumber(L, 9, 1.0));
     float sz = static_cast<float>(luaL_optnumber(L, 10, 1.0));
 
-    GLuint tex_id = static_cast<GLuint>(luaL_optinteger(L, 11, 0));
-
-    auto it = s_model_handles.find(model_id);
-    if (it == s_model_handles.end() || !it->second) {
-        return 0;
-    }
+    GLuint tex_id = opt_texture(L, 11, 0);
 
     glm::mat4 model = glm::mat4(1.0f);
     model = glm::translate(model, glm::vec3(x, y, z));
@@ -415,7 +589,7 @@ static int l_graphics_draw_model(lua_State* L) {
     if (rx != 0.0f) model = glm::rotate(model, rx, glm::vec3(1, 0, 0));
     model = glm::scale(model, glm::vec3(sx, sy, sz));
 
-    Engine::get().get_mesh_renderer().draw_mesh(*it->second, model, tex_id);
+    Engine::get().get_mesh_renderer().draw_mesh(*mesh, model, tex_id);
     return 0;
 }
 
@@ -426,7 +600,7 @@ static int l_graphics_draw_cube(lua_State* L) {
     float sx = static_cast<float>(luaL_optnumber(L, 4, 1.0));
     float sy = static_cast<float>(luaL_optnumber(L, 5, sx));
     float sz = static_cast<float>(luaL_optnumber(L, 6, sx));
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 7, 0));
+    GLuint tex = opt_texture(L, 7, 0);
     float rx = static_cast<float>(luaL_optnumber(L, 8, 0.0));
     float ry = static_cast<float>(luaL_optnumber(L, 9, 0.0));
     float rz = static_cast<float>(luaL_optnumber(L, 10, 0.0));
@@ -441,7 +615,7 @@ static int l_graphics_draw_plane(lua_State* L) {
     float z = static_cast<float>(luaL_checknumber(L, 3));
     float w = static_cast<float>(luaL_optnumber(L, 4, 10.0));
     float d = static_cast<float>(luaL_optnumber(L, 5, w));
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    GLuint tex = opt_texture(L, 6, 0);
     float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
     float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
     float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
@@ -455,7 +629,7 @@ static int l_graphics_draw_sphere(lua_State* L) {
     float y = static_cast<float>(luaL_checknumber(L, 2));
     float z = static_cast<float>(luaL_checknumber(L, 3));
     float radius = static_cast<float>(luaL_optnumber(L, 4, 0.5));
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 5, 0));
+    GLuint tex = opt_texture(L, 5, 0);
     float rx = static_cast<float>(luaL_optnumber(L, 6, 0.0));
     float ry = static_cast<float>(luaL_optnumber(L, 7, 0.0));
     float rz = static_cast<float>(luaL_optnumber(L, 8, 0.0));
@@ -470,7 +644,7 @@ static int l_graphics_draw_cylinder(lua_State* L) {
     float z = static_cast<float>(luaL_checknumber(L, 3));
     float radius = static_cast<float>(luaL_optnumber(L, 4, 0.5));
     float height = static_cast<float>(luaL_optnumber(L, 5, 1.0));
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    GLuint tex = opt_texture(L, 6, 0);
     float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
     float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
     float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
@@ -485,7 +659,7 @@ static int l_graphics_draw_cone(lua_State* L) {
     float z = static_cast<float>(luaL_checknumber(L, 3));
     float radius = static_cast<float>(luaL_optnumber(L, 4, 0.5));
     float height = static_cast<float>(luaL_optnumber(L, 5, 1.0));
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    GLuint tex = opt_texture(L, 6, 0);
     float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
     float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
     float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
@@ -500,7 +674,7 @@ static int l_graphics_draw_pyramid(lua_State* L) {
     float z = static_cast<float>(luaL_checknumber(L, 3));
     float base_size = static_cast<float>(luaL_optnumber(L, 4, 1.0));
     float height = static_cast<float>(luaL_optnumber(L, 5, 1.0));
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    GLuint tex = opt_texture(L, 6, 0);
     float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
     float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
     float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
@@ -515,7 +689,7 @@ static int l_graphics_draw_torus(lua_State* L) {
     float z = static_cast<float>(luaL_checknumber(L, 3));
     float radius = static_cast<float>(luaL_optnumber(L, 4, 0.8));
     float tube = static_cast<float>(luaL_optnumber(L, 5, 0.25));
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    GLuint tex = opt_texture(L, 6, 0);
     float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
     float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
     float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
@@ -530,7 +704,7 @@ static int l_graphics_draw_capsule(lua_State* L) {
     float z = static_cast<float>(luaL_checknumber(L, 3));
     float radius = static_cast<float>(luaL_optnumber(L, 4, 0.4));
     float height = static_cast<float>(luaL_optnumber(L, 5, 0.8));
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    GLuint tex = opt_texture(L, 6, 0);
     float rx = static_cast<float>(luaL_optnumber(L, 7, 0.0));
     float ry = static_cast<float>(luaL_optnumber(L, 8, 0.0));
     float rz = static_cast<float>(luaL_optnumber(L, 9, 0.0));
@@ -547,7 +721,7 @@ static int l_graphics_draw_billboard(lua_State* L) {
     float z = static_cast<float>(luaL_checknumber(L, 3));
     float w = static_cast<float>(luaL_optnumber(L, 4, 1.0));
     float h = static_cast<float>(luaL_optnumber(L, 5, w));
-    GLuint tex_id = static_cast<GLuint>(luaL_optinteger(L, 6, 0));
+    GLuint tex_id = opt_texture(L, 6, 0);
 
     BillboardMode mode = BillboardMode::Spherical;
     if (lua_isboolean(L, 7)) {
@@ -628,7 +802,7 @@ static int l_graphics_draw_triangle_3d(lua_State* L) {
     glm::vec3 p1 = get_vec3(1);
     glm::vec3 p2 = get_vec3(2);
     glm::vec3 p3 = get_vec3(3);
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 4, 0));
+    GLuint tex = opt_texture(L, 4, 0);
 
     const glm::vec4& col = Engine::get().get_active_color();
     Engine::get().get_mesh_renderer().draw_triangle_3d(p1, p2, p3, col, tex);
@@ -649,7 +823,7 @@ static int l_graphics_draw_quad_3d(lua_State* L) {
     glm::vec3 p2 = get_vec3(2);
     glm::vec3 p3 = get_vec3(3);
     glm::vec3 p4 = get_vec3(4);
-    GLuint tex = static_cast<GLuint>(luaL_optinteger(L, 5, 0));
+    GLuint tex = opt_texture(L, 5, 0);
 
     const glm::vec4& col = Engine::get().get_active_color();
     Engine::get().get_mesh_renderer().draw_quad_3d(p1, p2, p3, p4, col, tex);
@@ -696,7 +870,7 @@ static int l_graphics_set_point_light_enabled(lua_State* L) {
 // ---------------- 2D Primitives ----------------
 
 static int l_graphics_draw_sprite(lua_State* L) {
-    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    GLuint tex_id = check_texture(L, 1);
     float x = static_cast<float>(luaL_checknumber(L, 2));
     float y = static_cast<float>(luaL_checknumber(L, 3));
     float w = static_cast<float>(luaL_optnumber(L, 4, 32.0));
@@ -711,7 +885,7 @@ static int l_graphics_draw_sprite(lua_State* L) {
 }
 
 static int l_graphics_draw_sprite_part(lua_State* L) {
-    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    GLuint tex_id = check_texture(L, 1);
     float x = static_cast<float>(luaL_checknumber(L, 2));
     float y = static_cast<float>(luaL_checknumber(L, 3));
     float u0 = static_cast<float>(luaL_checknumber(L, 4));
@@ -730,7 +904,7 @@ static int l_graphics_draw_sprite_part(lua_State* L) {
 }
 
 static int l_graphics_draw_sprite_tiled(lua_State* L) {
-    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    GLuint tex_id = check_texture(L, 1);
     float x = static_cast<float>(luaL_checknumber(L, 2));
     float y = static_cast<float>(luaL_checknumber(L, 3));
     float w = static_cast<float>(luaL_checknumber(L, 4));
@@ -746,7 +920,7 @@ static int l_graphics_draw_sprite_tiled(lua_State* L) {
 }
 
 static int l_graphics_draw_sprite_9slice(lua_State* L) {
-    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    GLuint tex_id = check_texture(L, 1);
     float x = static_cast<float>(luaL_checknumber(L, 2));
     float y = static_cast<float>(luaL_checknumber(L, 3));
     float w = static_cast<float>(luaL_checknumber(L, 4));
@@ -1274,7 +1448,7 @@ static int l_graphics_draw_rounded_rect_ex(lua_State* L) {
 }
 
 static int l_graphics_draw_texture_rot(lua_State* L) {
-    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    GLuint tex_id = check_texture(L, 1);
     float x = static_cast<float>(luaL_checknumber(L, 2));
     float y = static_cast<float>(luaL_checknumber(L, 3));
     float w = static_cast<float>(luaL_checknumber(L, 4));
@@ -1288,7 +1462,7 @@ static int l_graphics_draw_texture_rot(lua_State* L) {
 }
 
 static int l_graphics_draw_billboard_rot(lua_State* L) {
-    GLuint tex_id = static_cast<GLuint>(luaL_checkinteger(L, 1));
+    GLuint tex_id = check_texture(L, 1);
     float x = static_cast<float>(luaL_checknumber(L, 2));
     float y = static_cast<float>(luaL_checknumber(L, 3));
     float z = static_cast<float>(luaL_checknumber(L, 4));
@@ -1375,11 +1549,14 @@ static int l_graphics_unproject(lua_State* L) {
 
 static int l_graphics_get_white_texture(lua_State* L) {
     GLuint id = Engine::get().get_batch2d().get_white_texture_id();
-    lua_pushinteger(L, id);
+    push_texture_userdata(L, id, 1, 1);
     return 1;
 }
 
 void register_graphics_bindings(lua_State* L) {
+    register_texture_metatable(L);
+    register_model_metatable(L);
+
     lua_getglobal(L, "crayon");
     lua_newtable(L);
 
@@ -1388,166 +1565,272 @@ void register_graphics_bindings(lua_State* L) {
     lua_setfield(L, -2, "clear");
 
     lua_pushcfunction(L, l_graphics_set_color);
+    lua_setfield(L, -2, "setColor");
+    lua_pushcfunction(L, l_graphics_set_color);
     lua_setfield(L, -2, "set_color");
 
+    lua_pushcfunction(L, l_graphics_set_retro_effects);
+    lua_setfield(L, -2, "setRetroEffects");
     lua_pushcfunction(L, l_graphics_set_retro_effects);
     lua_setfield(L, -2, "set_retro_effects");
 
     // Camera & Lighting
     lua_pushcfunction(L, l_graphics_set_camera3d);
+    lua_setfield(L, -2, "setCamera3d");
+    lua_pushcfunction(L, l_graphics_set_camera3d);
     lua_setfield(L, -2, "set_camera3d");
 
+    lua_pushcfunction(L, l_graphics_get_camera_ray);
+    lua_setfield(L, -2, "getCameraRay");
     lua_pushcfunction(L, l_graphics_get_camera_ray);
     lua_setfield(L, -2, "get_camera_ray");
 
     lua_pushcfunction(L, l_graphics_set_light);
+    lua_setfield(L, -2, "setLight");
+    lua_pushcfunction(L, l_graphics_set_light);
     lua_setfield(L, -2, "set_light");
 
+    lua_pushcfunction(L, l_graphics_set_point_light);
+    lua_setfield(L, -2, "setPointLight");
     lua_pushcfunction(L, l_graphics_set_point_light);
     lua_setfield(L, -2, "set_point_light");
 
     lua_pushcfunction(L, l_graphics_set_point_light_enabled);
+    lua_setfield(L, -2, "setPointLightEnabled");
+    lua_pushcfunction(L, l_graphics_set_point_light_enabled);
     lua_setfield(L, -2, "set_point_light_enabled");
 
+    lua_pushcfunction(L, l_graphics_set_shading_mode);
+    lua_setfield(L, -2, "setShadingMode");
     lua_pushcfunction(L, l_graphics_set_shading_mode);
     lua_setfield(L, -2, "set_shading_mode");
 
     // Textures & Models
     lua_pushcfunction(L, l_graphics_load_texture);
+    lua_setfield(L, -2, "loadTexture");
+    lua_pushcfunction(L, l_graphics_load_texture);
     lua_setfield(L, -2, "load_texture");
 
+    lua_pushcfunction(L, l_graphics_get_texture_size);
+    lua_setfield(L, -2, "getTextureSize");
     lua_pushcfunction(L, l_graphics_get_texture_size);
     lua_setfield(L, -2, "get_texture_size");
 
     lua_pushcfunction(L, l_graphics_get_white_texture);
+    lua_setfield(L, -2, "getWhiteTexture");
+    lua_pushcfunction(L, l_graphics_get_white_texture);
     lua_setfield(L, -2, "get_white_texture");
 
     lua_pushcfunction(L, l_graphics_load_model);
+    lua_setfield(L, -2, "loadModel");
+    lua_pushcfunction(L, l_graphics_load_model);
     lua_setfield(L, -2, "load_model");
 
+    lua_pushcfunction(L, l_graphics_create_mesh);
+    lua_setfield(L, -2, "createMesh");
     lua_pushcfunction(L, l_graphics_create_mesh);
     lua_setfield(L, -2, "create_mesh");
 
     // 3D Rendering
     lua_pushcfunction(L, l_graphics_draw_model);
+    lua_setfield(L, -2, "drawModel");
+    lua_pushcfunction(L, l_graphics_draw_model);
     lua_setfield(L, -2, "draw_model");
 
+    lua_pushcfunction(L, l_graphics_draw_cube);
+    lua_setfield(L, -2, "drawCube");
     lua_pushcfunction(L, l_graphics_draw_cube);
     lua_setfield(L, -2, "draw_cube");
 
     lua_pushcfunction(L, l_graphics_draw_plane);
+    lua_setfield(L, -2, "drawPlane");
+    lua_pushcfunction(L, l_graphics_draw_plane);
     lua_setfield(L, -2, "draw_plane");
 
+    lua_pushcfunction(L, l_graphics_draw_sphere);
+    lua_setfield(L, -2, "drawSphere");
     lua_pushcfunction(L, l_graphics_draw_sphere);
     lua_setfield(L, -2, "draw_sphere");
 
     lua_pushcfunction(L, l_graphics_draw_cylinder);
+    lua_setfield(L, -2, "drawCylinder");
+    lua_pushcfunction(L, l_graphics_draw_cylinder);
     lua_setfield(L, -2, "draw_cylinder");
 
+    lua_pushcfunction(L, l_graphics_draw_cone);
+    lua_setfield(L, -2, "drawCone");
     lua_pushcfunction(L, l_graphics_draw_cone);
     lua_setfield(L, -2, "draw_cone");
 
     lua_pushcfunction(L, l_graphics_draw_pyramid);
+    lua_setfield(L, -2, "drawPyramid");
+    lua_pushcfunction(L, l_graphics_draw_pyramid);
     lua_setfield(L, -2, "draw_pyramid");
 
+    lua_pushcfunction(L, l_graphics_draw_torus);
+    lua_setfield(L, -2, "drawTorus");
     lua_pushcfunction(L, l_graphics_draw_torus);
     lua_setfield(L, -2, "draw_torus");
 
     lua_pushcfunction(L, l_graphics_draw_capsule);
+    lua_setfield(L, -2, "drawCapsule");
+    lua_pushcfunction(L, l_graphics_draw_capsule);
     lua_setfield(L, -2, "draw_capsule");
 
+    lua_pushcfunction(L, l_graphics_draw_billboard);
+    lua_setfield(L, -2, "drawBillboard");
     lua_pushcfunction(L, l_graphics_draw_billboard);
     lua_setfield(L, -2, "draw_billboard");
 
     lua_pushcfunction(L, l_graphics_draw_line_3d);
+    lua_setfield(L, -2, "drawLine3d");
+    lua_pushcfunction(L, l_graphics_draw_line_3d);
     lua_setfield(L, -2, "draw_line_3d");
 
+    lua_pushcfunction(L, l_graphics_draw_lines_3d);
+    lua_setfield(L, -2, "drawLines3d");
     lua_pushcfunction(L, l_graphics_draw_lines_3d);
     lua_setfield(L, -2, "draw_lines_3d");
 
     lua_pushcfunction(L, l_graphics_draw_grid_3d);
+    lua_setfield(L, -2, "drawGrid3d");
+    lua_pushcfunction(L, l_graphics_draw_grid_3d);
     lua_setfield(L, -2, "draw_grid_3d");
 
     lua_pushcfunction(L, l_graphics_draw_triangle_3d);
+    lua_setfield(L, -2, "drawTriangle3d");
+    lua_pushcfunction(L, l_graphics_draw_triangle_3d);
     lua_setfield(L, -2, "draw_triangle_3d");
 
+    lua_pushcfunction(L, l_graphics_draw_quad_3d);
+    lua_setfield(L, -2, "drawQuad3d");
     lua_pushcfunction(L, l_graphics_draw_quad_3d);
     lua_setfield(L, -2, "draw_quad_3d");
 
     // 2D Rendering
     lua_pushcfunction(L, l_graphics_draw_sprite);
+    lua_setfield(L, -2, "drawSprite");
+    lua_pushcfunction(L, l_graphics_draw_sprite);
     lua_setfield(L, -2, "draw_sprite");
 
+    lua_pushcfunction(L, l_graphics_draw_sprite_part);
+    lua_setfield(L, -2, "drawSpritePart");
     lua_pushcfunction(L, l_graphics_draw_sprite_part);
     lua_setfield(L, -2, "draw_sprite_part");
 
     lua_pushcfunction(L, l_graphics_draw_sprite_tiled);
+    lua_setfield(L, -2, "drawSpriteTiled");
+    lua_pushcfunction(L, l_graphics_draw_sprite_tiled);
     lua_setfield(L, -2, "draw_sprite_tiled");
 
+    lua_pushcfunction(L, l_graphics_draw_sprite_9slice);
+    lua_setfield(L, -2, "drawSprite9slice");
     lua_pushcfunction(L, l_graphics_draw_sprite_9slice);
     lua_setfield(L, -2, "draw_sprite_9slice");
 
     lua_pushcfunction(L, l_graphics_draw_point);
+    lua_setfield(L, -2, "drawPoint");
+    lua_pushcfunction(L, l_graphics_draw_point);
     lua_setfield(L, -2, "draw_point");
 
+    lua_pushcfunction(L, l_graphics_draw_line);
+    lua_setfield(L, -2, "drawLine");
     lua_pushcfunction(L, l_graphics_draw_line);
     lua_setfield(L, -2, "draw_line");
 
     lua_pushcfunction(L, l_graphics_draw_rect);
+    lua_setfield(L, -2, "drawRect");
+    lua_pushcfunction(L, l_graphics_draw_rect);
     lua_setfield(L, -2, "draw_rect");
 
+    lua_pushcfunction(L, l_graphics_draw_rounded_rect);
+    lua_setfield(L, -2, "drawRoundedRect");
     lua_pushcfunction(L, l_graphics_draw_rounded_rect);
     lua_setfield(L, -2, "draw_rounded_rect");
 
     lua_pushcfunction(L, l_graphics_draw_triangle);
+    lua_setfield(L, -2, "drawTriangle");
+    lua_pushcfunction(L, l_graphics_draw_triangle);
     lua_setfield(L, -2, "draw_triangle");
 
+    lua_pushcfunction(L, l_graphics_draw_quad);
+    lua_setfield(L, -2, "drawQuad");
     lua_pushcfunction(L, l_graphics_draw_quad);
     lua_setfield(L, -2, "draw_quad");
 
     lua_pushcfunction(L, l_graphics_draw_polygon);
+    lua_setfield(L, -2, "drawPolygon");
+    lua_pushcfunction(L, l_graphics_draw_polygon);
     lua_setfield(L, -2, "draw_polygon");
 
+    lua_pushcfunction(L, l_graphics_draw_circle);
+    lua_setfield(L, -2, "drawCircle");
     lua_pushcfunction(L, l_graphics_draw_circle);
     lua_setfield(L, -2, "draw_circle");
 
     lua_pushcfunction(L, l_graphics_draw_ellipse);
+    lua_setfield(L, -2, "drawEllipse");
+    lua_pushcfunction(L, l_graphics_draw_ellipse);
     lua_setfield(L, -2, "draw_ellipse");
 
+    lua_pushcfunction(L, l_graphics_draw_arc);
+    lua_setfield(L, -2, "drawArc");
     lua_pushcfunction(L, l_graphics_draw_arc);
     lua_setfield(L, -2, "draw_arc");
 
     lua_pushcfunction(L, l_graphics_draw_ring);
+    lua_setfield(L, -2, "drawRing");
+    lua_pushcfunction(L, l_graphics_draw_ring);
     lua_setfield(L, -2, "draw_ring");
 
+    lua_pushcfunction(L, l_graphics_draw_text);
+    lua_setfield(L, -2, "drawText");
     lua_pushcfunction(L, l_graphics_draw_text);
     lua_setfield(L, -2, "draw_text");
 
     lua_pushcfunction(L, l_graphics_get_text_width);
+    lua_setfield(L, -2, "getTextWidth");
+    lua_pushcfunction(L, l_graphics_get_text_width);
     lua_setfield(L, -2, "get_text_width");
 
+    lua_pushcfunction(L, l_graphics_get_text_height);
+    lua_setfield(L, -2, "getTextHeight");
     lua_pushcfunction(L, l_graphics_get_text_height);
     lua_setfield(L, -2, "get_text_height");
 
     lua_pushcfunction(L, l_graphics_set_blend_mode);
+    lua_setfield(L, -2, "setBlendMode");
+    lua_pushcfunction(L, l_graphics_set_blend_mode);
     lua_setfield(L, -2, "set_blend_mode");
 
+    lua_pushcfunction(L, l_graphics_set_scissor);
+    lua_setfield(L, -2, "setScissor");
     lua_pushcfunction(L, l_graphics_set_scissor);
     lua_setfield(L, -2, "set_scissor");
 
     lua_pushcfunction(L, l_graphics_reset_scissor);
+    lua_setfield(L, -2, "resetScissor");
+    lua_pushcfunction(L, l_graphics_reset_scissor);
     lua_setfield(L, -2, "reset_scissor");
 
     lua_pushcfunction(L, l_graphics_set_camera2d);
+    lua_setfield(L, -2, "setCamera2d");
+    lua_pushcfunction(L, l_graphics_set_camera2d);
     lua_setfield(L, -2, "set_camera2d");
 
+    lua_pushcfunction(L, l_graphics_reset_camera2d);
+    lua_setfield(L, -2, "resetCamera2d");
     lua_pushcfunction(L, l_graphics_reset_camera2d);
     lua_setfield(L, -2, "reset_camera2d");
 
     // Transform Stack
     lua_pushcfunction(L, l_graphics_push_matrix);
+    lua_setfield(L, -2, "pushMatrix");
+    lua_pushcfunction(L, l_graphics_push_matrix);
     lua_setfield(L, -2, "push_matrix");
 
+    lua_pushcfunction(L, l_graphics_pop_matrix);
+    lua_setfield(L, -2, "popMatrix");
     lua_pushcfunction(L, l_graphics_pop_matrix);
     lua_setfield(L, -2, "pop_matrix");
 
@@ -1562,59 +1845,95 @@ void register_graphics_bindings(lua_State* L) {
 
     // 2D Matrix Stack
     lua_pushcfunction(L, l_graphics_push_matrix_2d);
+    lua_setfield(L, -2, "pushMatrix2d");
+    lua_pushcfunction(L, l_graphics_push_matrix_2d);
     lua_setfield(L, -2, "push_matrix_2d");
 
+    lua_pushcfunction(L, l_graphics_pop_matrix_2d);
+    lua_setfield(L, -2, "popMatrix2d");
     lua_pushcfunction(L, l_graphics_pop_matrix_2d);
     lua_setfield(L, -2, "pop_matrix_2d");
 
     lua_pushcfunction(L, l_graphics_translate_2d);
+    lua_setfield(L, -2, "translate2d");
+    lua_pushcfunction(L, l_graphics_translate_2d);
     lua_setfield(L, -2, "translate_2d");
 
     lua_pushcfunction(L, l_graphics_rotate_2d);
+    lua_setfield(L, -2, "rotate2d");
+    lua_pushcfunction(L, l_graphics_rotate_2d);
     lua_setfield(L, -2, "rotate_2d");
 
+    lua_pushcfunction(L, l_graphics_scale_2d);
+    lua_setfield(L, -2, "scale2d");
     lua_pushcfunction(L, l_graphics_scale_2d);
     lua_setfield(L, -2, "scale_2d");
 
     // Scissor Stack
     lua_pushcfunction(L, l_graphics_push_scissor);
+    lua_setfield(L, -2, "pushScissor");
+    lua_pushcfunction(L, l_graphics_push_scissor);
     lua_setfield(L, -2, "push_scissor");
 
+    lua_pushcfunction(L, l_graphics_pop_scissor);
+    lua_setfield(L, -2, "popScissor");
     lua_pushcfunction(L, l_graphics_pop_scissor);
     lua_setfield(L, -2, "pop_scissor");
 
     // Advanced 2D Primitives
     lua_pushcfunction(L, l_graphics_draw_gradient_rect);
+    lua_setfield(L, -2, "drawGradientRect");
+    lua_pushcfunction(L, l_graphics_draw_gradient_rect);
     lua_setfield(L, -2, "draw_gradient_rect");
 
+    lua_pushcfunction(L, l_graphics_draw_gradient_h);
+    lua_setfield(L, -2, "drawGradientH");
     lua_pushcfunction(L, l_graphics_draw_gradient_h);
     lua_setfield(L, -2, "draw_gradient_h");
 
     lua_pushcfunction(L, l_graphics_draw_gradient_v);
+    lua_setfield(L, -2, "drawGradientV");
+    lua_pushcfunction(L, l_graphics_draw_gradient_v);
     lua_setfield(L, -2, "draw_gradient_v");
 
+    lua_pushcfunction(L, l_graphics_draw_polyline);
+    lua_setfield(L, -2, "drawPolyline");
     lua_pushcfunction(L, l_graphics_draw_polyline);
     lua_setfield(L, -2, "draw_polyline");
 
     lua_pushcfunction(L, l_graphics_draw_bezier);
+    lua_setfield(L, -2, "drawBezier");
+    lua_pushcfunction(L, l_graphics_draw_bezier);
     lua_setfield(L, -2, "draw_bezier");
 
+    lua_pushcfunction(L, l_graphics_draw_pie);
+    lua_setfield(L, -2, "drawPie");
     lua_pushcfunction(L, l_graphics_draw_pie);
     lua_setfield(L, -2, "draw_pie");
 
     lua_pushcfunction(L, l_graphics_draw_rounded_rect_ex);
+    lua_setfield(L, -2, "drawRoundedRectEx");
+    lua_pushcfunction(L, l_graphics_draw_rounded_rect_ex);
     lua_setfield(L, -2, "draw_rounded_rect_ex");
 
+    lua_pushcfunction(L, l_graphics_draw_texture_rot);
+    lua_setfield(L, -2, "drawTextureRot");
     lua_pushcfunction(L, l_graphics_draw_texture_rot);
     lua_setfield(L, -2, "draw_texture_rot");
 
     // Advanced 3D Helpers
     lua_pushcfunction(L, l_graphics_draw_billboard_rot);
+    lua_setfield(L, -2, "drawBillboardRot");
+    lua_pushcfunction(L, l_graphics_draw_billboard_rot);
     lua_setfield(L, -2, "draw_billboard_rot");
 
     lua_pushcfunction(L, l_graphics_draw_axes_3d);
+    lua_setfield(L, -2, "drawAxes3d");
+    lua_pushcfunction(L, l_graphics_draw_axes_3d);
     lua_setfield(L, -2, "draw_axes_3d");
 
+    lua_pushcfunction(L, l_graphics_draw_cube_wires);
+    lua_setfield(L, -2, "drawCubeWires");
     lua_pushcfunction(L, l_graphics_draw_cube_wires);
     lua_setfield(L, -2, "draw_cube_wires");
 

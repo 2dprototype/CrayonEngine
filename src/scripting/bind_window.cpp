@@ -274,21 +274,34 @@ void register_window_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
 
+    // Primary camelCase + backward-compatibility snake_case
+    lua_pushcfunction(L, l_window_set_resolution);
+    lua_setfield(L, -2, "setResolution");
     lua_pushcfunction(L, l_window_set_resolution);
     lua_setfield(L, -2, "set_resolution");
 
     lua_pushcfunction(L, l_window_get_resolution);
+    lua_setfield(L, -2, "getResolution");
+    lua_pushcfunction(L, l_window_get_resolution);
     lua_setfield(L, -2, "get_resolution");
 
+    lua_pushcfunction(L, l_window_set_window_size);
+    lua_setfield(L, -2, "setWindowSize");
     lua_pushcfunction(L, l_window_set_window_size);
     lua_setfield(L, -2, "set_window_size");
 
     lua_pushcfunction(L, l_window_get_window_size);
+    lua_setfield(L, -2, "getWindowSize");
+    lua_pushcfunction(L, l_window_get_window_size);
     lua_setfield(L, -2, "get_window_size");
 
     lua_pushcfunction(L, l_window_set_position);
+    lua_setfield(L, -2, "setPosition");
+    lua_pushcfunction(L, l_window_set_position);
     lua_setfield(L, -2, "set_position");
 
+    lua_pushcfunction(L, l_window_get_position);
+    lua_setfield(L, -2, "getPosition");
     lua_pushcfunction(L, l_window_get_position);
     lua_setfield(L, -2, "get_position");
 
@@ -296,38 +309,62 @@ void register_window_bindings(lua_State* L) {
     lua_setfield(L, -2, "center");
 
     lua_pushcfunction(L, l_window_set_min_size);
+    lua_setfield(L, -2, "setMinSize");
+    lua_pushcfunction(L, l_window_set_min_size);
     lua_setfield(L, -2, "set_min_size");
 
+    lua_pushcfunction(L, l_window_set_max_size);
+    lua_setfield(L, -2, "setMaxSize");
     lua_pushcfunction(L, l_window_set_max_size);
     lua_setfield(L, -2, "set_max_size");
 
     lua_pushcfunction(L, l_window_set_fullscreen);
+    lua_setfield(L, -2, "setFullscreen");
+    lua_pushcfunction(L, l_window_set_fullscreen);
     lua_setfield(L, -2, "set_fullscreen");
 
+    lua_pushcfunction(L, l_window_is_fullscreen);
+    lua_setfield(L, -2, "isFullscreen");
     lua_pushcfunction(L, l_window_is_fullscreen);
     lua_setfield(L, -2, "is_fullscreen");
 
     lua_pushcfunction(L, l_window_set_vsync);
+    lua_setfield(L, -2, "setVsync");
+    lua_pushcfunction(L, l_window_set_vsync);
     lua_setfield(L, -2, "set_vsync");
 
+    lua_pushcfunction(L, l_window_get_vsync);
+    lua_setfield(L, -2, "getVsync");
     lua_pushcfunction(L, l_window_get_vsync);
     lua_setfield(L, -2, "get_vsync");
 
     lua_pushcfunction(L, l_window_set_title);
+    lua_setfield(L, -2, "setTitle");
+    lua_pushcfunction(L, l_window_set_title);
     lua_setfield(L, -2, "set_title");
 
+    lua_pushcfunction(L, l_window_get_title);
+    lua_setfield(L, -2, "getTitle");
     lua_pushcfunction(L, l_window_get_title);
     lua_setfield(L, -2, "get_title");
 
     lua_pushcfunction(L, l_window_set_resizable);
+    lua_setfield(L, -2, "setResizable");
+    lua_pushcfunction(L, l_window_set_resizable);
     lua_setfield(L, -2, "set_resizable");
 
+    lua_pushcfunction(L, l_window_is_resizable);
+    lua_setfield(L, -2, "isResizable");
     lua_pushcfunction(L, l_window_is_resizable);
     lua_setfield(L, -2, "is_resizable");
 
     lua_pushcfunction(L, l_window_set_bordered);
+    lua_setfield(L, -2, "setBordered");
+    lua_pushcfunction(L, l_window_set_bordered);
     lua_setfield(L, -2, "set_bordered");
 
+    lua_pushcfunction(L, l_window_is_bordered);
+    lua_setfield(L, -2, "isBordered");
     lua_pushcfunction(L, l_window_is_bordered);
     lua_setfield(L, -2, "is_bordered");
 
@@ -341,35 +378,57 @@ void register_window_bindings(lua_State* L) {
     lua_setfield(L, -2, "restore");
 
     lua_pushcfunction(L, l_window_is_maximized);
+    lua_setfield(L, -2, "isMaximized");
+    lua_pushcfunction(L, l_window_is_maximized);
     lua_setfield(L, -2, "is_maximized");
 
+    lua_pushcfunction(L, l_window_is_minimized);
+    lua_setfield(L, -2, "isMinimized");
     lua_pushcfunction(L, l_window_is_minimized);
     lua_setfield(L, -2, "is_minimized");
 
     lua_pushcfunction(L, l_window_is_focused);
+    lua_setfield(L, -2, "isFocused");
+    lua_pushcfunction(L, l_window_is_focused);
     lua_setfield(L, -2, "is_focused");
 
+    lua_pushcfunction(L, l_window_set_scaling_mode);
+    lua_setfield(L, -2, "setScalingMode");
     lua_pushcfunction(L, l_window_set_scaling_mode);
     lua_setfield(L, -2, "set_scaling_mode");
 
     lua_pushcfunction(L, l_window_get_scaling_mode);
+    lua_setfield(L, -2, "getScalingMode");
+    lua_pushcfunction(L, l_window_get_scaling_mode);
     lua_setfield(L, -2, "get_scaling_mode");
 
+    lua_pushcfunction(L, l_window_set_mouse_relative);
+    lua_setfield(L, -2, "setMouseRelative");
     lua_pushcfunction(L, l_window_set_mouse_relative);
     lua_setfield(L, -2, "set_mouse_relative");
 
     lua_pushcfunction(L, l_window_is_mouse_relative);
+    lua_setfield(L, -2, "isMouseRelative");
+    lua_pushcfunction(L, l_window_is_mouse_relative);
     lua_setfield(L, -2, "is_mouse_relative");
 
+    lua_pushcfunction(L, l_window_show_cursor);
+    lua_setfield(L, -2, "showCursor");
     lua_pushcfunction(L, l_window_show_cursor);
     lua_setfield(L, -2, "show_cursor");
 
     lua_pushcfunction(L, l_window_is_cursor_visible);
+    lua_setfield(L, -2, "isCursorVisible");
+    lua_pushcfunction(L, l_window_is_cursor_visible);
     lua_setfield(L, -2, "is_cursor_visible");
 
     lua_pushcfunction(L, l_window_get_display_size);
+    lua_setfield(L, -2, "getDisplaySize");
+    lua_pushcfunction(L, l_window_get_display_size);
     lua_setfield(L, -2, "get_display_size");
 
+    lua_pushcfunction(L, l_window_get_fps);
+    lua_setfield(L, -2, "getFps");
     lua_pushcfunction(L, l_window_get_fps);
     lua_setfield(L, -2, "get_fps");
 
@@ -377,14 +436,22 @@ void register_window_bindings(lua_State* L) {
     lua_setfield(L, -2, "quit");
 
     lua_pushcfunction(L, l_window_set_opacity);
+    lua_setfield(L, -2, "setOpacity");
+    lua_pushcfunction(L, l_window_set_opacity);
     lua_setfield(L, -2, "set_opacity");
 
+    lua_pushcfunction(L, l_window_get_opacity);
+    lua_setfield(L, -2, "getOpacity");
     lua_pushcfunction(L, l_window_get_opacity);
     lua_setfield(L, -2, "get_opacity");
 
     lua_pushcfunction(L, l_window_set_always_on_top);
+    lua_setfield(L, -2, "setAlwaysOnTop");
+    lua_pushcfunction(L, l_window_set_always_on_top);
     lua_setfield(L, -2, "set_always_on_top");
 
+    lua_pushcfunction(L, l_window_is_always_on_top);
+    lua_setfield(L, -2, "isAlwaysOnTop");
     lua_pushcfunction(L, l_window_is_always_on_top);
     lua_setfield(L, -2, "is_always_on_top");
 
@@ -398,14 +465,22 @@ void register_window_bindings(lua_State* L) {
     lua_setfield(L, -2, "flash");
 
     lua_pushcfunction(L, l_window_set_mouse_grab);
+    lua_setfield(L, -2, "setMouseGrab");
+    lua_pushcfunction(L, l_window_set_mouse_grab);
     lua_setfield(L, -2, "set_mouse_grab");
 
+    lua_pushcfunction(L, l_window_is_mouse_grabbed);
+    lua_setfield(L, -2, "isMouseGrabbed");
     lua_pushcfunction(L, l_window_is_mouse_grabbed);
     lua_setfield(L, -2, "is_mouse_grabbed");
 
     lua_pushcfunction(L, l_window_set_transparent);
+    lua_setfield(L, -2, "setTransparent");
+    lua_pushcfunction(L, l_window_set_transparent);
     lua_setfield(L, -2, "set_transparent");
 
+    lua_pushcfunction(L, l_window_is_transparent);
+    lua_setfield(L, -2, "isTransparent");
     lua_pushcfunction(L, l_window_is_transparent);
     lua_setfield(L, -2, "is_transparent");
 

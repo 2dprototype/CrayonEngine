@@ -17,9 +17,14 @@ void register_time_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
 
+    // Primary camelCase + backward-compatibility snake_case
+    lua_pushcfunction(L, l_time_get_time);
+    lua_setfield(L, -2, "getTime");
     lua_pushcfunction(L, l_time_get_time);
     lua_setfield(L, -2, "get_time");
 
+    lua_pushcfunction(L, l_time_get_dt);
+    lua_setfield(L, -2, "getDt");
     lua_pushcfunction(L, l_time_get_dt);
     lua_setfield(L, -2, "get_dt");
 

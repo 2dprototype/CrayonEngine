@@ -49,7 +49,8 @@ set(SOURCES
     src/scripting/bind_graphics.cpp
     src/scripting/bind_input.cpp
     src/scripting/bind_time.cpp
-    src/scripting/bind_physics.cpp
+    src/scripting/bind_physics3d.cpp
+    src/scripting/bind_physics2d.cpp
     src/main.cpp
 )
 
