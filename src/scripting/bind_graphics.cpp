@@ -1517,6 +1517,159 @@ static int l_graphics_draw_cube_wires(lua_State* L) {
     return 0;
 }
 
+static int l_graphics_draw_capsule_wires(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_checknumber(L, 4));
+    float half_h = static_cast<float>(luaL_checknumber(L, 5));
+    glm::vec4 col = Engine::get().get_active_color();
+    glm::vec3 rot(0.0f);
+    if (lua_istable(L, 6)) {
+        col = parse_lua_color(L, 6, col);
+        if (lua_isnumber(L, 7)) rot.x = static_cast<float>(lua_tonumber(L, 7));
+        if (lua_isnumber(L, 8)) rot.y = static_cast<float>(lua_tonumber(L, 8));
+        if (lua_isnumber(L, 9)) rot.z = static_cast<float>(lua_tonumber(L, 9));
+    } else {
+        if (lua_isnumber(L, 6)) rot.x = static_cast<float>(lua_tonumber(L, 6));
+        if (lua_isnumber(L, 7)) rot.y = static_cast<float>(lua_tonumber(L, 7));
+        if (lua_isnumber(L, 8)) rot.z = static_cast<float>(lua_tonumber(L, 8));
+    }
+    Engine::get().get_mesh_renderer().draw_capsule_wires(glm::vec3(x, y, z), radius, half_h, col, rot);
+    return 0;
+}
+
+static int l_graphics_draw_cylinder_wires(lua_State* L) {
+    float x = static_cast<float>(luaL_checknumber(L, 1));
+    float y = static_cast<float>(luaL_checknumber(L, 2));
+    float z = static_cast<float>(luaL_checknumber(L, 3));
+    float radius = static_cast<float>(luaL_checknumber(L, 4));
+    float half_h = static_cast<float>(luaL_checknumber(L, 5));
+    glm::vec4 col = Engine::get().get_active_color();
+    glm::vec3 rot(0.0f);
+    if (lua_istable(L, 6)) {
+        col = parse_lua_color(L, 6, col);
+        if (lua_isnumber(L, 7)) rot.x = static_cast<float>(lua_tonumber(L, 7));
+        if (lua_isnumber(L, 8)) rot.y = static_cast<float>(lua_tonumber(L, 8));
+        if (lua_isnumber(L, 9)) rot.z = static_cast<float>(lua_tonumber(L, 9));
+    } else {
+        if (lua_isnumber(L, 6)) rot.x = static_cast<float>(lua_tonumber(L, 6));
+        if (lua_isnumber(L, 7)) rot.y = static_cast<float>(lua_tonumber(L, 7));
+        if (lua_isnumber(L, 8)) rot.z = static_cast<float>(lua_tonumber(L, 8));
+    }
+    Engine::get().get_mesh_renderer().draw_cylinder_wires(glm::vec3(x, y, z), radius, half_h, col, rot);
+    return 0;
+}
+
+static int l_graphics_draw_ray_3d(lua_State* L) {
+    float sx = static_cast<float>(luaL_checknumber(L, 1));
+    float sy = static_cast<float>(luaL_checknumber(L, 2));
+    float sz = static_cast<float>(luaL_checknumber(L, 3));
+    float dx = static_cast<float>(luaL_checknumber(L, 4));
+    float dy = static_cast<float>(luaL_checknumber(L, 5));
+    float dz = static_cast<float>(luaL_checknumber(L, 6));
+    float len = static_cast<float>(luaL_optnumber(L, 7, 1.0));
+    glm::vec4 col = Engine::get().get_active_color();
+    if (lua_istable(L, 8)) {
+        col = parse_lua_color(L, 8, col);
+    }
+    Engine::get().get_mesh_renderer().draw_ray_3d(glm::vec3(sx, sy, sz), glm::vec3(dx, dy, dz), len, col);
+    return 0;
+}
+
+static int l_graphics_draw_skeleton(lua_State* L) {
+    if (!lua_istable(L, 1)) return 0;
+    std::vector<glm::vec3> positions;
+    int n = static_cast<int>(lua_objlen(L, 1));
+    positions.reserve(n);
+    for (int i = 1; i <= n; ++i) {
+        lua_rawgeti(L, 1, i);
+        if (lua_istable(L, -1)) {
+            lua_rawgeti(L, -1, 1); float px = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+            lua_rawgeti(L, -1, 2); float py = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+            lua_rawgeti(L, -1, 3); float pz = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+            positions.emplace_back(px, py, pz);
+        } else {
+            positions.emplace_back(0.0f);
+        }
+        lua_pop(L, 1);
+    }
+
+    std::vector<std::pair<int, int>> connections;
+    if (lua_istable(L, 2)) {
+        int m = static_cast<int>(lua_objlen(L, 2));
+        connections.reserve(m);
+        for (int i = 1; i <= m; ++i) {
+            lua_rawgeti(L, 2, i);
+            if (lua_istable(L, -1)) {
+                lua_rawgeti(L, -1, 1); int p = static_cast<int>(lua_tointeger(L, -1)) - 1; lua_pop(L, 1);
+                lua_rawgeti(L, -1, 2); int c = static_cast<int>(lua_tointeger(L, -1)) - 1; lua_pop(L, 1);
+                connections.emplace_back(p, c);
+            }
+            lua_pop(L, 1);
+        }
+    }
+
+    glm::vec4 col = Engine::get().get_active_color();
+    if (lua_istable(L, 3)) {
+        col = parse_lua_color(L, 3, col);
+    }
+
+    Engine::get().get_mesh_renderer().draw_skeleton_3d(positions, connections, col);
+    return 0;
+}
+
+static int l_graphics_draw_segmented_mesh(lua_State* L) {
+    if (!lua_istable(L, 1) || !lua_istable(L, 2)) return 0;
+    std::vector<std::shared_ptr<Mesh3D>> meshes;
+    int n = static_cast<int>(lua_objlen(L, 1));
+    meshes.reserve(n);
+    for (int i = 1; i <= n; ++i) {
+        lua_rawgeti(L, 1, i);
+        if (lua_isuserdata(L, -1)) {
+            auto* m = static_cast<LuaModel*>(luaL_checkudata(L, -1, "Graphics.Model"));
+            meshes.push_back(m ? m->mesh : nullptr);
+        } else {
+            meshes.push_back(nullptr);
+        }
+        lua_pop(L, 1);
+    }
+
+    std::vector<glm::mat4> transforms;
+    transforms.reserve(n);
+    for (int i = 1; i <= n; ++i) {
+        lua_rawgeti(L, 2, i);
+        glm::mat4 mat(1.0f);
+        if (lua_istable(L, -1)) {
+            int mlen = static_cast<int>(lua_objlen(L, -1));
+            if (mlen >= 16) {
+                float* p = &mat[0][0];
+                for (int m = 1; m <= 16; ++m) {
+                    lua_rawgeti(L, -1, m);
+                    p[m - 1] = static_cast<float>(lua_tonumber(L, -1));
+                    lua_pop(L, 1);
+                }
+            }
+        }
+        transforms.push_back(mat);
+        lua_pop(L, 1);
+    }
+
+    std::vector<GLuint> textures;
+    if (lua_istable(L, 3)) {
+        int tlen = static_cast<int>(lua_objlen(L, 3));
+        textures.reserve(tlen);
+        for (int i = 1; i <= tlen; ++i) {
+            lua_rawgeti(L, 3, i);
+            textures.push_back(check_texture(L, -1));
+            lua_pop(L, 1);
+        }
+    }
+
+    Engine::get().get_mesh_renderer().draw_segmented_mesh(meshes, transforms, textures);
+    return 0;
+}
+
 static int l_graphics_project(lua_State* L) {
     float x = static_cast<float>(luaL_checknumber(L, 1));
     float y = static_cast<float>(luaL_checknumber(L, 2));
@@ -1936,6 +2089,23 @@ void register_graphics_bindings(lua_State* L) {
     lua_setfield(L, -2, "drawCubeWires");
     lua_pushcfunction(L, l_graphics_draw_cube_wires);
     lua_setfield(L, -2, "draw_cube_wires");
+
+    lua_pushcfunction(L, l_graphics_draw_capsule_wires);
+    lua_setfield(L, -2, "drawCapsuleWires");
+
+    lua_pushcfunction(L, l_graphics_draw_cylinder_wires);
+    lua_setfield(L, -2, "drawCylinderWires");
+
+    lua_pushcfunction(L, l_graphics_draw_ray_3d);
+    lua_setfield(L, -2, "drawRay3d");
+    lua_pushcfunction(L, l_graphics_draw_ray_3d);
+    lua_setfield(L, -2, "drawRay");
+
+    lua_pushcfunction(L, l_graphics_draw_skeleton);
+    lua_setfield(L, -2, "drawSkeleton");
+
+    lua_pushcfunction(L, l_graphics_draw_segmented_mesh);
+    lua_setfield(L, -2, "drawSegmentedMesh");
 
     lua_pushcfunction(L, l_graphics_project);
     lua_setfield(L, -2, "project");

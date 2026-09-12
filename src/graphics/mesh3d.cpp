@@ -1131,6 +1131,136 @@ void MeshRenderer3D::draw_cube_wires(const glm::vec3& pos, const glm::vec3& size
     pop_matrix();
 }
 
+void MeshRenderer3D::draw_capsule_wires(const glm::vec3& pos, float radius, float half_height, const glm::vec4& color, const glm::vec3& rot) {
+    push_matrix();
+    translate(pos);
+    if (rot.z != 0.0f) rotate(rot.z, glm::vec3(0, 0, 1));
+    if (rot.y != 0.0f) rotate(rot.y, glm::vec3(0, 1, 0));
+    if (rot.x != 0.0f) rotate(rot.x, glm::vec3(1, 0, 0));
+
+    const int segments = 16;
+    const float step = 6.2831853f / segments;
+
+    // Top and bottom cap centers
+    float top_y = half_height;
+    float bot_y = -half_height;
+
+    // 1. Top and bottom horizontal circles
+    for (int i = 0; i < segments; ++i) {
+        float a1 = i * step;
+        float a2 = (i + 1) * step;
+        float x1 = radius * std::cos(a1), z1 = radius * std::sin(a1);
+        float x2 = radius * std::cos(a2), z2 = radius * std::sin(a2);
+
+        draw_line_3d(glm::vec3(x1, top_y, z1), glm::vec3(x2, top_y, z2), color);
+        draw_line_3d(glm::vec3(x1, bot_y, z1), glm::vec3(x2, bot_y, z2), color);
+    }
+
+    // 2. 4 Vertical cylinder lines connecting top and bottom circles
+    draw_line_3d(glm::vec3( radius, top_y, 0.0f), glm::vec3( radius, bot_y, 0.0f), color);
+    draw_line_3d(glm::vec3(-radius, top_y, 0.0f), glm::vec3(-radius, bot_y, 0.0f), color);
+    draw_line_3d(glm::vec3(0.0f, top_y,  radius), glm::vec3(0.0f, bot_y,  radius), color);
+    draw_line_3d(glm::vec3(0.0f, top_y, -radius), glm::vec3(0.0f, bot_y, -radius), color);
+
+    // 3. Top and bottom dome semicircles (in XY and ZY planes)
+    const int half_segs = segments / 2;
+    const float half_step = 3.14159265f / half_segs;
+    for (int i = 0; i < half_segs; ++i) {
+        float a1 = i * half_step;
+        float a2 = (i + 1) * half_step;
+
+        // Top dome in XY plane (0 to pi)
+        float tx1 = radius * std::cos(a1), ty1 = top_y + radius * std::sin(a1);
+        float tx2 = radius * std::cos(a2), ty2 = top_y + radius * std::sin(a2);
+        draw_line_3d(glm::vec3(tx1, ty1, 0.0f), glm::vec3(tx2, ty2, 0.0f), color);
+
+        // Top dome in ZY plane (0 to pi)
+        float tz1 = radius * std::cos(a1);
+        float tz2 = radius * std::cos(a2);
+        draw_line_3d(glm::vec3(0.0f, ty1, tz1), glm::vec3(0.0f, ty2, tz2), color);
+
+        // Bottom dome in XY plane (pi to 2pi -> -sin)
+        float bx1 = radius * std::cos(a1), by1 = bot_y - radius * std::sin(a1);
+        float bx2 = radius * std::cos(a2), by2 = bot_y - radius * std::sin(a2);
+        draw_line_3d(glm::vec3(bx1, by1, 0.0f), glm::vec3(bx2, by2, 0.0f), color);
+
+        // Bottom dome in ZY plane
+        float bz1 = radius * std::cos(a1);
+        float bz2 = radius * std::cos(a2);
+        draw_line_3d(glm::vec3(0.0f, by1, bz1), glm::vec3(0.0f, by2, bz2), color);
+    }
+
+    pop_matrix();
+}
+
+void MeshRenderer3D::draw_cylinder_wires(const glm::vec3& pos, float radius, float half_height, const glm::vec4& color, const glm::vec3& rot) {
+    push_matrix();
+    translate(pos);
+    if (rot.z != 0.0f) rotate(rot.z, glm::vec3(0, 0, 1));
+    if (rot.y != 0.0f) rotate(rot.y, glm::vec3(0, 1, 0));
+    if (rot.x != 0.0f) rotate(rot.x, glm::vec3(1, 0, 0));
+
+    const int segments = 16;
+    const float step = 6.2831853f / segments;
+    float top_y = half_height;
+    float bot_y = -half_height;
+
+    for (int i = 0; i < segments; ++i) {
+        float a1 = i * step;
+        float a2 = (i + 1) * step;
+        float x1 = radius * std::cos(a1), z1 = radius * std::sin(a1);
+        float x2 = radius * std::cos(a2), z2 = radius * std::sin(a2);
+
+        draw_line_3d(glm::vec3(x1, top_y, z1), glm::vec3(x2, top_y, z2), color);
+        draw_line_3d(glm::vec3(x1, bot_y, z1), glm::vec3(x2, bot_y, z2), color);
+    }
+
+    draw_line_3d(glm::vec3( radius, top_y, 0.0f), glm::vec3( radius, bot_y, 0.0f), color);
+    draw_line_3d(glm::vec3(-radius, top_y, 0.0f), glm::vec3(-radius, bot_y, 0.0f), color);
+    draw_line_3d(glm::vec3(0.0f, top_y,  radius), glm::vec3(0.0f, bot_y,  radius), color);
+    draw_line_3d(glm::vec3(0.0f, top_y, -radius), glm::vec3(0.0f, bot_y, -radius), color);
+
+    pop_matrix();
+}
+
+void MeshRenderer3D::draw_ray_3d(const glm::vec3& start, const glm::vec3& dir, float length, const glm::vec4& color) {
+    glm::vec3 d = dir;
+    if (glm::length(d) > 0.0001f) d = glm::normalize(d);
+    else d = glm::vec3(0, 1, 0);
+
+    glm::vec3 end = start + d * length;
+    draw_line_3d(start, end, color);
+
+    // Endpoint small cross
+    float s = length * 0.04f;
+    if (s > 0.1f) s = 0.1f;
+    draw_line_3d(end - glm::vec3(s, 0, 0), end + glm::vec3(s, 0, 0), color);
+    draw_line_3d(end - glm::vec3(0, s, 0), end + glm::vec3(0, s, 0), color);
+    draw_line_3d(end - glm::vec3(0, 0, s), end + glm::vec3(0, 0, s), color);
+}
+
+void MeshRenderer3D::draw_skeleton_3d(const std::vector<glm::vec3>& joint_positions, const std::vector<std::pair<int, int>>& connections, const glm::vec4& color) {
+    for (const auto& conn : connections) {
+        if (conn.first >= 0 && conn.first < (int)joint_positions.size() &&
+            conn.second >= 0 && conn.second < (int)joint_positions.size()) {
+            draw_line_3d(joint_positions[conn.first], joint_positions[conn.second], color);
+        }
+    }
+    // Small joint dots/axes
+    for (const auto& pos : joint_positions) {
+        draw_axes_3d(pos, 0.08f);
+    }
+}
+
+void MeshRenderer3D::draw_segmented_mesh(const std::vector<std::shared_ptr<Mesh3D>>& meshes, const std::vector<glm::mat4>& transforms, const std::vector<GLuint>& textures) {
+    size_t count = std::min(meshes.size(), transforms.size());
+    for (size_t i = 0; i < count; ++i) {
+        if (!meshes[i]) continue;
+        GLuint tex = (i < textures.size()) ? textures[i] : 0;
+        draw_mesh(*meshes[i], transforms[i], tex);
+    }
+}
+
 bool MeshRenderer3D::project(const glm::vec3& world_pos, float view_w, float view_h, glm::vec2& out_screen_pos) const {
     glm::vec4 clip = m_proj * m_view * glm::vec4(world_pos, 1.0f);
     if (clip.w <= 0.0001f) {

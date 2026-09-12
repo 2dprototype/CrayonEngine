@@ -119,6 +119,205 @@ public:
     uint32_t get_num_bodies() const;
     uint32_t get_num_active_bodies() const;
 
+    // ========================================================================
+    // Game Character Simulation (Capsule: Rigid Body & Virtual Character)
+    // ========================================================================
+    enum class GroundState {
+        OnGround = 0,
+        OnSteepGround = 1,
+        NotSupported = 2,
+        InAir = 3
+    };
+
+    struct CharacterConfig {
+        glm::vec3 pos{0.0f};
+        float radius = 0.4f;
+        float half_height = 0.6f;
+        float mass = 80.0f;
+        float friction = 0.2f;
+        float gravity_factor = 1.0f;
+        float max_slope_angle_deg = 45.0f;
+        MotionType motion = MotionType::Dynamic;
+    };
+
+    struct CharacterVirtualConfig {
+        glm::vec3 pos{0.0f};
+        float radius = 0.4f;
+        float half_height = 0.6f;
+        float mass = 70.0f;
+        float max_slope_angle_deg = 45.0f;
+        float max_strength = 100.0f;
+        float step_height = 0.4f;
+        float predictive_contact_distance = 0.1f;
+        bool inner_body = true;
+    };
+
+    // Rigid Body Character
+    uint32_t create_character(const CharacterConfig& config);
+    bool destroy_character(uint32_t id);
+    void character_set_linear_velocity(uint32_t id, const glm::vec3& vel);
+    glm::vec3 character_get_linear_velocity(uint32_t id) const;
+    void character_set_position(uint32_t id, const glm::vec3& pos);
+    glm::vec3 character_get_position(uint32_t id) const;
+    void character_set_rotation(uint32_t id, const glm::quat& rot);
+    glm::quat character_get_rotation(uint32_t id) const;
+    bool character_is_supported(uint32_t id) const;
+    GroundState character_get_ground_state(uint32_t id) const;
+    glm::vec3 character_get_ground_normal(uint32_t id) const;
+    glm::vec3 character_get_ground_velocity(uint32_t id) const;
+    glm::vec3 character_get_ground_position(uint32_t id) const;
+    uint32_t character_get_body_id(uint32_t id) const;
+
+    // Virtual Character (simulated outside physics update)
+    uint32_t create_character_virtual(const CharacterVirtualConfig& config);
+    bool destroy_character_virtual(uint32_t id);
+    void character_virtual_update(uint32_t id, float dt);
+    void character_virtual_set_linear_velocity(uint32_t id, const glm::vec3& vel);
+    glm::vec3 character_virtual_get_linear_velocity(uint32_t id) const;
+    void character_virtual_set_position(uint32_t id, const glm::vec3& pos);
+    glm::vec3 character_virtual_get_position(uint32_t id) const;
+    void character_virtual_set_rotation(uint32_t id, const glm::quat& rot);
+    glm::quat character_virtual_get_rotation(uint32_t id) const;
+    bool character_virtual_is_supported(uint32_t id) const;
+    GroundState character_virtual_get_ground_state(uint32_t id) const;
+    glm::vec3 character_virtual_get_ground_normal(uint32_t id) const;
+    glm::vec3 character_virtual_get_ground_velocity(uint32_t id) const;
+    glm::vec3 character_virtual_get_ground_position(uint32_t id) const;
+
+    // ========================================================================
+    // Vehicles (Wheeled Vehicles, Tracked Vehicles, Motorcycles)
+    // ========================================================================
+    struct WheelConfig {
+        glm::vec3 position{0.0f}; // Local attachment offset
+        float radius = 0.3f;
+        float width = 0.15f;
+        float suspension_min_length = 0.15f;
+        float suspension_max_length = 0.45f;
+        float suspension_spring = 25000.0f;
+        float suspension_damping = 2500.0f;
+        float max_steer_angle_rad = 0.6f;
+        float max_brake_torque = 1500.0f;
+        float max_hand_brake_torque = 4000.0f;
+        bool is_front = false;
+        bool is_drive = true;
+    };
+
+    struct WheeledVehicleConfig {
+        uint32_t chassis_body_id = 0;
+        std::vector<WheelConfig> wheels;
+        float max_pitch_roll_angle = 3.14159f;
+        float engine_max_torque = 400.0f;
+        float engine_min_rpm = 1000.0f;
+        float engine_max_rpm = 7000.0f;
+    };
+
+    struct TrackedVehicleConfig {
+        uint32_t chassis_body_id = 0;
+        std::vector<WheelConfig> left_wheels;
+        std::vector<WheelConfig> right_wheels;
+        float engine_max_torque = 800.0f;
+    };
+
+    struct MotorcycleConfig {
+        uint32_t chassis_body_id = 0;
+        WheelConfig front_wheel;
+        WheelConfig rear_wheel;
+        float max_lean_angle_rad = 0.785f; // 45 deg
+        float lean_spring_constant = 5000.0f;
+        float lean_spring_damping = 1000.0f;
+        float lean_smoothing_factor = 0.8f;
+        float engine_max_torque = 250.0f;
+    };
+
+    uint32_t create_wheeled_vehicle(const WheeledVehicleConfig& config);
+    uint32_t create_tracked_vehicle(const TrackedVehicleConfig& config);
+    uint32_t create_motorcycle(const MotorcycleConfig& config);
+    bool destroy_vehicle(uint32_t id);
+
+    void vehicle_set_input_wheeled(uint32_t id, float forward, float steer, float brake, bool handbrake);
+    void vehicle_set_input_tracked(uint32_t id, float left_ratio, float right_ratio, float brake);
+    void vehicle_set_input_motorcycle(uint32_t id, float forward, float steer, float brake);
+
+    void vehicle_enable_lean_controller(uint32_t id, bool enable);
+    bool vehicle_is_lean_controller_enabled(uint32_t id) const;
+    float vehicle_get_lean_angle(uint32_t id) const;
+
+    float vehicle_get_speed_kmh(uint32_t id) const;
+    float vehicle_get_engine_rpm(uint32_t id) const;
+    int vehicle_get_transmission_gear(uint32_t id) const;
+    int vehicle_get_wheel_count(uint32_t id) const;
+    bool vehicle_get_wheel_transform(uint32_t id, int wheel_idx, glm::vec3& out_pos, glm::quat& out_rot) const;
+
+    // ========================================================================
+    // Animated Ragdolls & Skeleton Mapping
+    // ========================================================================
+    enum class RagdollPartShape { Box, Capsule, Sphere };
+
+    struct RagdollPartConfig {
+        std::string name;
+        int parent_joint_index = -1; // -1 for root
+        glm::vec3 position{0.0f};
+        glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+        RagdollPartShape shape_type = RagdollPartShape::Capsule;
+        glm::vec3 half_extent{0.1f};
+        float radius = 0.1f;
+        float half_height = 0.2f;
+        MotionType motion = MotionType::Dynamic;
+        float mass = 5.0f;
+        float friction = 0.5f;
+
+        float swing_limit_y = 0.785f;
+        float swing_limit_z = 0.785f;
+        float twist_min = -0.785f;
+        float twist_max = 0.785f;
+        bool enable_motors = true;
+        float motor_spring_k = 2000.0f;
+        float motor_damping_c = 100.0f;
+        float motor_max_torque = 500.0f;
+    };
+
+    struct RagdollConfig {
+        std::vector<RagdollPartConfig> parts;
+        bool disable_parent_child_collisions = true;
+        bool stabilize = true;
+    };
+
+    // Skeleton
+    uint32_t create_skeleton(const std::vector<std::pair<std::string, int>>& joints);
+    bool destroy_skeleton(uint32_t id);
+
+    // SkeletonPose
+    uint32_t create_skeleton_pose(uint32_t skeleton_id);
+    bool destroy_skeleton_pose(uint32_t id);
+    void skeleton_pose_set_joint(uint32_t pose_id, int joint_idx, const glm::vec3& translation, const glm::quat& rotation);
+    void skeleton_pose_calculate_matrices(uint32_t pose_id);
+    glm::mat4 skeleton_pose_get_joint_matrix(uint32_t pose_id, int joint_idx) const;
+    void skeleton_pose_set_root_offset(uint32_t pose_id, const glm::vec3& offset);
+    glm::vec3 skeleton_pose_get_root_offset(uint32_t pose_id) const;
+    int skeleton_pose_get_joint_count(uint32_t pose_id) const;
+
+    // SkeletonMapper
+    uint32_t create_skeleton_mapper(uint32_t skeleton_low_id, uint32_t skeleton_high_id, uint32_t neutral_pose_low_id, uint32_t neutral_pose_high_id);
+    bool destroy_skeleton_mapper(uint32_t id);
+    void skeleton_mapper_map(uint32_t mapper_id, uint32_t pose_low_id, uint32_t pose_high_local_id, uint32_t pose_high_out_model_id);
+    void skeleton_mapper_map_reverse(uint32_t mapper_id, uint32_t pose_high_model_id, uint32_t pose_low_out_model_id);
+    void skeleton_mapper_lock_all_translations(uint32_t mapper_id, uint32_t skeleton_high_id, uint32_t neutral_pose_high_id);
+
+    // Ragdoll
+    uint32_t create_ragdoll(const RagdollConfig& config);
+    bool destroy_ragdoll(uint32_t id);
+    void ragdoll_set_pose(uint32_t ragdoll_id, uint32_t pose_id);
+    void ragdoll_drive_to_pose_kinematics(uint32_t ragdoll_id, uint32_t pose_id, float dt);
+    void ragdoll_drive_to_pose_motors(uint32_t ragdoll_id, uint32_t pose_id);
+    void ragdoll_drive_to_pose_motors_velocity(uint32_t ragdoll_id, uint32_t prev_pose_id, uint32_t pose_id, float dt);
+    void ragdoll_get_pose(uint32_t ragdoll_id, uint32_t pose_id) const;
+    void ragdoll_set_hard_keying(uint32_t ragdoll_id, bool hard_keying);
+    void ragdoll_activate(uint32_t ragdoll_id);
+    bool ragdoll_is_active(uint32_t ragdoll_id) const;
+    uint32_t ragdoll_get_body_id(uint32_t ragdoll_id, int part_idx) const;
+    int ragdoll_get_part_count(uint32_t ragdoll_id) const;
+    uint32_t ragdoll_get_skeleton_id(uint32_t ragdoll_id) const;
+
 private:
     struct Impl;
     std::unique_ptr<Impl> m_impl;

@@ -125,6 +125,11 @@ public:
     void draw_grid_3d(float size, int divisions, float y_level = 0.0f, const glm::vec4& color = glm::vec4(0.4f, 0.4f, 0.5f, 1.0f));
     void draw_axes_3d(const glm::vec3& pos, float size = 1.0f);
     void draw_cube_wires(const glm::vec3& pos, const glm::vec3& size, const glm::vec4& color = glm::vec4(1.0f), const glm::vec3& rot = glm::vec3(0.0f));
+    void draw_capsule_wires(const glm::vec3& pos, float radius, float half_height, const glm::vec4& color = glm::vec4(1.0f), const glm::vec3& rot = glm::vec3(0.0f));
+    void draw_cylinder_wires(const glm::vec3& pos, float radius, float half_height, const glm::vec4& color = glm::vec4(1.0f), const glm::vec3& rot = glm::vec3(0.0f));
+    void draw_ray_3d(const glm::vec3& start, const glm::vec3& dir, float length, const glm::vec4& color = glm::vec4(1.0f));
+    void draw_skeleton_3d(const std::vector<glm::vec3>& joint_positions, const std::vector<std::pair<int, int>>& connections, const glm::vec4& color = glm::vec4(0.2f, 0.9f, 1.0f, 1.0f));
+    void draw_segmented_mesh(const std::vector<std::shared_ptr<Mesh3D>>& meshes, const std::vector<glm::mat4>& transforms, const std::vector<GLuint>& textures);
 
     void draw_triangle_3d(const glm::vec3& p1, const glm::vec3& p2, const glm::vec3& p3,
                           const glm::vec4& color = glm::vec4(1.0f), GLuint texture_id = 0,

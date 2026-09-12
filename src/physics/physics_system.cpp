@@ -35,8 +35,21 @@
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
 #include <Jolt/Physics/Constraints/FixedConstraint.h>
+#include <Jolt/Physics/Constraints/SwingTwistConstraint.h>
 #include <Jolt/Physics/Collision/CollideShape.h>
 #include <Jolt/Physics/Collision/BroadPhase/BroadPhaseQuery.h>
+#include <Jolt/Physics/Collision/Shape/RotatedTranslatedShape.h>
+#include <Jolt/Physics/Character/Character.h>
+#include <Jolt/Physics/Character/CharacterVirtual.h>
+#include <Jolt/Physics/Ragdoll/Ragdoll.h>
+#include <Jolt/Skeleton/Skeleton.h>
+#include <Jolt/Skeleton/SkeletonPose.h>
+#include <Jolt/Skeleton/SkeletonMapper.h>
+#include <Jolt/Physics/Vehicle/VehicleConstraint.h>
+#include <Jolt/Physics/Vehicle/WheeledVehicleController.h>
+#include <Jolt/Physics/Vehicle/TrackedVehicleController.h>
+#include <Jolt/Physics/Vehicle/MotorcycleController.h>
+#include <Jolt/Physics/Vehicle/VehicleCollisionTester.h>
 
 #include <glm/gtc/matrix_transform.hpp>
 #ifndef GLM_ENABLE_EXPERIMENTAL
@@ -121,6 +134,33 @@ public:
     }
 };
 
+static inline JPH::Vec3 to_jolt_vec3(const glm::vec3& v) { return JPH::Vec3(v.x, v.y, v.z); }
+static inline JPH::RVec3 to_jolt_rvec3(const glm::vec3& v) { return JPH::RVec3(v.x, v.y, v.z); }
+static inline glm::vec3 to_glm_vec3(const JPH::Vec3& v) { return glm::vec3(v.GetX(), v.GetY(), v.GetZ()); }
+
+static inline JPH::Quat to_jolt_quat(const glm::quat& q) { return JPH::Quat(q.x, q.y, q.z, q.w); }
+static inline glm::quat to_glm_quat(const JPH::Quat& q) { return glm::quat(q.GetW(), q.GetX(), q.GetY(), q.GetZ()); }
+
+static inline glm::mat4 to_glm_mat4(const JPH::Mat44& m) {
+    glm::mat4 r;
+    for (int col = 0; col < 4; ++col) {
+        JPH::Vec4 c = m.GetColumn4(col);
+        r[col][0] = c.GetX();
+        r[col][1] = c.GetY();
+        r[col][2] = c.GetZ();
+        r[col][3] = c.GetW();
+    }
+    return r;
+}
+
+static inline JPH::Mat44 to_jolt_mat4(const glm::mat4& m) {
+    JPH::Mat44 r;
+    for (int col = 0; col < 4; ++col) {
+        r.SetColumn4(col, JPH::Vec4(m[col][0], m[col][1], m[col][2], m[col][3]));
+    }
+    return r;
+}
+
 struct PhysicsSystem::Impl {
     std::unique_ptr<JPH::TempAllocatorImpl> temp_allocator;
     std::unique_ptr<JPH::JobSystemThreadPool> job_system;
@@ -131,6 +171,51 @@ struct PhysicsSystem::Impl {
     std::unordered_set<uint32_t> alive_bodies;
     std::unordered_map<uint32_t, JPH::Ref<JPH::TwoBodyConstraint>> constraints;
     uint32_t next_constraint_id = 1;
+
+    // Character simulation
+    std::unordered_map<uint32_t, JPH::Ref<JPH::Character>> characters;
+    std::unordered_map<uint32_t, float> character_half_heights;
+    std::unordered_map<uint32_t, float> character_radii;
+    uint32_t next_character_id = 1;
+
+    // Virtual Characters
+    std::unordered_map<uint32_t, JPH::Ref<JPH::CharacterVirtual>> virtual_characters;
+    std::unordered_map<uint32_t, float> virtual_char_half_heights;
+    std::unordered_map<uint32_t, float> virtual_char_radii;
+    std::unordered_map<uint32_t, float> virtual_char_step_heights;
+    uint32_t next_vchar_id = 1;
+
+    // Vehicles
+    enum class VehicleType { Wheeled, Tracked, Motorcycle };
+    struct VehicleRecord {
+        VehicleType type;
+        JPH::Ref<JPH::VehicleConstraint> constraint;
+        uint32_t chassis_body_id = 0;
+        std::vector<float> wheel_radii;
+        std::vector<float> wheel_widths;
+    };
+    std::unordered_map<uint32_t, VehicleRecord> vehicles;
+    uint32_t next_vehicle_id = 1;
+
+    // Skeletons, Poses, Mappers, Ragdolls
+    std::unordered_map<uint32_t, JPH::Ref<JPH::Skeleton>> skeletons;
+    uint32_t next_skeleton_id = 1;
+
+    std::unordered_map<uint32_t, std::unique_ptr<JPH::SkeletonPose>> skeleton_poses;
+    uint32_t next_pose_id = 1;
+
+    std::unordered_map<uint32_t, JPH::Ref<JPH::SkeletonMapper>> skeleton_mappers;
+    uint32_t next_mapper_id = 1;
+
+    struct RagdollRecord {
+        JPH::Ref<JPH::Ragdoll> ragdoll;
+        JPH::Ref<JPH::RagdollSettings> settings;
+        uint32_t skeleton_id = 0;
+        bool is_hard_keyed = false;
+        std::vector<RagdollPartConfig> parts;
+    };
+    std::unordered_map<uint32_t, RagdollRecord> ragdolls;
+    uint32_t next_ragdoll_id = 1;
 
     bool initialized = false;
 };
@@ -190,6 +275,10 @@ void PhysicsSystem::shutdown() {
 void PhysicsSystem::update(float dt, int collision_steps) {
     if (!m_impl->initialized) return;
     m_impl->physics_system.Update(dt, collision_steps, m_impl->temp_allocator.get(), m_impl->job_system.get());
+
+    for (auto& [id, ch] : m_impl->characters) {
+        if (ch) ch->PostSimulation(0.05f);
+    }
 }
 
 void PhysicsSystem::set_gravity(const glm::vec3& gravity) {
@@ -404,14 +493,44 @@ bool PhysicsSystem::destroy_body(uint32_t body_id) {
 }
 
 void PhysicsSystem::destroy_all_bodies() {
-    if (!m_impl->initialized) return;
+    if (!m_impl || !m_impl->initialized) return;
 
-    // Remove all constraints first
+    // Remove vehicles
+    for (auto& [id, v] : m_impl->vehicles) {
+        if (v.constraint) {
+            m_impl->physics_system.RemoveStepListener(v.constraint.GetPtr());
+            m_impl->physics_system.RemoveConstraint(v.constraint.GetPtr());
+        }
+    }
+    m_impl->vehicles.clear();
+
+    // Remove characters
+    for (auto& [id, ch] : m_impl->characters) {
+        if (ch) ch->RemoveFromPhysicsSystem();
+    }
+    m_impl->characters.clear();
+    m_impl->character_half_heights.clear();
+    m_impl->character_radii.clear();
+
+    // Remove virtual characters
+    m_impl->virtual_characters.clear();
+    m_impl->virtual_char_half_heights.clear();
+    m_impl->virtual_char_radii.clear();
+    m_impl->virtual_char_step_heights.clear();
+
+    // Remove ragdolls
+    for (auto& [id, r] : m_impl->ragdolls) {
+        if (r.ragdoll) r.ragdoll->RemoveFromPhysicsSystem();
+    }
+    m_impl->ragdolls.clear();
+
+    // Remove all constraints
     for (auto& pair : m_impl->constraints) {
         m_impl->physics_system.RemoveConstraint(pair.second.GetPtr());
     }
     m_impl->constraints.clear();
 
+    // Remove all rigid bodies
     auto& bi = m_impl->physics_system.GetBodyInterface();
     for (uint32_t raw_id : m_impl->alive_bodies) {
         JPH::BodyID id(raw_id);
@@ -637,6 +756,76 @@ void PhysicsSystem::draw_debug(MeshRenderer3D& renderer, const glm::vec4& active
             line_points.clear();
         }
     }
+
+    // 2. Draw Characters
+    for (const auto& [id, ch] : m_impl->characters) {
+        if (!ch) continue;
+        JPH::RVec3 cpos;
+        JPH::Quat crot;
+        ch->GetPositionAndRotation(cpos, crot);
+        glm::vec3 pos = to_glm_vec3(cpos);
+        glm::quat q = to_glm_quat(crot);
+        glm::vec3 euler = glm::eulerAngles(q);
+        auto it_h = m_impl->character_half_heights.find(id);
+        auto it_r = m_impl->character_radii.find(id);
+        float rh = (it_h != m_impl->character_half_heights.end()) ? it_h->second : 0.6f;
+        float rr = (it_r != m_impl->character_radii.end()) ? it_r->second : 0.4f;
+        renderer.draw_capsule_wires(pos, rr, rh, glm::vec4(0.3f, 0.8f, 1.0f, 1.0f), euler);
+        if (ch->IsSupported()) {
+            renderer.draw_ray_3d(to_glm_vec3(ch->GetGroundPosition()), to_glm_vec3(ch->GetGroundNormal()), 0.5f, glm::vec4(1.0f, 1.0f, 0.2f, 1.0f));
+        }
+    }
+
+    // 3. Draw Virtual Characters
+    for (const auto& [id, vch] : m_impl->virtual_characters) {
+        if (!vch) continue;
+        JPH::RVec3 cpos = vch->GetPosition();
+        JPH::Quat crot = vch->GetRotation();
+        glm::vec3 pos = to_glm_vec3(cpos);
+        glm::quat q = to_glm_quat(crot);
+        glm::vec3 euler = glm::eulerAngles(q);
+        auto it_h = m_impl->virtual_char_half_heights.find(id);
+        auto it_r = m_impl->virtual_char_radii.find(id);
+        float rh = (it_h != m_impl->virtual_char_half_heights.end()) ? it_h->second : 0.6f;
+        float rr = (it_r != m_impl->virtual_char_radii.end()) ? it_r->second : 0.4f;
+        renderer.draw_capsule_wires(pos, rr, rh, glm::vec4(0.9f, 0.4f, 1.0f, 1.0f), euler);
+        if (vch->IsSupported()) {
+            renderer.draw_ray_3d(to_glm_vec3(vch->GetGroundPosition()), to_glm_vec3(vch->GetGroundNormal()), 0.5f, glm::vec4(1.0f, 1.0f, 0.2f, 1.0f));
+        }
+    }
+
+    // 4. Draw Vehicles
+    for (const auto& [id, v] : m_impl->vehicles) {
+        if (!v.constraint) continue;
+        size_t num_wheels = v.constraint->GetWheels().size();
+        for (size_t w = 0; w < num_wheels; ++w) {
+            JPH::RMat44 wt = v.constraint->GetWheelWorldTransform(static_cast<JPH::uint>(w), JPH::Vec3::sAxisX(), JPH::Vec3::sAxisY());
+            glm::mat4 gwt = to_glm_mat4(wt);
+            glm::vec3 wpos = glm::vec3(gwt[3]);
+            glm::quat wrot = glm::quat_cast(gwt);
+            glm::vec3 weuler = glm::eulerAngles(wrot);
+            float wr = (w < v.wheel_radii.size()) ? v.wheel_radii[w] : 0.3f;
+            float ww = (w < v.wheel_widths.size()) ? v.wheel_widths[w] : 0.15f;
+            renderer.draw_cylinder_wires(wpos, wr, ww * 0.5f, glm::vec4(1.0f, 0.6f, 0.1f, 1.0f), weuler);
+        }
+    }
+
+    // 5. Draw Ragdolls
+    for (const auto& [id, r] : m_impl->ragdolls) {
+        if (!r.ragdoll) continue;
+        std::vector<glm::vec3> joint_positions;
+        std::vector<std::pair<int, int>> connections;
+        size_t body_count = r.ragdoll->GetBodyCount();
+        joint_positions.resize(body_count);
+        for (size_t b = 0; b < body_count; ++b) {
+            JPH::BodyID bid = r.ragdoll->GetBodyID(static_cast<int>(b));
+            joint_positions[b] = to_glm_vec3(bi.GetPosition(bid));
+            if (b < r.parts.size() && r.parts[b].parent_joint_index >= 0 && r.parts[b].parent_joint_index < (int)body_count) {
+                connections.emplace_back(r.parts[b].parent_joint_index, static_cast<int>(b));
+            }
+        }
+        renderer.draw_skeleton_3d(joint_positions, connections, glm::vec4(0.2f, 1.0f, 0.9f, 1.0f));
+    }
 }
 
 uint32_t PhysicsSystem::get_num_bodies() const {
@@ -798,6 +987,949 @@ std::vector<uint32_t> PhysicsSystem::overlap_sphere(const glm::vec3& center, flo
         result.push_back(id.GetIndexAndSequenceNumber());
     }
     return result;
+}
+
+// ============================================================================
+// Game Character Simulation (Rigid Body Character)
+// ============================================================================
+
+uint32_t PhysicsSystem::create_character(const CharacterConfig& config) {
+    if (!m_impl->initialized) return 0;
+
+    JPH::CharacterSettings settings;
+    settings.mShape = new JPH::CapsuleShape(config.half_height, config.radius);
+    settings.mLayer = to_jolt_layer(config.motion);
+    settings.mMass = config.mass;
+    settings.mFriction = config.friction;
+    settings.mGravityFactor = config.gravity_factor;
+    settings.mMaxSlopeAngle = glm::radians(config.max_slope_angle_deg);
+
+    auto* character = new JPH::Character(
+        &settings,
+        to_jolt_rvec3(config.pos),
+        JPH::Quat::sIdentity(),
+        0,
+        &m_impl->physics_system
+    );
+    character->AddToPhysicsSystem((config.motion == MotionType::Static) ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
+
+    uint32_t cid = m_impl->next_character_id++;
+    m_impl->characters[cid] = character;
+    m_impl->character_half_heights[cid] = config.half_height;
+    m_impl->character_radii[cid] = config.radius;
+    return cid;
+}
+
+bool PhysicsSystem::destroy_character(uint32_t id) {
+    if (!m_impl->initialized) return false;
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end()) {
+        if (it->second) it->second->RemoveFromPhysicsSystem();
+        m_impl->characters.erase(it);
+        m_impl->character_half_heights.erase(id);
+        m_impl->character_radii.erase(id);
+        return true;
+    }
+    return false;
+}
+
+void PhysicsSystem::character_set_linear_velocity(uint32_t id, const glm::vec3& vel) {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        it->second->SetLinearVelocity(to_jolt_vec3(vel));
+    }
+}
+
+glm::vec3 PhysicsSystem::character_get_linear_velocity(uint32_t id) const {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetLinearVelocity());
+    }
+    return glm::vec3(0.0f);
+}
+
+void PhysicsSystem::character_set_position(uint32_t id, const glm::vec3& pos) {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        it->second->SetPosition(to_jolt_rvec3(pos));
+    }
+}
+
+glm::vec3 PhysicsSystem::character_get_position(uint32_t id) const {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetPosition());
+    }
+    return glm::vec3(0.0f);
+}
+
+void PhysicsSystem::character_set_rotation(uint32_t id, const glm::quat& rot) {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        it->second->SetRotation(to_jolt_quat(rot));
+    }
+}
+
+glm::quat PhysicsSystem::character_get_rotation(uint32_t id) const {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        return to_glm_quat(it->second->GetRotation());
+    }
+    return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+}
+
+bool PhysicsSystem::character_is_supported(uint32_t id) const {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        return it->second->IsSupported();
+    }
+    return false;
+}
+
+PhysicsSystem::GroundState PhysicsSystem::character_get_ground_state(uint32_t id) const {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        switch (it->second->GetGroundState()) {
+            case JPH::CharacterBase::EGroundState::OnGround: return GroundState::OnGround;
+            case JPH::CharacterBase::EGroundState::OnSteepGround: return GroundState::OnSteepGround;
+            case JPH::CharacterBase::EGroundState::NotSupported: return GroundState::NotSupported;
+            case JPH::CharacterBase::EGroundState::InAir: return GroundState::InAir;
+        }
+    }
+    return GroundState::InAir;
+}
+
+glm::vec3 PhysicsSystem::character_get_ground_normal(uint32_t id) const {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetGroundNormal());
+    }
+    return glm::vec3(0.0f, 1.0f, 0.0f);
+}
+
+glm::vec3 PhysicsSystem::character_get_ground_velocity(uint32_t id) const {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetGroundVelocity());
+    }
+    return glm::vec3(0.0f);
+}
+
+glm::vec3 PhysicsSystem::character_get_ground_position(uint32_t id) const {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetGroundPosition());
+    }
+    return glm::vec3(0.0f);
+}
+
+uint32_t PhysicsSystem::character_get_body_id(uint32_t id) const {
+    auto it = m_impl->characters.find(id);
+    if (it != m_impl->characters.end() && it->second) {
+        return it->second->GetBodyID().GetIndexAndSequenceNumber();
+    }
+    return 0;
+}
+
+// ============================================================================
+// Virtual Character Simulation (Outside physics loop)
+// ============================================================================
+
+uint32_t PhysicsSystem::create_character_virtual(const CharacterVirtualConfig& config) {
+    if (!m_impl->initialized) return 0;
+
+    JPH::CharacterVirtualSettings settings;
+    settings.mShape = new JPH::CapsuleShape(config.half_height, config.radius);
+    settings.mMass = config.mass;
+    settings.mMaxSlopeAngle = glm::radians(config.max_slope_angle_deg);
+    settings.mMaxStrength = config.max_strength;
+    settings.mPredictiveContactDistance = config.predictive_contact_distance;
+    settings.mCharacterPadding = 0.02f;
+    settings.mPenetrationRecoverySpeed = 1.0f;
+    if (config.inner_body) {
+        settings.mInnerBodyShape = settings.mShape;
+        settings.mInnerBodyLayer = Layers::MOVING;
+    }
+
+    auto* cv = new JPH::CharacterVirtual(
+        &settings,
+        to_jolt_rvec3(config.pos),
+        JPH::Quat::sIdentity(),
+        &m_impl->physics_system
+    );
+
+    uint32_t cid = m_impl->next_vchar_id++;
+    m_impl->virtual_characters[cid] = cv;
+    m_impl->virtual_char_half_heights[cid] = config.half_height;
+    m_impl->virtual_char_radii[cid] = config.radius;
+    m_impl->virtual_char_step_heights[cid] = config.step_height;
+    return cid;
+}
+
+bool PhysicsSystem::destroy_character_virtual(uint32_t id) {
+    if (!m_impl->initialized) return false;
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end()) {
+        m_impl->virtual_characters.erase(it);
+        m_impl->virtual_char_half_heights.erase(id);
+        m_impl->virtual_char_radii.erase(id);
+        m_impl->virtual_char_step_heights.erase(id);
+        return true;
+    }
+    return false;
+}
+
+void PhysicsSystem::character_virtual_update(uint32_t id, float dt) {
+    if (!m_impl->initialized) return;
+    auto it = m_impl->virtual_characters.find(id);
+    if (it == m_impl->virtual_characters.end() || !it->second) return;
+
+    float step_h = m_impl->virtual_char_step_heights[id];
+    JPH::CharacterVirtual::ExtendedUpdateSettings ext;
+    ext.mStickToFloorStepDown = JPH::Vec3(0, -0.5f, 0);
+    ext.mWalkStairsStepUp = JPH::Vec3(0, step_h, 0);
+
+    it->second->ExtendedUpdate(
+        dt,
+        m_impl->physics_system.GetGravity(),
+        ext,
+        m_impl->physics_system.GetDefaultBroadPhaseLayerFilter(Layers::MOVING),
+        m_impl->physics_system.GetDefaultLayerFilter(Layers::MOVING),
+        { },
+        { },
+        *m_impl->temp_allocator
+    );
+}
+
+void PhysicsSystem::character_virtual_set_linear_velocity(uint32_t id, const glm::vec3& vel) {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        it->second->SetLinearVelocity(to_jolt_vec3(vel));
+    }
+}
+
+glm::vec3 PhysicsSystem::character_virtual_get_linear_velocity(uint32_t id) const {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetLinearVelocity());
+    }
+    return glm::vec3(0.0f);
+}
+
+void PhysicsSystem::character_virtual_set_position(uint32_t id, const glm::vec3& pos) {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        it->second->SetPosition(to_jolt_rvec3(pos));
+    }
+}
+
+glm::vec3 PhysicsSystem::character_virtual_get_position(uint32_t id) const {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetPosition());
+    }
+    return glm::vec3(0.0f);
+}
+
+void PhysicsSystem::character_virtual_set_rotation(uint32_t id, const glm::quat& rot) {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        it->second->SetRotation(to_jolt_quat(rot));
+    }
+}
+
+glm::quat PhysicsSystem::character_virtual_get_rotation(uint32_t id) const {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        return to_glm_quat(it->second->GetRotation());
+    }
+    return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+}
+
+bool PhysicsSystem::character_virtual_is_supported(uint32_t id) const {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        return it->second->IsSupported();
+    }
+    return false;
+}
+
+PhysicsSystem::GroundState PhysicsSystem::character_virtual_get_ground_state(uint32_t id) const {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        switch (it->second->GetGroundState()) {
+            case JPH::CharacterBase::EGroundState::OnGround: return GroundState::OnGround;
+            case JPH::CharacterBase::EGroundState::OnSteepGround: return GroundState::OnSteepGround;
+            case JPH::CharacterBase::EGroundState::NotSupported: return GroundState::NotSupported;
+            case JPH::CharacterBase::EGroundState::InAir: return GroundState::InAir;
+        }
+    }
+    return GroundState::InAir;
+}
+
+glm::vec3 PhysicsSystem::character_virtual_get_ground_normal(uint32_t id) const {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetGroundNormal());
+    }
+    return glm::vec3(0.0f, 1.0f, 0.0f);
+}
+
+glm::vec3 PhysicsSystem::character_virtual_get_ground_velocity(uint32_t id) const {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetGroundVelocity());
+    }
+    return glm::vec3(0.0f);
+}
+
+glm::vec3 PhysicsSystem::character_virtual_get_ground_position(uint32_t id) const {
+    auto it = m_impl->virtual_characters.find(id);
+    if (it != m_impl->virtual_characters.end() && it->second) {
+        return to_glm_vec3(it->second->GetGroundPosition());
+    }
+    return glm::vec3(0.0f);
+}
+
+// ============================================================================
+// Vehicles (Wheeled, Tracked, Motorcycle)
+// ============================================================================
+
+uint32_t PhysicsSystem::create_wheeled_vehicle(const WheeledVehicleConfig& config) {
+    if (!m_impl->initialized) return 0;
+
+    JPH::BodyID chassis_id(config.chassis_body_id);
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), chassis_id);
+    if (!lock.Succeeded()) return 0;
+    JPH::Body& chassis_body = lock.GetBody();
+
+    JPH::VehicleConstraintSettings vcs;
+    vcs.mDrawConstraintSize = 0.1f;
+    vcs.mMaxPitchRollAngle = config.max_pitch_roll_angle;
+
+    auto* controller = new JPH::WheeledVehicleControllerSettings();
+    controller->mEngine.mMaxTorque = config.engine_max_torque;
+    controller->mEngine.mMinRPM = config.engine_min_rpm;
+    controller->mEngine.mMaxRPM = config.engine_max_rpm;
+    vcs.mController = controller;
+
+    std::vector<float> radii, widths;
+    for (const auto& w : config.wheels) {
+        auto* wheel = new JPH::WheelSettingsWV();
+        wheel->mPosition = to_jolt_vec3(w.position);
+        wheel->mRadius = w.radius;
+        wheel->mWidth = w.width;
+        wheel->mSuspensionMinLength = w.suspension_min_length;
+        wheel->mSuspensionMaxLength = w.suspension_max_length;
+        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(w.suspension_spring / 250.0f) / 6.28f);
+        wheel->mMaxSteerAngle = w.max_steer_angle_rad;
+        wheel->mMaxBrakeTorque = w.max_brake_torque;
+        wheel->mMaxHandBrakeTorque = w.max_hand_brake_torque;
+        vcs.mWheels.push_back(wheel);
+        radii.push_back(w.radius);
+        widths.push_back(w.width);
+    }
+
+    auto* vehicle = new JPH::VehicleConstraint(chassis_body, vcs);
+    vehicle->SetVehicleCollisionTester(new JPH::VehicleCollisionTesterRay(Layers::NON_MOVING));
+    m_impl->physics_system.AddConstraint(vehicle);
+    m_impl->physics_system.AddStepListener(vehicle);
+
+    uint32_t vid = m_impl->next_vehicle_id++;
+    m_impl->vehicles[vid] = { Impl::VehicleType::Wheeled, vehicle, config.chassis_body_id, radii, widths };
+    return vid;
+}
+
+uint32_t PhysicsSystem::create_tracked_vehicle(const TrackedVehicleConfig& config) {
+    if (!m_impl->initialized) return 0;
+
+    JPH::BodyID chassis_id(config.chassis_body_id);
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), chassis_id);
+    if (!lock.Succeeded()) return 0;
+    JPH::Body& chassis_body = lock.GetBody();
+
+    JPH::VehicleConstraintSettings vcs;
+    vcs.mDrawConstraintSize = 0.1f;
+
+    auto* controller = new JPH::TrackedVehicleControllerSettings();
+    controller->mEngine.mMaxTorque = config.engine_max_torque;
+    vcs.mController = controller;
+
+    std::vector<float> radii, widths;
+    JPH::uint wheel_idx = 0;
+    JPH::VehicleTrackSettings& left_track = controller->mTracks[(int)JPH::ETrackSide::Left];
+    left_track.mDrivenWheel = 0;
+    for (const auto& w : config.left_wheels) {
+        auto* wheel = new JPH::WheelSettingsTV();
+        wheel->mPosition = to_jolt_vec3(w.position);
+        wheel->mRadius = w.radius;
+        wheel->mWidth = w.width;
+        wheel->mSuspensionMinLength = w.suspension_min_length;
+        wheel->mSuspensionMaxLength = w.suspension_max_length;
+        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(w.suspension_spring / 250.0f) / 6.28f);
+        vcs.mWheels.push_back(wheel);
+        left_track.mWheels.push_back(wheel_idx++);
+        radii.push_back(w.radius);
+        widths.push_back(w.width);
+    }
+
+    JPH::VehicleTrackSettings& right_track = controller->mTracks[(int)JPH::ETrackSide::Right];
+    right_track.mDrivenWheel = wheel_idx;
+    for (const auto& w : config.right_wheels) {
+        auto* wheel = new JPH::WheelSettingsTV();
+        wheel->mPosition = to_jolt_vec3(w.position);
+        wheel->mRadius = w.radius;
+        wheel->mWidth = w.width;
+        wheel->mSuspensionMinLength = w.suspension_min_length;
+        wheel->mSuspensionMaxLength = w.suspension_max_length;
+        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(w.suspension_spring / 250.0f) / 6.28f);
+        vcs.mWheels.push_back(wheel);
+        right_track.mWheels.push_back(wheel_idx++);
+        radii.push_back(w.radius);
+        widths.push_back(w.width);
+    }
+
+    auto* vehicle = new JPH::VehicleConstraint(chassis_body, vcs);
+    vehicle->SetVehicleCollisionTester(new JPH::VehicleCollisionTesterRay(Layers::NON_MOVING));
+    m_impl->physics_system.AddConstraint(vehicle);
+    m_impl->physics_system.AddStepListener(vehicle);
+
+    uint32_t vid = m_impl->next_vehicle_id++;
+    m_impl->vehicles[vid] = { Impl::VehicleType::Tracked, vehicle, config.chassis_body_id, radii, widths };
+    return vid;
+}
+
+uint32_t PhysicsSystem::create_motorcycle(const MotorcycleConfig& config) {
+    if (!m_impl->initialized) return 0;
+
+    JPH::BodyID chassis_id(config.chassis_body_id);
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), chassis_id);
+    if (!lock.Succeeded()) return 0;
+    JPH::Body& chassis_body = lock.GetBody();
+
+    JPH::VehicleConstraintSettings vcs;
+    vcs.mDrawConstraintSize = 0.1f;
+    vcs.mMaxPitchRollAngle = config.max_lean_angle_rad;
+
+    auto* controller = new JPH::MotorcycleControllerSettings();
+    controller->mMaxLeanAngle = config.max_lean_angle_rad;
+    controller->mLeanSpringConstant = config.lean_spring_constant;
+    controller->mLeanSpringDamping = config.lean_spring_damping;
+    controller->mLeanSmoothingFactor = config.lean_smoothing_factor;
+    controller->mEngine.mMaxTorque = config.engine_max_torque;
+    vcs.mController = controller;
+
+    std::vector<float> radii, widths;
+    // Front wheel
+    {
+        auto* wheel = new JPH::WheelSettingsWV();
+        wheel->mPosition = to_jolt_vec3(config.front_wheel.position);
+        wheel->mRadius = config.front_wheel.radius;
+        wheel->mWidth = config.front_wheel.width;
+        wheel->mSuspensionMinLength = config.front_wheel.suspension_min_length;
+        wheel->mSuspensionMaxLength = config.front_wheel.suspension_max_length;
+        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(config.front_wheel.suspension_spring / 250.0f) / 6.28f);
+        wheel->mMaxSteerAngle = config.front_wheel.max_steer_angle_rad;
+        wheel->mMaxBrakeTorque = config.front_wheel.max_brake_torque;
+        wheel->mMaxHandBrakeTorque = 0.0f;
+        vcs.mWheels.push_back(wheel);
+        radii.push_back(config.front_wheel.radius);
+        widths.push_back(config.front_wheel.width);
+    }
+    // Rear wheel
+    {
+        auto* wheel = new JPH::WheelSettingsWV();
+        wheel->mPosition = to_jolt_vec3(config.rear_wheel.position);
+        wheel->mRadius = config.rear_wheel.radius;
+        wheel->mWidth = config.rear_wheel.width;
+        wheel->mSuspensionMinLength = config.rear_wheel.suspension_min_length;
+        wheel->mSuspensionMaxLength = config.rear_wheel.suspension_max_length;
+        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(config.rear_wheel.suspension_spring / 250.0f) / 6.28f);
+        wheel->mMaxSteerAngle = 0.0f;
+        wheel->mMaxBrakeTorque = config.rear_wheel.max_brake_torque;
+        wheel->mMaxHandBrakeTorque = config.rear_wheel.max_hand_brake_torque;
+        vcs.mWheels.push_back(wheel);
+        radii.push_back(config.rear_wheel.radius);
+        widths.push_back(config.rear_wheel.width);
+    }
+
+    auto* vehicle = new JPH::VehicleConstraint(chassis_body, vcs);
+    vehicle->SetVehicleCollisionTester(new JPH::VehicleCollisionTesterRay(Layers::NON_MOVING));
+    m_impl->physics_system.AddConstraint(vehicle);
+    m_impl->physics_system.AddStepListener(vehicle);
+
+    uint32_t vid = m_impl->next_vehicle_id++;
+    m_impl->vehicles[vid] = { Impl::VehicleType::Motorcycle, vehicle, config.chassis_body_id, radii, widths };
+    return vid;
+}
+
+bool PhysicsSystem::destroy_vehicle(uint32_t id) {
+    if (!m_impl->initialized) return false;
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end()) {
+        if (it->second.constraint) {
+            m_impl->physics_system.RemoveStepListener(it->second.constraint.GetPtr());
+            m_impl->physics_system.RemoveConstraint(it->second.constraint.GetPtr());
+        }
+        m_impl->vehicles.erase(it);
+        return true;
+    }
+    return false;
+}
+
+void PhysicsSystem::vehicle_set_input_wheeled(uint32_t id, float forward, float steer, float brake, bool handbrake) {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        auto* controller = dynamic_cast<JPH::WheeledVehicleController*>(it->second.constraint->GetController());
+        if (controller) {
+            controller->SetDriverInput(forward, steer, brake, handbrake ? 1.0f : 0.0f);
+        }
+    }
+}
+
+void PhysicsSystem::vehicle_set_input_tracked(uint32_t id, float left_ratio, float right_ratio, float brake) {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        auto* controller = dynamic_cast<JPH::TrackedVehicleController*>(it->second.constraint->GetController());
+        if (controller) {
+            controller->SetDriverInput(1.0f, left_ratio, right_ratio, brake);
+        }
+    }
+}
+
+void PhysicsSystem::vehicle_set_input_motorcycle(uint32_t id, float forward, float steer, float brake) {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        auto* controller = dynamic_cast<JPH::MotorcycleController*>(it->second.constraint->GetController());
+        if (controller) {
+            controller->SetDriverInput(forward, steer, brake, 0.0f);
+        }
+    }
+}
+
+void PhysicsSystem::vehicle_enable_lean_controller(uint32_t id, bool enable) {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        auto* controller = dynamic_cast<JPH::MotorcycleController*>(it->second.constraint->GetController());
+        if (controller) {
+            controller->EnableLeanController(enable);
+        }
+    }
+}
+
+bool PhysicsSystem::vehicle_is_lean_controller_enabled(uint32_t id) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        auto* controller = dynamic_cast<const JPH::MotorcycleController*>(it->second.constraint->GetController());
+        if (controller) {
+            return controller->IsLeanControllerEnabled();
+        }
+    }
+    return false;
+}
+
+float PhysicsSystem::vehicle_get_lean_angle(uint32_t id) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        glm::quat q = to_glm_quat(it->second.constraint->GetVehicleBody()->GetRotation());
+        glm::vec3 euler = glm::eulerAngles(q);
+        return euler.z;
+    }
+    return 0.0f;
+}
+
+float PhysicsSystem::vehicle_get_speed_kmh(uint32_t id) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        return it->second.constraint->GetVehicleBody()->GetLinearVelocity().Length() * 3.6f;
+    }
+    return 0.0f;
+}
+
+float PhysicsSystem::vehicle_get_engine_rpm(uint32_t id) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        auto* wvc = dynamic_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
+        if (wvc) return wvc->GetEngine().GetCurrentRPM();
+        auto* tvc = dynamic_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
+        if (tvc) return tvc->GetEngine().GetCurrentRPM();
+    }
+    return 0.0f;
+}
+
+int PhysicsSystem::vehicle_get_transmission_gear(uint32_t id) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        auto* wvc = dynamic_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
+        if (wvc) return wvc->GetTransmission().GetCurrentGear();
+        auto* tvc = dynamic_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
+        if (tvc) return tvc->GetTransmission().GetCurrentGear();
+    }
+    return 0;
+}
+
+int PhysicsSystem::vehicle_get_wheel_count(uint32_t id) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it != m_impl->vehicles.end() && it->second.constraint) {
+        return static_cast<int>(it->second.constraint->GetWheels().size());
+    }
+    return 0;
+}
+
+bool PhysicsSystem::vehicle_get_wheel_transform(uint32_t id, int wheel_idx, glm::vec3& out_pos, glm::quat& out_rot) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it == m_impl->vehicles.end() || !it->second.constraint) return false;
+    if (wheel_idx < 0 || wheel_idx >= (int)it->second.constraint->GetWheels().size()) return false;
+
+    JPH::RMat44 wt = it->second.constraint->GetWheelWorldTransform(static_cast<JPH::uint>(wheel_idx), JPH::Vec3::sAxisX(), JPH::Vec3::sAxisY());
+    glm::mat4 gwt = to_glm_mat4(wt);
+    out_pos = glm::vec3(gwt[3]);
+    out_rot = glm::quat_cast(gwt);
+    return true;
+}
+
+// ============================================================================
+// Animated Ragdolls & Skeleton Mapping
+// ============================================================================
+
+uint32_t PhysicsSystem::create_skeleton(const std::vector<std::pair<std::string, int>>& joints) {
+    if (!m_impl->initialized) return 0;
+    auto skel = JPH::Ref<JPH::Skeleton>(new JPH::Skeleton());
+    for (const auto& j : joints) {
+        skel->AddJoint(j.first, j.second);
+    }
+    skel->CalculateParentJointIndices();
+    uint32_t sid = m_impl->next_skeleton_id++;
+    m_impl->skeletons[sid] = skel;
+    return sid;
+}
+
+bool PhysicsSystem::destroy_skeleton(uint32_t id) {
+    return m_impl->skeletons.erase(id) > 0;
+}
+
+uint32_t PhysicsSystem::create_skeleton_pose(uint32_t skeleton_id) {
+    if (!m_impl->initialized) return 0;
+    auto it = m_impl->skeletons.find(skeleton_id);
+    if (it == m_impl->skeletons.end() || !it->second) return 0;
+
+    auto pose = std::make_unique<JPH::SkeletonPose>();
+    pose->SetSkeleton(it->second);
+    pose->CalculateJointMatrices();
+
+    uint32_t pid = m_impl->next_pose_id++;
+    m_impl->skeleton_poses[pid] = std::move(pose);
+    return pid;
+}
+
+bool PhysicsSystem::destroy_skeleton_pose(uint32_t id) {
+    return m_impl->skeleton_poses.erase(id) > 0;
+}
+
+void PhysicsSystem::skeleton_pose_set_joint(uint32_t pose_id, int joint_idx, const glm::vec3& translation, const glm::quat& rotation) {
+    auto it = m_impl->skeleton_poses.find(pose_id);
+    if (it != m_impl->skeleton_poses.end() && it->second) {
+        if (joint_idx >= 0 && joint_idx < (int)it->second->GetJointCount()) {
+            auto& j = it->second->GetJoint(joint_idx);
+            j.mTranslation = to_jolt_vec3(translation);
+            j.mRotation = to_jolt_quat(rotation);
+        }
+    }
+}
+
+void PhysicsSystem::skeleton_pose_calculate_matrices(uint32_t pose_id) {
+    auto it = m_impl->skeleton_poses.find(pose_id);
+    if (it != m_impl->skeleton_poses.end() && it->second) {
+        it->second->CalculateJointMatrices();
+    }
+}
+
+glm::mat4 PhysicsSystem::skeleton_pose_get_joint_matrix(uint32_t pose_id, int joint_idx) const {
+    auto it = m_impl->skeleton_poses.find(pose_id);
+    if (it != m_impl->skeleton_poses.end() && it->second) {
+        if (joint_idx >= 0 && joint_idx < (int)it->second->GetJointCount()) {
+            return to_glm_mat4(it->second->GetJointMatrix(joint_idx));
+        }
+    }
+    return glm::mat4(1.0f);
+}
+
+void PhysicsSystem::skeleton_pose_set_root_offset(uint32_t pose_id, const glm::vec3& offset) {
+    auto it = m_impl->skeleton_poses.find(pose_id);
+    if (it != m_impl->skeleton_poses.end() && it->second) {
+        it->second->SetRootOffset(to_jolt_rvec3(offset));
+    }
+}
+
+glm::vec3 PhysicsSystem::skeleton_pose_get_root_offset(uint32_t pose_id) const {
+    auto it = m_impl->skeleton_poses.find(pose_id);
+    if (it != m_impl->skeleton_poses.end() && it->second) {
+        return to_glm_vec3(it->second->GetRootOffset());
+    }
+    return glm::vec3(0.0f);
+}
+
+int PhysicsSystem::skeleton_pose_get_joint_count(uint32_t pose_id) const {
+    auto it = m_impl->skeleton_poses.find(pose_id);
+    if (it != m_impl->skeleton_poses.end() && it->second) {
+        return static_cast<int>(it->second->GetJointCount());
+    }
+    return 0;
+}
+
+uint32_t PhysicsSystem::create_skeleton_mapper(uint32_t skeleton_low_id, uint32_t skeleton_high_id, uint32_t neutral_pose_low_id, uint32_t neutral_pose_high_id) {
+    if (!m_impl->initialized) return 0;
+    auto it_slow = m_impl->skeletons.find(skeleton_low_id);
+    auto it_shigh = m_impl->skeletons.find(skeleton_high_id);
+    auto it_plow = m_impl->skeleton_poses.find(neutral_pose_low_id);
+    auto it_phigh = m_impl->skeleton_poses.find(neutral_pose_high_id);
+    if (it_slow == m_impl->skeletons.end() || it_shigh == m_impl->skeletons.end() ||
+        it_plow == m_impl->skeleton_poses.end() || it_phigh == m_impl->skeleton_poses.end()) return 0;
+
+    auto mapper = JPH::Ref<JPH::SkeletonMapper>(new JPH::SkeletonMapper());
+    mapper->Initialize(
+        it_slow->second,
+        it_plow->second->GetJointMatrices().data(),
+        it_shigh->second,
+        it_phigh->second->GetJointMatrices().data()
+    );
+
+    uint32_t mid = m_impl->next_mapper_id++;
+    m_impl->skeleton_mappers[mid] = mapper;
+    return mid;
+}
+
+bool PhysicsSystem::destroy_skeleton_mapper(uint32_t id) {
+    return m_impl->skeleton_mappers.erase(id) > 0;
+}
+
+void PhysicsSystem::skeleton_mapper_map(uint32_t mapper_id, uint32_t pose_low_id, uint32_t pose_high_local_id, uint32_t pose_high_out_model_id) {
+    auto it_m = m_impl->skeleton_mappers.find(mapper_id);
+    auto it_plow = m_impl->skeleton_poses.find(pose_low_id);
+    auto it_phigh_local = m_impl->skeleton_poses.find(pose_high_local_id);
+    auto it_phigh_out = m_impl->skeleton_poses.find(pose_high_out_model_id);
+    if (it_m == m_impl->skeleton_mappers.end() || it_plow == m_impl->skeleton_poses.end() ||
+        it_phigh_local == m_impl->skeleton_poses.end() || it_phigh_out == m_impl->skeleton_poses.end()) return;
+
+    it_m->second->Map(
+        it_plow->second->GetJointMatrices().data(),
+        it_phigh_local->second->GetJointMatrices().data(),
+        it_phigh_out->second->GetJointMatrices().data()
+    );
+}
+
+void PhysicsSystem::skeleton_mapper_map_reverse(uint32_t mapper_id, uint32_t pose_high_model_id, uint32_t pose_low_out_model_id) {
+    auto it_m = m_impl->skeleton_mappers.find(mapper_id);
+    auto it_phigh = m_impl->skeleton_poses.find(pose_high_model_id);
+    auto it_plow_out = m_impl->skeleton_poses.find(pose_low_out_model_id);
+    if (it_m == m_impl->skeleton_mappers.end() || it_phigh == m_impl->skeleton_poses.end() || it_plow_out == m_impl->skeleton_poses.end()) return;
+
+    it_m->second->MapReverse(
+        it_phigh->second->GetJointMatrices().data(),
+        it_plow_out->second->GetJointMatrices().data()
+    );
+}
+
+void PhysicsSystem::skeleton_mapper_lock_all_translations(uint32_t mapper_id, uint32_t skeleton_high_id, uint32_t neutral_pose_high_id) {
+    auto it_m = m_impl->skeleton_mappers.find(mapper_id);
+    auto it_shigh = m_impl->skeletons.find(skeleton_high_id);
+    auto it_phigh = m_impl->skeleton_poses.find(neutral_pose_high_id);
+    if (it_m == m_impl->skeleton_mappers.end() || it_shigh == m_impl->skeletons.end() || it_phigh == m_impl->skeleton_poses.end()) return;
+
+    it_m->second->LockAllTranslations(it_shigh->second, it_phigh->second->GetJointMatrices().data());
+}
+
+uint32_t PhysicsSystem::create_ragdoll(const RagdollConfig& config) {
+    if (!m_impl->initialized || config.parts.empty()) return 0;
+
+    auto settings = JPH::Ref<JPH::RagdollSettings>(new JPH::RagdollSettings());
+    auto skel = JPH::Ref<JPH::Skeleton>(new JPH::Skeleton());
+
+    for (int i = 0; i < (int)config.parts.size(); ++i) {
+        const auto& part = config.parts[i];
+        skel->AddJoint(part.name, part.parent_joint_index);
+    }
+    skel->CalculateParentJointIndices();
+    settings->mSkeleton = skel;
+
+    settings->mParts.resize(config.parts.size());
+    for (int i = 0; i < (int)config.parts.size(); ++i) {
+        const auto& pcfg = config.parts[i];
+        auto& part = settings->mParts[i];
+
+        JPH::RefConst<JPH::Shape> shape;
+        if (pcfg.shape_type == RagdollPartShape::Box) {
+            shape = new JPH::BoxShape(to_jolt_vec3(pcfg.half_extent));
+        } else if (pcfg.shape_type == RagdollPartShape::Sphere) {
+            shape = new JPH::SphereShape(pcfg.radius);
+        } else {
+            shape = new JPH::CapsuleShape(pcfg.half_height, pcfg.radius);
+        }
+
+        part.SetShape(shape);
+        part.mPosition = to_jolt_rvec3(pcfg.position);
+        part.mRotation = to_jolt_quat(pcfg.rotation);
+        part.mMotionType = to_jolt_motion(pcfg.motion);
+        part.mObjectLayer = to_jolt_layer(pcfg.motion);
+        part.mMassPropertiesOverride.mMass = pcfg.mass;
+        part.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
+        part.mFriction = pcfg.friction;
+
+        if (pcfg.parent_joint_index >= 0 && pcfg.parent_joint_index < (int)config.parts.size()) {
+            const auto& parent_cfg = config.parts[pcfg.parent_joint_index];
+            auto* st = new JPH::SwingTwistConstraintSettings();
+            st->mSpace = JPH::EConstraintSpace::WorldSpace;
+            st->mPosition1 = st->mPosition2 = to_jolt_rvec3(parent_cfg.position);
+            st->mTwistAxis1 = st->mTwistAxis2 = JPH::Vec3::sAxisY();
+            st->mPlaneAxis1 = st->mPlaneAxis2 = JPH::Vec3::sAxisZ();
+            st->mNormalHalfConeAngle = pcfg.swing_limit_y;
+            st->mPlaneHalfConeAngle = pcfg.swing_limit_z;
+            st->mTwistMinAngle = pcfg.twist_min;
+            st->mTwistMaxAngle = pcfg.twist_max;
+
+            if (pcfg.enable_motors) {
+                st->mSwingType = JPH::ESwingType::Cone;
+                st->mSwingMotorSettings.mSpringSettings.mFrequency = std::max(0.5f, std::sqrt(pcfg.motor_spring_k / 50.0f) / 6.28f);
+                st->mTwistMotorSettings.mSpringSettings.mFrequency = std::max(0.5f, std::sqrt(pcfg.motor_spring_k / 50.0f) / 6.28f);
+                st->mSwingMotorSettings.mSpringSettings.mDamping = pcfg.motor_damping_c;
+                st->mTwistMotorSettings.mSpringSettings.mDamping = pcfg.motor_damping_c;
+                st->mSwingMotorSettings.mMaxTorqueLimit = pcfg.motor_max_torque;
+                st->mTwistMotorSettings.mMaxTorqueLimit = pcfg.motor_max_torque;
+            }
+
+            part.mToParent = st;
+        }
+    }
+
+    if (config.disable_parent_child_collisions) {
+        settings->DisableParentChildCollisions();
+    }
+    if (config.stabilize) {
+        settings->Stabilize();
+    }
+    settings->CalculateConstraintPriorities();
+    settings->CalculateBodyIndexToConstraintIndex();
+    settings->CalculateConstraintIndexToBodyIdxPair();
+
+    JPH::CollisionGroup::GroupID group_id = static_cast<JPH::CollisionGroup::GroupID>(m_impl->next_ragdoll_id);
+    JPH::Ragdoll* ragdoll = settings->CreateRagdoll(group_id, 0, &m_impl->physics_system);
+    if (!ragdoll) return 0;
+
+    ragdoll->AddToPhysicsSystem(JPH::EActivation::Activate);
+
+    uint32_t rid = m_impl->next_ragdoll_id++;
+    uint32_t sid = m_impl->next_skeleton_id++;
+    m_impl->skeletons[sid] = skel;
+    m_impl->ragdolls[rid] = { ragdoll, settings, sid, false, config.parts };
+    return rid;
+}
+
+bool PhysicsSystem::destroy_ragdoll(uint32_t id) {
+    if (!m_impl->initialized) return false;
+    auto it = m_impl->ragdolls.find(id);
+    if (it != m_impl->ragdolls.end()) {
+        if (it->second.ragdoll) it->second.ragdoll->RemoveFromPhysicsSystem();
+        m_impl->ragdolls.erase(it);
+        return true;
+    }
+    return false;
+}
+
+void PhysicsSystem::ragdoll_set_pose(uint32_t ragdoll_id, uint32_t pose_id) {
+    auto it_r = m_impl->ragdolls.find(ragdoll_id);
+    auto it_p = m_impl->skeleton_poses.find(pose_id);
+    if (it_r != m_impl->ragdolls.end() && it_r->second.ragdoll && it_p != m_impl->skeleton_poses.end() && it_p->second) {
+        it_r->second.ragdoll->SetPose(*it_p->second);
+    }
+}
+
+void PhysicsSystem::ragdoll_drive_to_pose_kinematics(uint32_t ragdoll_id, uint32_t pose_id, float dt) {
+    auto it_r = m_impl->ragdolls.find(ragdoll_id);
+    auto it_p = m_impl->skeleton_poses.find(pose_id);
+    if (it_r != m_impl->ragdolls.end() && it_r->second.ragdoll && it_p != m_impl->skeleton_poses.end() && it_p->second) {
+        it_r->second.ragdoll->DriveToPoseUsingKinematics(*it_p->second, dt);
+    }
+}
+
+void PhysicsSystem::ragdoll_drive_to_pose_motors(uint32_t ragdoll_id, uint32_t pose_id) {
+    auto it_r = m_impl->ragdolls.find(ragdoll_id);
+    auto it_p = m_impl->skeleton_poses.find(pose_id);
+    if (it_r != m_impl->ragdolls.end() && it_r->second.ragdoll && it_p != m_impl->skeleton_poses.end() && it_p->second) {
+        it_r->second.ragdoll->DriveToPoseUsingMotors(*it_p->second);
+    }
+}
+
+void PhysicsSystem::ragdoll_drive_to_pose_motors_velocity(uint32_t ragdoll_id, uint32_t prev_pose_id, uint32_t pose_id, float dt) {
+    auto it_r = m_impl->ragdolls.find(ragdoll_id);
+    auto it_prev = m_impl->skeleton_poses.find(prev_pose_id);
+    auto it_cur = m_impl->skeleton_poses.find(pose_id);
+    if (it_r != m_impl->ragdolls.end() && it_r->second.ragdoll &&
+        it_prev != m_impl->skeleton_poses.end() && it_prev->second &&
+        it_cur != m_impl->skeleton_poses.end() && it_cur->second) {
+        it_r->second.ragdoll->DriveToPoseUsingMotors(*it_prev->second, *it_cur->second, dt);
+    }
+}
+
+void PhysicsSystem::ragdoll_get_pose(uint32_t ragdoll_id, uint32_t pose_id) const {
+    auto it_r = m_impl->ragdolls.find(ragdoll_id);
+    auto it_p = m_impl->skeleton_poses.find(pose_id);
+    if (it_r != m_impl->ragdolls.end() && it_r->second.ragdoll && it_p != m_impl->skeleton_poses.end() && it_p->second) {
+        it_r->second.ragdoll->GetPose(*it_p->second);
+    }
+}
+
+void PhysicsSystem::ragdoll_set_hard_keying(uint32_t ragdoll_id, bool hard_keying) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it == m_impl->ragdolls.end() || !it->second.ragdoll) return;
+    it->second.is_hard_keyed = hard_keying;
+
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    size_t count = it->second.ragdoll->GetBodyCount();
+    for (size_t i = 0; i < count; ++i) {
+        JPH::BodyID bid = it->second.ragdoll->GetBodyID(static_cast<int>(i));
+        bi.SetMotionType(bid, hard_keying ? JPH::EMotionType::Kinematic : JPH::EMotionType::Dynamic, JPH::EActivation::Activate);
+    }
+}
+
+void PhysicsSystem::ragdoll_activate(uint32_t ragdoll_id) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        it->second.ragdoll->Activate();
+    }
+}
+
+bool PhysicsSystem::ragdoll_is_active(uint32_t ragdoll_id) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        return it->second.ragdoll->IsActive();
+    }
+    return false;
+}
+
+uint32_t PhysicsSystem::ragdoll_get_body_id(uint32_t ragdoll_id, int part_idx) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        if (part_idx >= 0 && part_idx < (int)it->second.ragdoll->GetBodyCount()) {
+            return it->second.ragdoll->GetBodyID(part_idx).GetIndexAndSequenceNumber();
+        }
+    }
+    return 0;
+}
+
+int PhysicsSystem::ragdoll_get_part_count(uint32_t ragdoll_id) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        return static_cast<int>(it->second.ragdoll->GetBodyCount());
+    }
+    return 0;
+}
+
+uint32_t PhysicsSystem::ragdoll_get_skeleton_id(uint32_t ragdoll_id) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end()) {
+        return it->second.skeleton_id;
+    }
+    return 0;
 }
 
 } // namespace crayon
