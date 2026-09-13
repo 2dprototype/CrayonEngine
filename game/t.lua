@@ -1,5 +1,5 @@
 local cam = {
-    x = 0.0, y = 5.0, z = 14.0,
+    x = 0.0, y = 5.0, z = 14.0*2,
     yaw = -90.0, pitch = -15.0,
     fov = 60.0
 }
@@ -7,10 +7,19 @@ local cam = {
 local b1, b2, cube
 
 function crayon.init()
-    b1 = crayon.physics3d.createBox(0, -5, 0, 5, 0.1, 5, "static", 0.5, 0.2, 10)
-    b2 = crayon.physics3d.createBox(0, 2, 0, 1, 1, 1, "dynamic", 0.5, 0.2, 10)
+    b1 = crayon.physics3d.createBox(0, -20, 0, 40, 0.1, 40, "static", 0.5, 0.2, 10)
+    -- b2 = crayon.physics3d.createBox(0, 20, 0, 1, 1, 1, "dynamic", 0.5, 0.2, 10)
     
     cube = crayon.graphics.loadModel("cube")
+	
+    ball = crayon.physics3d.createSoftBodySphere({
+        x = 0, y = 0, z = 10,
+        radius = 10,
+        rings = 8,
+        sectors = 10,
+        compliance = 0,
+        pressure = 10
+    })
 end
 
 function crayon.update(dt)
@@ -49,6 +58,14 @@ function crayon.draw()
         up = {0, 1, 0},
         fov = cam.fov
     })
+	
+    -- Draw the soft body as a triangle mesh
+	crayon.graphics.setColor(1, 1, 1, 1)
+    local verts = ball:getVertices()
+    local faces = ball:getFaces()
+    for _, f in ipairs(faces) do
+        crayon.graphics.drawTriangle3d(verts[f[1]], verts[f[2]], verts[f[3]])
+    end
     
     -- if b2:isValid() then
         -- local px, py, pz = b2:getPosition()

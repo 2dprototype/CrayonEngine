@@ -886,12 +886,21 @@ void PhysicsSystem::draw_debug(MeshRenderer3D& renderer, const glm::vec4& active
             const auto* settings = mp->GetSettings();
             if (!settings) continue;
 
+            // Fetch the body's world transform and rotation
+            JPH::RMat44 com_transform = body.GetCenterOfMassTransform();
+            JPH::Quat body_rot = body.GetRotation();
+
+            // Helper lambda to transform local Jolt vertices to world-space GLM vectors
+            auto get_world_pos = [&](uint32_t idx) {
+                return to_glm_vec3(com_transform * verts[idx].mPosition);
+            };
+
             // Draw Edge Constraints
             for (const auto& edge : settings->mEdgeConstraints) {
                 if (edge.mVertex[0] < verts.size() && edge.mVertex[1] < verts.size()) {
                     renderer.add_line_to_batch(
-                        to_glm_vec3(verts[edge.mVertex[0]].mPosition),
-                        to_glm_vec3(verts[edge.mVertex[1]].mPosition),
+                        get_world_pos(edge.mVertex[0]),
+                        get_world_pos(edge.mVertex[1]),
                         edge_color
                     );
                 }
@@ -902,8 +911,8 @@ void PhysicsSystem::draw_debug(MeshRenderer3D& renderer, const glm::vec4& active
                 for (const auto& bend : settings->mDihedralBendConstraints) {
                     if (bend.mVertex[2] < verts.size() && bend.mVertex[3] < verts.size()) {
                         renderer.add_line_to_batch(
-                            to_glm_vec3(verts[bend.mVertex[2]].mPosition),
-                            to_glm_vec3(verts[bend.mVertex[3]].mPosition),
+                            get_world_pos(bend.mVertex[2]),
+                            get_world_pos(bend.mVertex[3]),
                             bend_color
                         );
                     }
@@ -913,10 +922,10 @@ void PhysicsSystem::draw_debug(MeshRenderer3D& renderer, const glm::vec4& active
                 for (const auto& vol : settings->mVolumeConstraints) {
                     if (vol.mVertex[0] < verts.size() && vol.mVertex[1] < verts.size() &&
                         vol.mVertex[2] < verts.size() && vol.mVertex[3] < verts.size()) {
-                        glm::vec3 p0 = to_glm_vec3(verts[vol.mVertex[0]].mPosition);
-                        glm::vec3 p1 = to_glm_vec3(verts[vol.mVertex[1]].mPosition);
-                        glm::vec3 p2 = to_glm_vec3(verts[vol.mVertex[2]].mPosition);
-                        glm::vec3 p3 = to_glm_vec3(verts[vol.mVertex[3]].mPosition);
+                        glm::vec3 p0 = get_world_pos(vol.mVertex[0]);
+                        glm::vec3 p1 = get_world_pos(vol.mVertex[1]);
+                        glm::vec3 p2 = get_world_pos(vol.mVertex[2]);
+                        glm::vec3 p3 = get_world_pos(vol.mVertex[3]);
                         renderer.add_line_to_batch(p0, p1, vol_color);
                         renderer.add_line_to_batch(p0, p2, vol_color);
                         renderer.add_line_to_batch(p0, p3, vol_color);
@@ -930,8 +939,8 @@ void PhysicsSystem::draw_debug(MeshRenderer3D& renderer, const glm::vec4& active
                 for (const auto& lra : settings->mLRAConstraints) {
                     if (lra.mVertex[0] < verts.size() && lra.mVertex[1] < verts.size()) {
                         renderer.add_line_to_batch(
-                            to_glm_vec3(verts[lra.mVertex[0]].mPosition),
-                            to_glm_vec3(verts[lra.mVertex[1]].mPosition),
+                            get_world_pos(lra.mVertex[0]),
+                            get_world_pos(lra.mVertex[1]),
                             lra_color
                         );
                     }
@@ -943,12 +952,13 @@ void PhysicsSystem::draw_debug(MeshRenderer3D& renderer, const glm::vec4& active
                 for (size_t r = 0; r < settings->mRodStretchShearConstraints.size(); ++r) {
                     const auto& rod = settings->mRodStretchShearConstraints[r];
                     if (rod.mVertex[0] < verts.size() && rod.mVertex[1] < verts.size()) {
-                        glm::vec3 p0 = to_glm_vec3(verts[rod.mVertex[0]].mPosition);
-                        glm::vec3 p1 = to_glm_vec3(verts[rod.mVertex[1]].mPosition);
+                        glm::vec3 p0 = get_world_pos(rod.mVertex[0]);
+                        glm::vec3 p1 = get_world_pos(rod.mVertex[1]);
                         renderer.add_line_to_batch(p0, p1, rod_color);
 
                         glm::vec3 mid = (p0 + p1) * 0.5f;
-                        glm::quat q = to_glm_quat(mp->GetRodRotation(static_cast<JPH::uint>(r)));
+                        // Transform local rod rotation to world space
+                        glm::quat q = to_glm_quat(body_rot * mp->GetRodRotation(static_cast<JPH::uint>(r)));
                         float tick = std::max(0.08f, glm::length(p1 - p0) * 0.35f);
                         renderer.add_line_to_batch(mid, mid + q * glm::vec3(tick, 0.0f, 0.0f), frame_x);
                         renderer.add_line_to_batch(mid, mid + q * glm::vec3(0.0f, tick, 0.0f), frame_y);
