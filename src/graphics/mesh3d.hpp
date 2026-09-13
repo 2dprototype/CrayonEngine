@@ -60,12 +60,15 @@ struct RetroEffects {
     float vignette_strength = 0.25f;
 };
 
+class Model3D;
+
 class Mesh3D {
 public:
     Mesh3D();
     ~Mesh3D();
 
     bool load_from_obj(const std::string& filepath);
+    bool load_from_gltf(const std::string& filepath);
     void create_from_data(const std::vector<Vertex3D>& vertices, const std::vector<GLuint>& indices);
 
     void draw() const;
@@ -100,6 +103,7 @@ public:
     void end();
 
     void draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id = 0);
+    void draw_model(const Model3D& model, const glm::mat4& transform, GLuint override_texture = 0);
 
     // Direct Primitive Rendering Helpers
     void draw_cube(const glm::vec3& pos, const glm::vec3& size, GLuint texture_id = 0, const glm::vec3& rot = glm::vec3(0.0f));

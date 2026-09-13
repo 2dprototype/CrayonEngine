@@ -1,5 +1,6 @@
 #include "lua_runtime.hpp"
 #include "../core/engine.hpp"
+#include "../graphics/model3d.hpp"
 #include <vector>
 #include <unordered_map>
 #include <glm/gtc/matrix_transform.hpp>
@@ -15,10 +16,6 @@ struct LuaTexture {
     int height = 0;
 };
 
-struct LuaModel {
-    std::shared_ptr<Mesh3D> mesh;
-};
-
 static void push_texture_userdata(lua_State* L, GLuint id, int width, int height) {
     auto* udata = static_cast<LuaTexture*>(lua_newuserdata(L, sizeof(LuaTexture)));
     udata->id = id;
@@ -28,9 +25,9 @@ static void push_texture_userdata(lua_State* L, GLuint id, int width, int height
     lua_setmetatable(L, -2);
 }
 
-static void push_model_userdata(lua_State* L, std::shared_ptr<Mesh3D> mesh) {
+static void push_model_userdata(lua_State* L, std::shared_ptr<Model3D> model) {
     void* mem = lua_newuserdata(L, sizeof(LuaModel));
-    new (mem) LuaModel{ std::move(mesh) };
+    new (mem) LuaModel{ std::move(model) };
     luaL_getmetatable(L, "Graphics.Model");
     lua_setmetatable(L, -2);
 }
@@ -55,13 +52,13 @@ static GLuint opt_texture(lua_State* L, int idx, GLuint fallback = 0) {
     return fallback;
 }
 
-static std::shared_ptr<Mesh3D> check_model(lua_State* L, int idx) {
+static std::shared_ptr<Model3D> check_model(lua_State* L, int idx) {
     auto* model = static_cast<LuaModel*>(luaL_checkudata(L, idx, "Graphics.Model"));
-    if (!model || !model->mesh) {
+    if (!model || !model->model) {
         luaL_error(L, "attempt to use invalid Graphics.Model");
         return nullptr;
     }
-    return model->mesh;
+    return model->model;
 }
 
 // ---------------- Metatables ----------------
@@ -136,14 +133,198 @@ static void register_texture_metatable(lua_State* L) {
 
 static int l_model_is_valid(lua_State* L) {
     auto* model = static_cast<LuaModel*>(luaL_checkudata(L, 1, "Graphics.Model"));
-    lua_pushboolean(L, model && model->mesh != nullptr);
+    lua_pushboolean(L, model && model->model != nullptr && model->model->is_valid());
+    return 1;
+}
+
+static int l_model_get_node_count(lua_State* L) {
+    auto model = check_model(L, 1);
+    lua_pushinteger(L, model ? static_cast<lua_Integer>(model->get_node_count()) : 0);
+    return 1;
+}
+
+static void push_node_table(lua_State* L, const ModelNode& node, int idx) {
+    lua_newtable(L);
+    lua_pushstring(L, node.name.c_str());
+    lua_setfield(L, -2, "name");
+    lua_pushinteger(L, idx);
+    lua_setfield(L, -2, "index");
+    lua_pushinteger(L, node.parent_index);
+    lua_setfield(L, -2, "parent");
+
+    lua_pushnumber(L, node.translation.x);
+    lua_setfield(L, -2, "x");
+    lua_pushnumber(L, node.translation.y);
+    lua_setfield(L, -2, "y");
+    lua_pushnumber(L, node.translation.z);
+    lua_setfield(L, -2, "z");
+
+    lua_pushnumber(L, node.rotation.x);
+    lua_setfield(L, -2, "rx");
+    lua_pushnumber(L, node.rotation.y);
+    lua_setfield(L, -2, "ry");
+    lua_pushnumber(L, node.rotation.z);
+    lua_setfield(L, -2, "rz");
+    lua_pushnumber(L, node.rotation.w);
+    lua_setfield(L, -2, "rw");
+
+    lua_pushnumber(L, node.scale.x);
+    lua_setfield(L, -2, "sx");
+    lua_pushnumber(L, node.scale.y);
+    lua_setfield(L, -2, "sy");
+    lua_pushnumber(L, node.scale.z);
+    lua_setfield(L, -2, "sz");
+}
+
+static int l_model_get_node(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    if (lua_isnumber(L, 2)) {
+        size_t idx = static_cast<size_t>(lua_tointeger(L, 2));
+        const auto* node = model->get_node(idx);
+        if (node) {
+            push_node_table(L, *node, static_cast<int>(idx));
+            return 1;
+        }
+    } else if (lua_isstring(L, 2)) {
+        std::string name = lua_tostring(L, 2);
+        int idx = model->find_node_index(name);
+        if (idx >= 0) {
+            push_node_table(L, *model->get_node(static_cast<size_t>(idx)), idx);
+            return 1;
+        }
+    }
+    return 0;
+}
+
+static int l_model_get_nodes(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    const auto& nodes = model->get_nodes();
+    lua_createtable(L, static_cast<int>(nodes.size()), 0);
+    for (size_t i = 0; i < nodes.size(); ++i) {
+        push_node_table(L, nodes[i], static_cast<int>(i));
+        lua_rawseti(L, -2, static_cast<int>(i + 1));
+    }
+    return 1;
+}
+
+static int l_model_get_part_count(lua_State* L) {
+    auto model = check_model(L, 1);
+    lua_pushinteger(L, model ? static_cast<lua_Integer>(model->get_part_count()) : 0);
+    return 1;
+}
+
+static int l_model_get_part_name(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    size_t idx = static_cast<size_t>(luaL_checkinteger(L, 2));
+    const auto* part = model->get_part(idx);
+    if (part) {
+        lua_pushstring(L, part->name.c_str());
+        lua_pushstring(L, part->material_name.c_str());
+        return 2;
+    }
+    return 0;
+}
+
+static int l_model_get_part_texture(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    size_t idx = static_cast<size_t>(luaL_checkinteger(L, 2));
+    const auto* part = model->get_part(idx);
+    lua_pushinteger(L, part ? part->texture_id : 0);
+    return 1;
+}
+
+static int l_model_set_part_texture(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    size_t idx = static_cast<size_t>(luaL_checkinteger(L, 2));
+    GLuint tex = opt_texture(L, 3, 0);
+    model->set_part_texture(idx, tex);
+    return 0;
+}
+
+static int l_model_set_part_color(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    size_t idx = static_cast<size_t>(luaL_checkinteger(L, 2));
+    float r = static_cast<float>(luaL_checknumber(L, 3));
+    float g = static_cast<float>(luaL_checknumber(L, 4));
+    float b = static_cast<float>(luaL_checknumber(L, 5));
+    float a = static_cast<float>(luaL_optnumber(L, 6, 1.0));
+    model->set_part_color(idx, glm::vec4(r, g, b, a));
+    return 0;
+}
+
+static int l_model_get_bounds(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    glm::vec3 bmin(0.0f), bmax(0.0f);
+    model->get_bounds(bmin, bmax);
+    lua_pushnumber(L, bmin.x);
+    lua_pushnumber(L, bmin.y);
+    lua_pushnumber(L, bmin.z);
+    lua_pushnumber(L, bmax.x);
+    lua_pushnumber(L, bmax.y);
+    lua_pushnumber(L, bmax.z);
+    return 6;
+}
+
+static int l_model_get_center(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    glm::vec3 c = model->get_center();
+    lua_pushnumber(L, c.x);
+    lua_pushnumber(L, c.y);
+    lua_pushnumber(L, c.z);
+    return 3;
+}
+
+static int l_model_get_size(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    glm::vec3 s = model->get_size();
+    lua_pushnumber(L, s.x);
+    lua_pushnumber(L, s.y);
+    lua_pushnumber(L, s.z);
+    return 3;
+}
+
+static int l_model_get_triangles(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    std::vector<glm::vec3> verts;
+    std::vector<uint32_t> idxs;
+    model->get_collision_data(verts, idxs, true);
+
+    lua_createtable(L, static_cast<int>(idxs.size() / 3), 0);
+    int tri_count = 0;
+    for (size_t i = 0; i + 2 < idxs.size(); i += 3) {
+        lua_createtable(L, 3, 0);
+
+        for (int k = 0; k < 3; ++k) {
+            const auto& p = verts[idxs[i + k]];
+            lua_createtable(L, 3, 0);
+            lua_pushnumber(L, p.x); lua_rawseti(L, -2, 1);
+            lua_pushnumber(L, p.y); lua_rawseti(L, -2, 2);
+            lua_pushnumber(L, p.z); lua_rawseti(L, -2, 3);
+            lua_rawseti(L, -2, k + 1);
+        }
+
+        lua_rawseti(L, -2, ++tri_count);
+    }
     return 1;
 }
 
 static int l_model_tostring(lua_State* L) {
     auto* model = static_cast<LuaModel*>(luaL_checkudata(L, 1, "Graphics.Model"));
-    char buf[64];
-    std::snprintf(buf, sizeof(buf), "Graphics.Model(%p)", model ? model->mesh.get() : nullptr);
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "Graphics.Model(%p, parts: %zu, nodes: %zu)",
+                  model ? model->model.get() : nullptr,
+                  (model && model->model) ? model->model->get_part_count() : 0,
+                  (model && model->model) ? model->model->get_node_count() : 0);
     lua_pushstring(L, buf);
     return 1;
 }
@@ -163,6 +344,72 @@ static void register_model_metatable(lua_State* L) {
 
     lua_pushcfunction(L, l_model_is_valid);
     lua_setfield(L, -2, "isValid");
+    lua_pushcfunction(L, l_model_is_valid);
+    lua_setfield(L, -2, "is_valid");
+
+    lua_pushcfunction(L, l_model_get_node_count);
+    lua_setfield(L, -2, "getNodeCount");
+    lua_pushcfunction(L, l_model_get_node_count);
+    lua_setfield(L, -2, "get_node_count");
+
+    lua_pushcfunction(L, l_model_get_node);
+    lua_setfield(L, -2, "getNode");
+    lua_pushcfunction(L, l_model_get_node);
+    lua_setfield(L, -2, "get_node");
+    lua_pushcfunction(L, l_model_get_node);
+    lua_setfield(L, -2, "findNode");
+    lua_pushcfunction(L, l_model_get_node);
+    lua_setfield(L, -2, "find_node");
+
+    lua_pushcfunction(L, l_model_get_nodes);
+    lua_setfield(L, -2, "getNodes");
+    lua_pushcfunction(L, l_model_get_nodes);
+    lua_setfield(L, -2, "get_nodes");
+
+    lua_pushcfunction(L, l_model_get_part_count);
+    lua_setfield(L, -2, "getPartCount");
+    lua_pushcfunction(L, l_model_get_part_count);
+    lua_setfield(L, -2, "get_part_count");
+
+    lua_pushcfunction(L, l_model_get_part_name);
+    lua_setfield(L, -2, "getPartName");
+    lua_pushcfunction(L, l_model_get_part_name);
+    lua_setfield(L, -2, "get_part_name");
+
+    lua_pushcfunction(L, l_model_get_part_texture);
+    lua_setfield(L, -2, "getPartTexture");
+    lua_pushcfunction(L, l_model_get_part_texture);
+    lua_setfield(L, -2, "get_part_texture");
+
+    lua_pushcfunction(L, l_model_set_part_texture);
+    lua_setfield(L, -2, "setPartTexture");
+    lua_pushcfunction(L, l_model_set_part_texture);
+    lua_setfield(L, -2, "set_part_texture");
+
+    lua_pushcfunction(L, l_model_set_part_color);
+    lua_setfield(L, -2, "setPartColor");
+    lua_pushcfunction(L, l_model_set_part_color);
+    lua_setfield(L, -2, "set_part_color");
+
+    lua_pushcfunction(L, l_model_get_bounds);
+    lua_setfield(L, -2, "getBounds");
+    lua_pushcfunction(L, l_model_get_bounds);
+    lua_setfield(L, -2, "get_bounds");
+
+    lua_pushcfunction(L, l_model_get_center);
+    lua_setfield(L, -2, "getCenter");
+    lua_pushcfunction(L, l_model_get_center);
+    lua_setfield(L, -2, "get_center");
+
+    lua_pushcfunction(L, l_model_get_size);
+    lua_setfield(L, -2, "getSize");
+    lua_pushcfunction(L, l_model_get_size);
+    lua_setfield(L, -2, "get_size");
+
+    lua_pushcfunction(L, l_model_get_triangles);
+    lua_setfield(L, -2, "getTriangles");
+    lua_pushcfunction(L, l_model_get_triangles);
+    lua_setfield(L, -2, "get_triangles");
 
     lua_pushcfunction(L, l_model_tostring);
     lua_setfield(L, -2, "__tostring");
@@ -471,30 +718,30 @@ static int l_graphics_load_model(lua_State* L) {
     const char* path = luaL_checkstring(L, 1);
     std::string p(path);
 
-    std::shared_ptr<Mesh3D> mesh;
+    std::shared_ptr<Model3D> model;
     if (p == "cube") {
-        mesh = Mesh3D::create_cube(1.0f);
+        model = Model3D::create_from_mesh(Mesh3D::create_cube(1.0f), "cube");
     } else if (p == "plane") {
-        mesh = Mesh3D::create_plane(10.0f, 10.0f, 10);
+        model = Model3D::create_from_mesh(Mesh3D::create_plane(10.0f, 10.0f, 10), "plane");
     } else if (p == "sphere") {
-        mesh = Mesh3D::create_sphere(0.5f, 16, 16);
+        model = Model3D::create_from_mesh(Mesh3D::create_sphere(0.5f, 16, 16), "sphere");
     } else if (p == "cylinder") {
-        mesh = Mesh3D::create_cylinder(0.5f, 1.0f, 16);
+        model = Model3D::create_from_mesh(Mesh3D::create_cylinder(0.5f, 1.0f, 16), "cylinder");
     } else if (p == "cone") {
-        mesh = Mesh3D::create_cone(0.5f, 1.0f, 16);
+        model = Model3D::create_from_mesh(Mesh3D::create_cone(0.5f, 1.0f, 16), "cone");
     } else if (p == "pyramid") {
-        mesh = Mesh3D::create_pyramid(1.0f, 1.0f);
+        model = Model3D::create_from_mesh(Mesh3D::create_pyramid(1.0f, 1.0f), "pyramid");
     } else if (p == "torus") {
-        mesh = Mesh3D::create_torus(0.8f, 0.25f, 16, 12);
+        model = Model3D::create_from_mesh(Mesh3D::create_torus(0.8f, 0.25f, 16, 12), "torus");
     } else if (p == "capsule") {
-        mesh = Mesh3D::create_capsule(0.4f, 0.8f, 8, 12);
+        model = Model3D::create_from_mesh(Mesh3D::create_capsule(0.4f, 0.8f, 8, 12), "capsule");
     } else if (p == "grid") {
-        mesh = Mesh3D::create_grid(20.0f, 20);
+        model = Model3D::create_from_mesh(Mesh3D::create_grid(20.0f, 20), "grid");
     } else {
-        mesh = Engine::get().load_model(p);
+        model = Engine::get().load_model3d(p);
     }
 
-    push_model_userdata(L, mesh);
+    push_model_userdata(L, model);
     return 1;
 }
 
@@ -570,15 +817,16 @@ static int l_graphics_create_mesh(lua_State* L) {
 
     auto mesh = std::make_shared<Mesh3D>();
     mesh->create_from_data(vertices, indices);
-    push_model_userdata(L, mesh);
+    auto model = Model3D::create_from_mesh(mesh, "custom_mesh");
+    push_model_userdata(L, model);
     return 1;
 }
 
 // ---------------- 3D Primitives Direct Draw ----------------
 
 static int l_graphics_draw_model(lua_State* L) {
-    auto mesh = check_model(L, 1);
-    if (!mesh) return 0;
+    auto model = check_model(L, 1);
+    if (!model) return 0;
 
     float x = static_cast<float>(luaL_optnumber(L, 2, 0.0));
     float y = static_cast<float>(luaL_optnumber(L, 3, 0.0));
@@ -594,14 +842,49 @@ static int l_graphics_draw_model(lua_State* L) {
 
     GLuint tex_id = opt_texture(L, 11, 0);
 
-    glm::mat4 model = glm::mat4(1.0f);
-    model = glm::translate(model, glm::vec3(x, y, z));
-    if (rz != 0.0f) model = glm::rotate(model, rz, glm::vec3(0, 0, 1));
-    if (ry != 0.0f) model = glm::rotate(model, ry, glm::vec3(0, 1, 0));
-    if (rx != 0.0f) model = glm::rotate(model, rx, glm::vec3(1, 0, 0));
-    model = glm::scale(model, glm::vec3(sx, sy, sz));
+    glm::mat4 m = glm::mat4(1.0f);
+    m = glm::translate(m, glm::vec3(x, y, z));
+    if (rz != 0.0f) m = glm::rotate(m, rz, glm::vec3(0, 0, 1));
+    if (ry != 0.0f) m = glm::rotate(m, ry, glm::vec3(0, 1, 0));
+    if (rx != 0.0f) m = glm::rotate(m, rx, glm::vec3(1, 0, 0));
+    m = glm::scale(m, glm::vec3(sx, sy, sz));
 
-    Engine::get().get_mesh_renderer().draw_mesh(*mesh, model, tex_id);
+    model->draw(Engine::get().get_mesh_renderer(), m, tex_id);
+    return 0;
+}
+
+static int l_graphics_draw_model_node(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+
+    float x = static_cast<float>(luaL_optnumber(L, 3, 0.0));
+    float y = static_cast<float>(luaL_optnumber(L, 4, 0.0));
+    float z = static_cast<float>(luaL_optnumber(L, 5, 0.0));
+
+    float rx = static_cast<float>(luaL_optnumber(L, 6, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+
+    float sx = static_cast<float>(luaL_optnumber(L, 9, 1.0));
+    float sy = static_cast<float>(luaL_optnumber(L, 10, 1.0));
+    float sz = static_cast<float>(luaL_optnumber(L, 11, 1.0));
+
+    GLuint tex_id = opt_texture(L, 12, 0);
+
+    glm::mat4 m = glm::mat4(1.0f);
+    m = glm::translate(m, glm::vec3(x, y, z));
+    if (rz != 0.0f) m = glm::rotate(m, rz, glm::vec3(0, 0, 1));
+    if (ry != 0.0f) m = glm::rotate(m, ry, glm::vec3(0, 1, 0));
+    if (rx != 0.0f) m = glm::rotate(m, rx, glm::vec3(1, 0, 0));
+    m = glm::scale(m, glm::vec3(sx, sy, sz));
+
+    if (lua_isnumber(L, 2)) {
+        int node_idx = static_cast<int>(lua_tointeger(L, 2));
+        model->draw_node(Engine::get().get_mesh_renderer(), node_idx, m, tex_id);
+    } else if (lua_isstring(L, 2)) {
+        std::string name = lua_tostring(L, 2);
+        model->draw_node(Engine::get().get_mesh_renderer(), name, m, tex_id);
+    }
     return 0;
 }
 
@@ -1644,7 +1927,12 @@ static int l_graphics_draw_segmented_mesh(lua_State* L) {
         lua_rawgeti(L, 1, i);
         if (lua_isuserdata(L, -1)) {
             auto* m = static_cast<LuaModel*>(luaL_checkudata(L, -1, "Graphics.Model"));
-            meshes.push_back(m ? m->mesh : nullptr);
+            std::shared_ptr<Mesh3D> mesh_ptr = nullptr;
+            if (m && m->model && m->model->get_part_count() > 0) {
+                const auto* p = m->model->get_part(0);
+                if (p) mesh_ptr = p->mesh;
+            }
+            meshes.push_back(mesh_ptr);
         } else {
             meshes.push_back(nullptr);
         }
@@ -1777,6 +2065,11 @@ void register_graphics_bindings(lua_State* L) {
     // 3D Rendering
     lua_pushcfunction(L, l_graphics_draw_model);
     lua_setfield(L, -2, "drawModel");
+
+    lua_pushcfunction(L, l_graphics_draw_model_node);
+    lua_setfield(L, -2, "drawModelNode");
+    lua_pushcfunction(L, l_graphics_draw_model_node);
+    lua_setfield(L, -2, "draw_model_node");
 
     lua_pushcfunction(L, l_graphics_draw_cube);
     lua_setfield(L, -2, "drawCube");

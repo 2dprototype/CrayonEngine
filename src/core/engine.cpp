@@ -1,6 +1,7 @@
 #include "engine.hpp"
 #include "log.hpp"
 #include "../graphics/default_shaders.hpp"
+#include "../graphics/model3d.hpp"
 #include "../scripting/lua_runtime.hpp"
 #include "../physics/physics_system.hpp"
 #include <filesystem>
@@ -81,6 +82,7 @@ void Engine::shutdown() {
     m_running = false;
     m_texture_cache.clear();
     m_mesh_cache.clear();
+    m_model_cache.clear();
 
     if (m_lua_runtime) {
         m_lua_runtime->shutdown();
@@ -140,13 +142,38 @@ std::shared_ptr<Mesh3D> Engine::load_model(const std::string& path) {
     }
 
     auto mesh = std::make_shared<Mesh3D>();
-    if (!mesh->load_from_obj(path)) {
+    bool ok = false;
+    std::string lower = path;
+    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
+    if (lower.ends_with(".gltf") || lower.ends_with(".glb")) {
+        ok = mesh->load_from_gltf(path);
+    } else {
+        ok = mesh->load_from_obj(path);
+    }
+
+    if (!ok) {
         CRAYON_LOG_WARN("Failed to load model '{}', falling back to procedural cube", path);
         mesh = Mesh3D::create_cube(1.0f);
     }
 
     m_mesh_cache[path] = mesh;
     return mesh;
+}
+
+std::shared_ptr<Model3D> Engine::load_model3d(const std::string& path) {
+    auto it = m_model_cache.find(path);
+    if (it != m_model_cache.end()) {
+        return it->second;
+    }
+
+    auto model = std::make_shared<Model3D>();
+    if (!model->load_from_file(path)) {
+        CRAYON_LOG_WARN("Failed to load 3D model '{}', falling back to procedural cube", path);
+        model = Model3D::create_from_mesh(Mesh3D::create_cube(1.0f), "fallback_cube");
+    }
+
+    m_model_cache[path] = model;
+    return model;
 }
 
 void Engine::request_hot_reload() {

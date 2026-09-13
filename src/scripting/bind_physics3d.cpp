@@ -1,6 +1,7 @@
 #include "lua_runtime.hpp"
 #include "../core/engine.hpp"
 #include "../physics/physics_system.hpp"
+#include "../graphics/model3d.hpp"
 #include <cstring>
 #include <cstdio>
 #include <glm/gtc/type_ptr.hpp>
@@ -1531,6 +1532,160 @@ static int l_physics_create_plane(lua_State* L) {
         glm::vec3(nx, ny, nz),
         half_extent
     );
+    push_body_userdata(L, id, &ps);
+    return 1;
+}
+
+static int l_physics_create_mesh_body(lua_State* L) {
+    // Overload 1: createMeshBody(x, y, z, model, friction, restitution)
+    // Overload 2: createMeshBody(model, friction, restitution) [pos = (0,0,0)]
+    // Overload 3: createMeshBody(x, y, z, vertices_table, indices_table, friction, restitution)
+    // Overload 4: createMeshBody(table_with_mesh_data, friction, restitution)
+
+    glm::vec3 pos(0.0f);
+    std::vector<glm::vec3> vertices;
+    std::vector<uint32_t> indices;
+    float friction = 0.5f;
+    float restitution = 0.2f;
+
+    auto& ps = Engine::get().get_physics();
+
+    if (lua_isuserdata(L, 1)) {
+        // Overload 2: (model, friction, restitution)
+        auto* udata = static_cast<LuaModel*>(luaL_checkudata(L, 1, "Graphics.Model"));
+        if (!udata || !udata->model || !udata->model->is_valid()) {
+            return luaL_error(L, "createMeshBody: invalid Graphics.Model userdata");
+        }
+        udata->model->get_collision_data(vertices, indices, true);
+        friction = static_cast<float>(luaL_optnumber(L, 2, 0.5));
+        restitution = static_cast<float>(luaL_optnumber(L, 3, 0.2));
+    } else if (lua_isnumber(L, 1) && lua_isnumber(L, 2) && lua_isnumber(L, 3)) {
+        pos.x = static_cast<float>(lua_tonumber(L, 1));
+        pos.y = static_cast<float>(lua_tonumber(L, 2));
+        pos.z = static_cast<float>(lua_tonumber(L, 3));
+
+        if (lua_isuserdata(L, 4)) {
+            // Overload 1: (x, y, z, model, friction, restitution)
+            auto* udata = static_cast<LuaModel*>(luaL_checkudata(L, 4, "Graphics.Model"));
+            if (!udata || !udata->model || !udata->model->is_valid()) {
+                return luaL_error(L, "createMeshBody: invalid Graphics.Model userdata");
+            }
+            udata->model->get_collision_data(vertices, indices, true);
+            friction = static_cast<float>(luaL_optnumber(L, 5, 0.5));
+            restitution = static_cast<float>(luaL_optnumber(L, 6, 0.2));
+        } else if (lua_istable(L, 4)) {
+            // Overload 3: (x, y, z, vertices_table, indices_table, friction, restitution)
+            // or table containing .vertices and .indices
+            lua_getfield(L, 4, "vertices");
+            if (!lua_isnil(L, -1)) {
+                // Table containing .vertices and .indices
+                // Read vertices
+                int vert_len = static_cast<int>(lua_objlen(L, -1));
+                for (int i = 1; i <= vert_len; i += 3) {
+                    lua_rawgeti(L, -1, i);
+                    float vx = static_cast<float>(lua_tonumber(L, -1));
+                    lua_pop(L, 1);
+                    lua_rawgeti(L, -1, i + 1);
+                    float vy = static_cast<float>(lua_tonumber(L, -1));
+                    lua_pop(L, 1);
+                    lua_rawgeti(L, -1, i + 2);
+                    float vz = static_cast<float>(lua_tonumber(L, -1));
+                    lua_pop(L, 1);
+                    vertices.push_back(glm::vec3(vx, vy, vz));
+                }
+                lua_pop(L, 1); // pop vertices
+
+                lua_getfield(L, 4, "indices");
+                int idx_len = static_cast<int>(lua_objlen(L, -1));
+                for (int i = 1; i <= idx_len; ++i) {
+                    lua_rawgeti(L, -1, i);
+                    uint32_t idx = static_cast<uint32_t>(lua_tointeger(L, -1));
+                    lua_pop(L, 1);
+                    indices.push_back(idx);
+                }
+                lua_pop(L, 1); // pop indices
+
+                friction = static_cast<float>(luaL_optnumber(L, 5, 0.5));
+                restitution = static_cast<float>(luaL_optnumber(L, 6, 0.2));
+            } else {
+                lua_pop(L, 1); // pop nil
+                // vertices is arg 4, indices is arg 5
+                int vert_len = static_cast<int>(lua_objlen(L, 4));
+                for (int i = 1; i <= vert_len; i += 3) {
+                    lua_rawgeti(L, 4, i);
+                    float vx = static_cast<float>(lua_tonumber(L, -1));
+                    lua_pop(L, 1);
+                    lua_rawgeti(L, 4, i + 1);
+                    float vy = static_cast<float>(lua_tonumber(L, -1));
+                    lua_pop(L, 1);
+                    lua_rawgeti(L, 4, i + 2);
+                    float vz = static_cast<float>(lua_tonumber(L, -1));
+                    lua_pop(L, 1);
+                    vertices.push_back(glm::vec3(vx, vy, vz));
+                }
+
+                if (lua_istable(L, 5)) {
+                    int idx_len = static_cast<int>(lua_objlen(L, 5));
+                    for (int i = 1; i <= idx_len; ++i) {
+                        lua_rawgeti(L, 5, i);
+                        uint32_t idx = static_cast<uint32_t>(lua_tointeger(L, -1));
+                        lua_pop(L, 1);
+                        indices.push_back(idx);
+                    }
+                }
+                friction = static_cast<float>(luaL_optnumber(L, 6, 0.5));
+                restitution = static_cast<float>(luaL_optnumber(L, 7, 0.2));
+            }
+        } else {
+            return luaL_error(L, "createMeshBody: expected Graphics.Model or table for mesh data at argument 4");
+        }
+    } else if (lua_istable(L, 1)) {
+        // Table with vertices/indices
+        lua_getfield(L, 1, "vertices");
+        if (!lua_isnil(L, -1)) {
+            int vert_len = static_cast<int>(lua_objlen(L, -1));
+            for (int i = 1; i <= vert_len; i += 3) {
+                lua_rawgeti(L, -1, i);
+                float vx = static_cast<float>(lua_tonumber(L, -1));
+                lua_pop(L, 1);
+                lua_rawgeti(L, -1, i + 1);
+                float vy = static_cast<float>(lua_tonumber(L, -1));
+                lua_pop(L, 1);
+                lua_rawgeti(L, -1, i + 2);
+                float vz = static_cast<float>(lua_tonumber(L, -1));
+                lua_pop(L, 1);
+                vertices.push_back(glm::vec3(vx, vy, vz));
+            }
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 1, "indices");
+        if (!lua_isnil(L, -1)) {
+            int idx_len = static_cast<int>(lua_objlen(L, -1));
+            for (int i = 1; i <= idx_len; ++i) {
+                lua_rawgeti(L, -1, i);
+                uint32_t idx = static_cast<uint32_t>(lua_tointeger(L, -1));
+                lua_pop(L, 1);
+                indices.push_back(idx);
+            }
+        }
+        lua_pop(L, 1);
+
+        friction = static_cast<float>(luaL_optnumber(L, 2, 0.5));
+        restitution = static_cast<float>(luaL_optnumber(L, 3, 0.2));
+    } else {
+        return luaL_error(L, "createMeshBody: invalid arguments (expected Model or x, y, z, Model)");
+    }
+
+    if (vertices.empty() || indices.empty()) {
+        return luaL_error(L, "createMeshBody: mesh has no vertices or indices");
+    }
+
+    uint32_t id = ps.create_mesh_body(pos, vertices, indices, friction, restitution);
+    if (id == 0) {
+        return luaL_error(L, "createMeshBody: failed to create mesh collision shape");
+    }
+
     push_body_userdata(L, id, &ps);
     return 1;
 }
@@ -3329,6 +3484,11 @@ void register_physics3d_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_physics_create_plane);
     lua_setfield(L, -2, "createPlane");
+
+    lua_pushcfunction(L, l_physics_create_mesh_body);
+    lua_setfield(L, -2, "createMeshBody");
+    lua_pushcfunction(L, l_physics_create_mesh_body);
+    lua_setfield(L, -2, "create_mesh_body");
 
     // Characters (camelCase)
     lua_pushcfunction(L, l_physics_create_character);

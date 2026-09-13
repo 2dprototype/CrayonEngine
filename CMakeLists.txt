@@ -28,12 +28,14 @@ include_directories(
     vendor/luajit/include
     vendor/stb/include
     vendor/tinyobj/include
+    vendor/tinygltf/include
     vendor/JoltPhysics
 )
 
 # Source files
 set(SOURCES
     vendor/glad/src/glad.c
+    vendor/tinygltf/src/tiny_gltf_v3.c
     src/core/window.cpp
     src/core/input.cpp
     src/core/engine.cpp
@@ -43,6 +45,7 @@ set(SOURCES
     src/graphics/camera.cpp
     src/graphics/batch2d.cpp
     src/graphics/mesh3d.cpp
+    src/graphics/model3d.cpp
     src/physics/physics_system.cpp
     src/scripting/lua_runtime.cpp
     src/scripting/bind_window.cpp
@@ -53,6 +56,15 @@ set(SOURCES
     src/scripting/bind_physics2d.cpp
     src/main.cpp
 )
+
+set_source_files_properties(vendor/tinygltf/src/tiny_gltf_v3.c PROPERTIES
+    COMPILE_DEFINITIONS "TINYGLTF3_ENABLE_FS"
+)
+if(NOT MSVC)
+    set_source_files_properties(vendor/tinygltf/src/tiny_gltf_v3.c PROPERTIES
+        COMPILE_FLAGS "-Wno-unused-parameter -Wno-sign-compare -Wno-unused-variable -Wno-missing-field-initializers"
+    )
+endif()
 
 add_executable(crayon_engine ${SOURCES})
 

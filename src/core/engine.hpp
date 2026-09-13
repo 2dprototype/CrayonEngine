@@ -18,6 +18,7 @@ namespace crayon {
 
 class LuaRuntime;
 class PhysicsSystem;
+class Model3D;
 
 class Engine {
 public:
@@ -54,6 +55,7 @@ public:
     GLuint load_texture(const std::string& path);
     bool get_texture_size(GLuint tex_id, int& w, int& h) const;
     std::shared_ptr<Mesh3D> load_model(const std::string& path);
+    std::shared_ptr<Model3D> load_model3d(const std::string& path);
 
     // Time & Performance
     double get_time() const { return m_total_time; }
@@ -80,6 +82,7 @@ private:
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_texture_cache;
     std::unordered_map<GLuint, std::pair<int, int>> m_texture_sizes;
     std::unordered_map<std::string, std::shared_ptr<Mesh3D>> m_mesh_cache;
+    std::unordered_map<std::string, std::shared_ptr<Model3D>> m_model_cache;
 
     glm::vec4 m_clear_color{0.08f, 0.08f, 0.12f, 1.0f};
     glm::vec4 m_active_color{1.0f, 1.0f, 1.0f, 1.0f};

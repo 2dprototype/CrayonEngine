@@ -19,6 +19,8 @@ local demo_list = {
     { key = "B", title = "14: 3D Soft Body Cloth Simulation",     file = "game/examples/15_3d_softbody_cloth.lua", desc = "Cloth curtain, wind gusts, LRA tethers, dihedral bends, cannonballs" },
     { key = "N", title = "15: 3D Soft Ball & Jelly Cubes",        file = "game/examples/16_3d_softbody_ball_and_jelly.lua", desc = "Pressurized ball, tetrahedron volume constraints, rigid collision" },
     { key = "M", title = "16: 3D Cosserat Rod Plant Simulation",   file = "game/examples/17_3d_softbody_cosserat_rod_plant.lua", desc = "Stretch-shear & bend-twist rod, Bishop frame leaves, wind sway" },
+    { key = "G", title = "17: 3D glTF/GLB Model Inspector",       file = "game/examples/18_gltf_model_viewer.lua", desc = "Loads binary GLB & glTF, node hierarchy, materials, bounds, turntable" },
+    { key = "L", title = "18: 3D glTF Level Game & Trimesh",      file = "game/examples/19_gltf_3d_level.lua", desc = "glTF level mesh collider, Jolt trimesh, rolling physics ball, pickups" },
     { key = "P", title = "Featured: Retro 3D World Showcase",     file = "showcase", desc = "Interactive 3D orbit world with matrix hierarchy & coin HUD" }
 }
 
@@ -128,8 +130,16 @@ function crayon.update(dt)
             launch_demo(16)
             return
         end
-        if (crayon.input.isPressed("p")) then
+        if (crayon.input.isPressed("g")) then
             launch_demo(17)
+            return
+        end
+        if (crayon.input.isPressed("l")) then
+            launch_demo(18)
+            return
+        end
+        if (crayon.input.isPressed("p")) then
+            launch_demo(19)
             return
         end
 
@@ -228,7 +238,7 @@ function draw_menu()
     crayon.graphics.drawText(cur_item.desc, 10, 211, 1.0)
 
     crayon.graphics.setColor(0.65, 0.7, 0.8, 1.0)
-    crayon.graphics.drawText("[ENTER/SPACE]: Launch | [1-9,0,X,C,V,B,N,M,P]: Jump | [ESC]: Quit", 10, 223, 1.0)
+    crayon.graphics.drawText("[ENTER/SPACE]: Launch | [1-9,0,X,C,V,B,N,M,G,L,P]: Jump | [ESC]: Quit", 10, 223, 1.0)
 end
 
 function draw_showcase()

@@ -1,9 +1,16 @@
 #pragma once
 
 #include <string>
+#include <memory>
 #include <lua.hpp>
 
 namespace crayon {
+
+class Model3D;
+
+struct LuaModel {
+    std::shared_ptr<Model3D> model;
+};
 
 class LuaRuntime {
 public:

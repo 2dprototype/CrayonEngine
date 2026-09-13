@@ -26,6 +26,7 @@
 #include <Jolt/Physics/Collision/Shape/CapsuleShape.h>
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/Shape/PlaneShape.h>
+#include <Jolt/Physics/Collision/Shape/MeshShape.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -483,6 +484,49 @@ uint32_t PhysicsSystem::create_plane(const glm::vec3& pos, const glm::vec3& norm
     );
     settings.mFriction = 0.8f;
     settings.mRestitution = 0.2f;
+
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    JPH::Body* body = bi.CreateBody(settings);
+    if (!body) return 0;
+
+    JPH::BodyID id = body->GetID();
+    bi.AddBody(id, JPH::EActivation::DontActivate);
+    uint32_t raw_id = id.GetIndexAndSequenceNumber();
+    m_impl->alive_bodies.insert(raw_id);
+    return raw_id;
+}
+
+uint32_t PhysicsSystem::create_mesh_body(const glm::vec3& pos, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, float friction, float restitution) {
+    if (!m_impl->initialized || vertices.empty() || indices.size() < 3) return 0;
+
+    JPH::VertexList jolt_vertices;
+    jolt_vertices.reserve(vertices.size());
+    for (const auto& v : vertices) {
+        jolt_vertices.push_back(JPH::Float3(v.x, v.y, v.z));
+    }
+
+    JPH::IndexedTriangleList jolt_triangles;
+    jolt_triangles.reserve(indices.size() / 3);
+    for (size_t i = 0; i + 2 < indices.size(); i += 3) {
+        jolt_triangles.push_back(JPH::IndexedTriangle(indices[i], indices[i+1], indices[i+2], 0));
+    }
+
+    JPH::MeshShapeSettings shape_settings(jolt_vertices, jolt_triangles);
+    JPH::ShapeSettings::ShapeResult result = shape_settings.Create();
+    if (result.HasError()) {
+        CRAYON_LOG_ERROR("Jolt create_mesh_body error: {}", result.GetError().c_str());
+        return 0;
+    }
+
+    JPH::BodyCreationSettings settings(
+        result.Get(),
+        JPH::RVec3(pos.x, pos.y, pos.z),
+        JPH::Quat::sIdentity(),
+        JPH::EMotionType::Static,
+        Layers::NON_MOVING
+    );
+    settings.mFriction = friction;
+    settings.mRestitution = restitution;
 
     auto& bi = m_impl->physics_system.GetBodyInterface();
     JPH::Body* body = bi.CreateBody(settings);

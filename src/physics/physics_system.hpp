@@ -67,6 +67,7 @@ public:
     uint32_t create_capsule(const glm::vec3& pos, float half_height, float radius, MotionType motion = MotionType::Dynamic, float friction = 0.5f, float restitution = 0.2f, float density = 1000.0f);
     uint32_t create_cylinder(const glm::vec3& pos, float half_height, float radius, MotionType motion = MotionType::Dynamic, float friction = 0.5f, float restitution = 0.2f, float density = 1000.0f);
     uint32_t create_plane(const glm::vec3& pos, const glm::vec3& normal, float half_extent = 100.0f);
+    uint32_t create_mesh_body(const glm::vec3& pos, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, float friction = 0.5f, float restitution = 0.2f);
 
     // Body management
     bool destroy_body(uint32_t body_id);

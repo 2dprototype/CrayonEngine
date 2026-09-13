@@ -1,4 +1,5 @@
 #include "mesh3d.hpp"
+#include "model3d.hpp"
 #include "default_shaders.hpp"
 #include "../core/log.hpp"
 
@@ -181,6 +182,32 @@ bool Mesh3D::load_from_obj(const std::string& filepath) {
 
     create_from_data(vertices, indices);
     CRAYON_LOG_INFO("Loaded OBJ model {}: {} vertices, {} indices", filepath, m_vertex_count, m_index_count);
+    return true;
+}
+
+bool Mesh3D::load_from_gltf(const std::string& filepath) {
+    Model3D model;
+    if (!model.load_from_gltf(filepath)) {
+        return false;
+    }
+    std::vector<Vertex3D> all_vertices;
+    std::vector<GLuint> all_indices;
+    for (const auto& part : model.get_parts()) {
+        GLuint base_idx = static_cast<GLuint>(all_vertices.size());
+        for (const auto& v : part.cpu_vertices) {
+            Vertex3D transformed_v = v;
+            transformed_v.position = glm::vec3(part.transform * glm::vec4(v.position, 1.0f));
+            glm::mat3 norm_mat = glm::transpose(glm::inverse(glm::mat3(part.transform)));
+            transformed_v.normal = glm::normalize(norm_mat * v.normal);
+            transformed_v.color = v.color * part.color;
+            all_vertices.push_back(transformed_v);
+        }
+        for (GLuint idx : part.cpu_indices) {
+            all_indices.push_back(base_idx + idx);
+        }
+    }
+    create_from_data(all_vertices, all_indices);
+    CRAYON_LOG_INFO("Loaded glTF model {}: {} vertices, {} indices", filepath, m_vertex_count, m_index_count);
     return true;
 }
 
@@ -833,6 +860,10 @@ void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuin
     m_shader->unbind();
 }
 
+void MeshRenderer3D::draw_model(const Model3D& model, const glm::mat4& transform, GLuint override_texture) {
+    model.draw(*this, transform, override_texture);
+}
+
 static glm::mat4 make_transform(const glm::vec3& pos, const glm::vec3& scale, const glm::vec3& rot) {
     glm::mat4 m(1.0f);
     m = glm::translate(m, pos);
@@ -1072,6 +1103,8 @@ void MeshRenderer3D::batch_wire_capsule(const glm::vec3& center, float radius, f
 
     glm::vec3 top_cap = rot * glm::vec3(0.0f, half_height, 0.0f) + center;
     glm::vec3 bot_cap = rot * glm::vec3(0.0f, -half_height, 0.0f) + center;
+    (void)top_cap;
+    (void)bot_cap;
 
     // Rings around cylinder ends
     for (int i = 0; i < segments; ++i) {
