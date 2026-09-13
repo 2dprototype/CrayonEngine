@@ -713,7 +713,13 @@ bool Model3D::load_from_obj(const std::string& filepath) {
 
                 if (idx.texcoord_index >= 0) {
                     vert.uv.x = attrib.texcoords[2 * size_t(idx.texcoord_index) + 0];
-                    vert.uv.y = attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
+                    // OBJ texture coordinates use a bottom-left origin, but our
+                    // textures are uploaded top-row-first (unflipped stb_image
+                    // load), so V must be inverted to line up. Without this the
+                    // texture is mirrored top-to-bottom on every OBJ model.
+                    // (Mesh3D::load_from_obj already does this correctly - this
+                    // path was inconsistent with it.)
+                    vert.uv.y = 1.0f - attrib.texcoords[2 * size_t(idx.texcoord_index) + 1];
                 } else {
                     vert.uv = glm::vec2(0, 0);
                 }

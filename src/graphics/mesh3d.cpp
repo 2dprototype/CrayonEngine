@@ -19,6 +19,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
 #include <cmath>
+#include <cstdint>
 
 namespace crayon {
 
@@ -50,6 +51,7 @@ void Mesh3D::create_from_data(const std::vector<Vertex3D>& vertices, const std::
     m_vertex_count = static_cast<GLsizei>(vertices.size());
     m_index_count = static_cast<GLsizei>(indices.size());
     m_is_skinned = false;
+    m_submeshes.clear();
 
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
@@ -94,6 +96,7 @@ void Mesh3D::create_skinned_from_data(const std::vector<SkinnedVertex3D>& vertic
     m_vertex_count = static_cast<GLsizei>(vertices.size());
     m_index_count = static_cast<GLsizei>(indices.size());
     m_is_skinned = true;
+    m_submeshes.clear();
 
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
@@ -245,8 +248,12 @@ bool Mesh3D::load_from_gltf(const std::string& filepath) {
     }
     std::vector<Vertex3D> all_vertices;
     std::vector<GLuint> all_indices;
+    std::vector<SubMesh> submeshes;
+    submeshes.reserve(model.get_parts().size());
+
     for (const auto& part : model.get_parts()) {
         GLuint base_idx = static_cast<GLuint>(all_vertices.size());
+        GLuint index_start = static_cast<GLuint>(all_indices.size());
         for (const auto& v : part.cpu_vertices) {
             Vertex3D transformed_v = v;
             transformed_v.position = glm::vec3(part.transform * glm::vec4(v.position, 1.0f));
@@ -258,8 +265,41 @@ bool Mesh3D::load_from_gltf(const std::string& filepath) {
         for (GLuint idx : part.cpu_indices) {
             all_indices.push_back(base_idx + idx);
         }
+
+        // Record which texture this part's triangles should use. Previously
+        // this information was discarded once everything was merged into one
+        // vertex/index buffer, so any glTF file with more than one material
+        // rendered every part with whatever single texture the caller bound -
+        // e.g. a character's skin texture smeared across its clothes and
+        // hair too. Keeping a per-part draw range fixes that.
+        SubMesh sm;
+        sm.index_offset = index_start;
+        sm.index_count = static_cast<GLuint>(part.cpu_indices.size());
+        sm.texture_id = part.texture_id;
+        sm.color = part.color;
+        if (sm.index_count > 0) {
+            submeshes.push_back(sm);
+        }
     }
+
     create_from_data(all_vertices, all_indices);
+
+    // Only worth tracking submeshes if there's more than one, or the single
+    // part actually carries a texture - otherwise behave exactly as before.
+    bool multi_material = false;
+    if (submeshes.size() > 1) {
+        for (size_t i = 1; i < submeshes.size(); ++i) {
+            if (submeshes[i].texture_id != submeshes[0].texture_id) {
+                multi_material = true;
+                break;
+            }
+        }
+    }
+    if (multi_material) {
+        m_submeshes = std::move(submeshes);
+        CRAYON_LOG_INFO("glTF model {} has {} materials - Mesh3D::draw() will bind each part's texture automatically", filepath, m_submeshes.size());
+    }
+
     CRAYON_LOG_INFO("Loaded glTF model {}: {} vertices, {} indices", filepath, m_vertex_count, m_index_count);
     return true;
 }
@@ -267,11 +307,26 @@ bool Mesh3D::load_from_gltf(const std::string& filepath) {
 void Mesh3D::draw() const {
     if (m_vao == 0) return;
     glBindVertexArray(m_vao);
-    if (m_index_count > 0) {
+
+    if (!m_submeshes.empty()) {
+        // Multi-material mesh: bind each part's own texture before drawing
+        // its slice of the index buffer, instead of one texture for the
+        // whole mesh. A submesh with no texture (texture_id == 0) leaves
+        // whatever the caller already bound (e.g. the renderer's checker
+        // fallback) untouched, matching the previous single-texture behavior.
+        for (const auto& sm : m_submeshes) {
+            if (sm.texture_id != 0) {
+                glBindTexture(GL_TEXTURE_2D, sm.texture_id);
+            }
+            glDrawElements(GL_TRIANGLES, sm.index_count, GL_UNSIGNED_INT,
+                           reinterpret_cast<void*>(static_cast<uintptr_t>(sm.index_offset * sizeof(GLuint))));
+        }
+    } else if (m_index_count > 0) {
         glDrawElements(GL_TRIANGLES, m_index_count, GL_UNSIGNED_INT, nullptr);
     } else {
         glDrawArrays(GL_TRIANGLES, 0, m_vertex_count);
     }
+
     glBindVertexArray(0);
 }
 

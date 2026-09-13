@@ -29,6 +29,20 @@ struct SkinnedVertex3D {
     glm::vec4 weights{0.0f, 0.0f, 0.0f, 0.0f};
 };
 
+// One draw range within a Mesh3D that shares a single texture/material.
+// Populated automatically when a source has more than one material (e.g. a
+// glTF file with several materials) so Mesh3D::draw() renders each range
+// with its own texture instead of collapsing every part onto whichever
+// single texture the caller happened to have bound. Meshes with only one
+// material (procedural shapes, single-material OBJ/glTF) have no submeshes
+// and draw exactly as before.
+struct SubMesh {
+    GLuint index_offset = 0;
+    GLuint index_count = 0;
+    GLuint texture_id = 0;
+    glm::vec4 color{1.0f};
+};
+
 struct PointLight {
     glm::vec3 pos{0.0f};
     glm::vec3 color{1.0f};
@@ -84,6 +98,12 @@ public:
     void draw() const;
     bool is_skinned() const { return m_is_skinned; }
 
+    // True when this mesh was loaded from a multi-material source (e.g. a
+    // glTF file with several materials) and therefore carries per-range
+    // textures that draw() will bind automatically.
+    bool has_submeshes() const { return !m_submeshes.empty(); }
+    const std::vector<SubMesh>& get_submeshes() const { return m_submeshes; }
+
     static std::shared_ptr<Mesh3D> create_cube(float size = 1.0f);
     static std::shared_ptr<Mesh3D> create_plane(float width = 10.0f, float depth = 10.0f, int grid_subdivisions = 10);
     static std::shared_ptr<Mesh3D> create_sphere(float radius = 0.5f, int rings = 12, int sectors = 12);
@@ -101,6 +121,7 @@ private:
     GLsizei m_index_count = 0;
     GLsizei m_vertex_count = 0;
     bool m_is_skinned = false;
+    std::vector<SubMesh> m_submeshes;
 };
 
 class MeshRenderer3D {

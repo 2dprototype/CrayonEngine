@@ -48,9 +48,22 @@ bool Texture::load_from_memory(const unsigned char* data, int width, int height,
 
     glTexImage2D(GL_TEXTURE_2D, 0, format, m_width, m_height, 0, format, GL_UNSIGNED_BYTE, data);
 
-    GLint filter = nearest ? GL_NEAREST : GL_LINEAR;
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);
-    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, filter);
+    // Mipmaps: without these, textures on anything that recedes into the
+    // distance (floors, terrain, most real game props) alias and shimmer
+    // instead of smoothly minifying. Skip them for "nearest" textures, since
+    // that mode is normally chosen deliberately for crisp pixel-art look and
+    // GL_NEAREST_MIPMAP filtering would soften it.
+    GLint min_filter = GL_LINEAR;
+    GLint mag_filter = GL_LINEAR;
+    if (nearest) {
+        min_filter = GL_NEAREST;
+        mag_filter = GL_NEAREST;
+    } else {
+        glGenerateMipmap(GL_TEXTURE_2D);
+        min_filter = GL_LINEAR_MIPMAP_LINEAR;
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
