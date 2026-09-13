@@ -97,7 +97,7 @@ function crayon.init()
 
     crayon.graphics.setRetroEffects({
         jitterResolution = {160, 120},
-        affine = 0.8,
+        affine = 0,
         dither = true,
         fog = { startDist = 12, endDist = 40, color = {0.08, 0.10, 0.16} }
     })

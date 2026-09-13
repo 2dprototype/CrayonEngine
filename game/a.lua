@@ -22,7 +22,7 @@ function crayon.init()
     print(human:isValid(), human:isSkinned(),
           table.concat(human:getAnimationNames(), ", "))
 
-    anim:play("Walk")
+    anim:play("Run")
 end
 
 function crayon.update(dt)
