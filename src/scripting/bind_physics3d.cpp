@@ -1703,6 +1703,13 @@ static int l_physics_set_gravity(lua_State* L) {
     return 0;
 }
 
+static int l_physics_step(lua_State* L) {
+    float dt = static_cast<float>(luaL_optnumber(L, 1, 1.0 / 60.0));
+    int collision_steps = static_cast<int>(luaL_optinteger(L, 2, 1));
+    Engine::get().get_physics().update(dt, collision_steps);
+    return 0;
+}
+
 static int l_physics_get_gravity(lua_State* L) {
     glm::vec3 g = Engine::get().get_physics().get_gravity();
     lua_pushnumber(L, g.x);
@@ -3529,6 +3536,11 @@ void register_physics3d_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_physics_get_gravity);
     lua_setfield(L, -2, "getGravity");
+
+    lua_pushcfunction(L, l_physics_step);
+    lua_setfield(L, -2, "step");
+    lua_pushcfunction(L, l_physics_step);
+    lua_setfield(L, -2, "update");
 
     lua_pushcfunction(L, l_physics_raycast);
     lua_setfield(L, -2, "raycast");

@@ -133,6 +133,8 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
     m_parts.clear();
     m_nodes.clear();
     m_owned_textures.clear();
+    m_skins.clear();
+    m_animations.clear();
     m_valid = false;
     m_filepath = filepath;
 
@@ -283,6 +285,117 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
     // Compute node world matrices
     update_node_world_matrices();
 
+    // 3b. Extract Skins
+    m_skins.resize(model.skins_count);
+    for (uint32_t s = 0; s < model.skins_count; ++s) {
+        const tg3_skin& gs = model.skins[s];
+        ModelSkin& skin = m_skins[s];
+        skin.name = gs.name.len > 0 ? tg3_str_to_string(gs.name) : ("skin_" + std::to_string(s));
+        skin.skeleton_root_node = gs.skeleton;
+
+        AccessorReader ibm_reader;
+        bool has_ibm = (gs.inverse_bind_matrices >= 0) && ibm_reader.init(model, gs.inverse_bind_matrices);
+
+        skin.joints.resize(gs.joints_count);
+        for (uint32_t j = 0; j < gs.joints_count; ++j) {
+            ModelJoint& mj = skin.joints[j];
+            mj.node_index = gs.joints[j];
+            if (mj.node_index >= 0 && mj.node_index < (int)m_nodes.size()) {
+                mj.name = m_nodes[mj.node_index].name;
+            } else {
+                mj.name = "joint_" + std::to_string(j);
+            }
+            skin.joint_name_to_index[mj.name] = static_cast<int>(j);
+
+            if (has_ibm && j < ibm_reader.count) {
+                const float* mat_ptr = (const float*)ibm_reader.get_elem(j);
+                for (int col = 0; col < 4; ++col) {
+                    for (int row = 0; row < 4; ++row) {
+                        mj.inverse_bind_matrix[col][row] = mat_ptr[col * 4 + row];
+                    }
+                }
+            } else {
+                if (mj.node_index >= 0 && mj.node_index < (int)m_nodes.size()) {
+                    mj.inverse_bind_matrix = glm::inverse(m_nodes[mj.node_index].world_matrix);
+                }
+            }
+        }
+
+        // Connect parent joint indices
+        for (uint32_t j = 0; j < gs.joints_count; ++j) {
+            int node_idx = skin.joints[j].node_index;
+            if (node_idx >= 0 && node_idx < (int)m_nodes.size()) {
+                int parent_node = m_nodes[node_idx].parent_index;
+                while (parent_node >= 0) {
+                    auto it = skin.joint_name_to_index.find(m_nodes[parent_node].name);
+                    if (it != skin.joint_name_to_index.end()) {
+                        skin.joints[j].parent_joint_index = it->second;
+                        break;
+                    }
+                    parent_node = m_nodes[parent_node].parent_index;
+                }
+            }
+        }
+    }
+
+    // 3c. Extract Animations
+    m_animations.resize(model.animations_count);
+    for (uint32_t a = 0; a < model.animations_count; ++a) {
+        const tg3_animation& ga = model.animations[a];
+        AnimationClip& clip = m_animations[a];
+        clip.name = ga.name.len > 0 ? tg3_str_to_string(ga.name) : ("anim_" + std::to_string(a));
+        clip.duration = 0.0f;
+
+        clip.channels.reserve(ga.channels_count);
+        for (uint32_t c = 0; c < ga.channels_count; ++c) {
+            const tg3_animation_channel& gc = ga.channels[c];
+            if (gc.sampler < 0 || gc.sampler >= (int)ga.samplers_count) continue;
+            const tg3_animation_sampler& gs = ga.samplers[gc.sampler];
+
+            AccessorReader time_reader;
+            AccessorReader val_reader;
+            if (!time_reader.init(model, gs.input) || !val_reader.init(model, gs.output)) continue;
+            if (time_reader.count == 0 || val_reader.count == 0) continue;
+
+            AnimationChannel ch;
+            ch.target_node = gc.target.node;
+
+            std::string path_str = tg3_str_to_string(gc.target.path);
+            if (path_str == "translation") ch.path = AnimationPath::Translation;
+            else if (path_str == "rotation") ch.path = AnimationPath::Rotation;
+            else if (path_str == "scale") ch.path = AnimationPath::Scale;
+            else continue;
+
+            std::string interp_str = tg3_str_to_string(gs.interpolation);
+            if (interp_str == "STEP") ch.interpolation = AnimationInterpolation::Step;
+            else if (interp_str == "CUBICSPLINE") ch.interpolation = AnimationInterpolation::CubicSpline;
+            else ch.interpolation = AnimationInterpolation::Linear;
+
+            ch.timestamps.resize(time_reader.count);
+            for (uint64_t k = 0; k < time_reader.count; ++k) {
+                const float* tf = (const float*)time_reader.get_elem(k);
+                ch.timestamps[k] = *tf;
+                if (*tf > clip.duration) clip.duration = *tf;
+            }
+
+            if (ch.path == AnimationPath::Rotation) {
+                ch.quat_values.resize(val_reader.count);
+                for (uint64_t k = 0; k < val_reader.count; ++k) {
+                    const float* qf = (const float*)val_reader.get_elem(k);
+                    ch.quat_values[k] = glm::quat(qf[3], qf[0], qf[1], qf[2]);
+                }
+            } else {
+                ch.vec3_values.resize(val_reader.count);
+                for (uint64_t k = 0; k < val_reader.count; ++k) {
+                    const float* vf = (const float*)val_reader.get_elem(k);
+                    ch.vec3_values[k] = glm::vec3(vf[0], vf[1], vf[2]);
+                }
+            }
+
+            clip.channels.push_back(std::move(ch));
+        }
+    }
+
     // 4. Extract Primitives for each Node
     for (uint32_t node_idx = 0; node_idx < model.nodes_count; ++node_idx) {
         const tg3_node& gn = model.nodes[node_idx];
@@ -299,6 +412,8 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
             int norm_idx = -1;
             int uv_idx = -1;
             int col_idx = -1;
+            int joints_idx = -1;
+            int weights_idx = -1;
 
             for (uint32_t a = 0; a < prim.attributes_count; ++a) {
                 const tg3_str_int_pair& attr = prim.attributes[a];
@@ -306,6 +421,8 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
                 else if (tg3_str_equals(attr.key, "NORMAL")) norm_idx = attr.value;
                 else if (tg3_str_equals(attr.key, "TEXCOORD_0")) uv_idx = attr.value;
                 else if (tg3_str_equals(attr.key, "COLOR_0")) col_idx = attr.value;
+                else if (tg3_str_equals(attr.key, "JOINTS_0")) joints_idx = attr.value;
+                else if (tg3_str_equals(attr.key, "WEIGHTS_0")) weights_idx = attr.value;
             }
 
             AccessorReader pos_reader;
@@ -424,14 +541,66 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
                 }
             }
 
-            // Create GPU Mesh
+            // Check for JOINTS_0 and WEIGHTS_0
+            AccessorReader joints_reader;
+            AccessorReader weights_reader;
+            bool is_skinned_prim = (gn.skin >= 0 && joints_idx >= 0 && weights_idx >= 0 &&
+                                    joints_reader.init(model, joints_idx) &&
+                                    weights_reader.init(model, weights_idx));
+
             auto gpu_mesh = std::make_shared<Mesh3D>();
-            gpu_mesh->create_from_data(vertices, indices);
+            if (is_skinned_prim) {
+                std::vector<SkinnedVertex3D> skinned_verts(vertices.size());
+                for (size_t v = 0; v < vertices.size(); ++v) {
+                    skinned_verts[v].position = vertices[v].position;
+                    skinned_verts[v].normal = vertices[v].normal;
+                    skinned_verts[v].uv = vertices[v].uv;
+                    skinned_verts[v].color = vertices[v].color;
+
+                    if (v < joints_reader.count) {
+                        const uint8_t* ptr = joints_reader.get_elem(v);
+                        if (joints_reader.component_type == TG3_COMPONENT_TYPE_UNSIGNED_BYTE) {
+                            skinned_verts[v].joints = glm::uvec4(ptr[0], ptr[1], ptr[2], ptr[3]);
+                        } else if (joints_reader.component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                            const uint16_t* u = (const uint16_t*)ptr;
+                            skinned_verts[v].joints = glm::uvec4(u[0], u[1], u[2], u[3]);
+                        } else if (joints_reader.component_type == TG3_COMPONENT_TYPE_UNSIGNED_INT) {
+                            const uint32_t* u = (const uint32_t*)ptr;
+                            skinned_verts[v].joints = glm::uvec4(u[0], u[1], u[2], u[3]);
+                        }
+                    }
+
+                    if (v < weights_reader.count) {
+                        const uint8_t* ptr = weights_reader.get_elem(v);
+                        if (weights_reader.component_type == TG3_COMPONENT_TYPE_FLOAT) {
+                            const float* f = (const float*)ptr;
+                            skinned_verts[v].weights = glm::vec4(f[0], f[1], f[2], f[3]);
+                        } else if (weights_reader.component_type == TG3_COMPONENT_TYPE_UNSIGNED_BYTE) {
+                            skinned_verts[v].weights = glm::vec4(ptr[0]/255.f, ptr[1]/255.f, ptr[2]/255.f, ptr[3]/255.f);
+                        } else if (weights_reader.component_type == TG3_COMPONENT_TYPE_UNSIGNED_SHORT) {
+                            const uint16_t* u = (const uint16_t*)ptr;
+                            skinned_verts[v].weights = glm::vec4(u[0]/65535.f, u[1]/65535.f, u[2]/65535.f, u[3]/65535.f);
+                        }
+                    }
+
+                    float sum = skinned_verts[v].weights.x + skinned_verts[v].weights.y + skinned_verts[v].weights.z + skinned_verts[v].weights.w;
+                    if (sum > 0.00001f) {
+                        skinned_verts[v].weights /= sum;
+                    } else {
+                        skinned_verts[v].weights = glm::vec4(1.0f, 0.0f, 0.0f, 0.0f);
+                    }
+                }
+                gpu_mesh->create_skinned_from_data(skinned_verts, indices);
+            } else {
+                gpu_mesh->create_from_data(vertices, indices);
+            }
 
             ModelPart part;
             part.mesh = gpu_mesh;
             part.transform = node_world;
             part.node_index = (int)node_idx;
+            part.is_skinned = is_skinned_prim;
+            part.skin_index = gn.skin;
             part.name = m_nodes[node_idx].name + "_part" + std::to_string(p);
             part.min_bounds = part_min;
             part.max_bounds = part_max;
@@ -466,6 +635,8 @@ bool Model3D::load_from_obj(const std::string& filepath) {
     m_parts.clear();
     m_nodes.clear();
     m_owned_textures.clear();
+    m_skins.clear();
+    m_animations.clear();
     m_valid = false;
     m_filepath = filepath;
 
@@ -780,6 +951,55 @@ void Model3D::get_collision_data(std::vector<glm::vec3>& out_vertices, std::vect
             out_indices.push_back(base_idx + idx);
         }
     }
+}
+
+void Model3D::draw_skinned(MeshRenderer3D& renderer, const glm::mat4& world_transform, const glm::mat4* bone_matrices, size_t bone_count, GLuint override_texture) const {
+    for (const auto& part : m_parts) {
+        if (!part.mesh) continue;
+        GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
+        if (part.is_skinned && bone_matrices && bone_count > 0) {
+            renderer.draw_mesh_skinned(*part.mesh, world_transform, bone_matrices, bone_count, tex);
+        } else {
+            glm::mat4 final_tf = world_transform * part.transform;
+            renderer.draw_mesh(*part.mesh, final_tf, tex);
+        }
+    }
+}
+
+const ModelSkin* Model3D::get_skin(size_t index) const {
+    if (index < m_skins.size()) return &m_skins[index];
+    return nullptr;
+}
+
+const AnimationClip* Model3D::get_animation(size_t index) const {
+    if (index < m_animations.size()) return &m_animations[index];
+    return nullptr;
+}
+
+const AnimationClip* Model3D::find_animation(const std::string& name) const {
+    for (const auto& a : m_animations) {
+        if (a.name == name) return &a;
+    }
+    return nullptr;
+}
+
+int Model3D::find_animation_index(const std::string& name) const {
+    for (size_t i = 0; i < m_animations.size(); ++i) {
+        if (m_animations[i].name == name) return static_cast<int>(i);
+    }
+    return -1;
+}
+
+std::vector<std::pair<std::string, int>> Model3D::get_physics_skeleton_joints(size_t skin_index) const {
+    std::vector<std::pair<std::string, int>> joints;
+    if (skin_index < m_skins.size()) {
+        const auto& s = m_skins[skin_index];
+        joints.reserve(s.joints.size());
+        for (const auto& j : s.joints) {
+            joints.push_back({ j.name, j.parent_joint_index });
+        }
+    }
+    return joints;
 }
 
 } // namespace crayon

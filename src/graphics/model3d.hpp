@@ -22,6 +22,8 @@ struct ModelPart {
     std::string name;
     std::string material_name;
     int node_index = -1;
+    bool is_skinned = false;
+    int skin_index = -1;
 
     glm::vec3 min_bounds{0.0f};
     glm::vec3 max_bounds{0.0f};
@@ -46,6 +48,47 @@ struct ModelNode {
     std::vector<int> part_indices;
 };
 
+struct ModelJoint {
+    std::string name;
+    int node_index = -1;
+    int parent_joint_index = -1;
+    glm::mat4 inverse_bind_matrix{1.0f};
+};
+
+struct ModelSkin {
+    std::string name;
+    int skeleton_root_node = -1;
+    std::vector<ModelJoint> joints;
+    std::unordered_map<std::string, int> joint_name_to_index;
+};
+
+enum class AnimationPath : uint8_t {
+    Translation,
+    Rotation,
+    Scale
+};
+
+enum class AnimationInterpolation : uint8_t {
+    Step,
+    Linear,
+    CubicSpline
+};
+
+struct AnimationChannel {
+    int target_node = -1;
+    AnimationPath path = AnimationPath::Translation;
+    AnimationInterpolation interpolation = AnimationInterpolation::Linear;
+    std::vector<float> timestamps;
+    std::vector<glm::vec3> vec3_values; // For Translation / Scale
+    std::vector<glm::quat> quat_values; // For Rotation
+};
+
+struct AnimationClip {
+    std::string name;
+    float duration = 0.0f;
+    std::vector<AnimationChannel> channels;
+};
+
 class Model3D {
 public:
     Model3D();
@@ -58,6 +101,7 @@ public:
     static std::shared_ptr<Model3D> create_from_mesh(std::shared_ptr<Mesh3D> mesh, const std::string& name = "mesh");
 
     void draw(MeshRenderer3D& renderer, const glm::mat4& world_transform, GLuint override_texture = 0) const;
+    void draw_skinned(MeshRenderer3D& renderer, const glm::mat4& world_transform, const glm::mat4* bone_matrices, size_t bone_count, GLuint override_texture = 0) const;
     void draw_node(MeshRenderer3D& renderer, int node_index, const glm::mat4& world_transform, GLuint override_texture = 0) const;
     void draw_node(MeshRenderer3D& renderer, const std::string& node_name, const glm::mat4& world_transform, GLuint override_texture = 0) const;
     void draw_part(MeshRenderer3D& renderer, int part_index, const glm::mat4& world_transform, GLuint override_texture = 0) const;
@@ -89,6 +133,20 @@ public:
     // Collision geometry extraction (for Jolt trimesh & queries)
     void get_collision_data(std::vector<glm::vec3>& out_vertices, std::vector<uint32_t>& out_indices, bool apply_transforms = true) const;
 
+    // Skinning & Animation
+    bool is_skinned() const { return !m_skins.empty(); }
+    size_t get_skin_count() const { return m_skins.size(); }
+    const ModelSkin* get_skin(size_t index = 0) const;
+    const std::vector<ModelSkin>& get_skins() const { return m_skins; }
+
+    size_t get_animation_count() const { return m_animations.size(); }
+    const AnimationClip* get_animation(size_t index) const;
+    const AnimationClip* find_animation(const std::string& name) const;
+    int find_animation_index(const std::string& name) const;
+    const std::vector<AnimationClip>& get_animations() const { return m_animations; }
+
+    std::vector<std::pair<std::string, int>> get_physics_skeleton_joints(size_t skin_index = 0) const;
+
 private:
     void compute_bounds();
     void update_node_world_matrices();
@@ -96,6 +154,8 @@ private:
     std::vector<ModelPart> m_parts;
     std::vector<ModelNode> m_nodes;
     std::vector<std::shared_ptr<Texture>> m_owned_textures;
+    std::vector<ModelSkin> m_skins;
+    std::vector<AnimationClip> m_animations;
 
     glm::vec3 m_min_bounds{0.0f};
     glm::vec3 m_max_bounds{0.0f};

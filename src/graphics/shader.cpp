@@ -125,6 +125,13 @@ void Shader::set_mat4(const std::string& name, const glm::mat4& mat) {
     }
 }
 
+void Shader::set_mat4_array(const std::string& name, const glm::mat4* mats, GLsizei count) {
+    GLint loc = get_uniform_location(name);
+    if (loc != -1 && mats && count > 0) {
+        glUniformMatrix4fv(loc, count, GL_FALSE, glm::value_ptr(mats[0]));
+    }
+}
+
 void Shader::set_vec4(const std::string& name, const glm::vec4& vec) {
     GLint loc = get_uniform_location(name);
     if (loc != -1) {

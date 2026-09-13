@@ -1,6 +1,8 @@
 #include "lua_runtime.hpp"
 #include "../core/engine.hpp"
 #include "../graphics/model3d.hpp"
+#include "../graphics/animator.hpp"
+#include "../physics/physics_system.hpp"
 #include <vector>
 #include <unordered_map>
 #include <glm/gtc/matrix_transform.hpp>
@@ -16,6 +18,33 @@ struct LuaTexture {
     int height = 0;
 };
 
+struct LuaAnimator {
+    std::shared_ptr<Animator> animator;
+};
+
+struct LuaPhysics3DSkeleton {
+    uint32_t id;
+    PhysicsSystem* physics;
+    bool valid;
+};
+
+struct LuaPhysics3DSkeletonPose {
+    uint32_t id;
+    PhysicsSystem* physics;
+    bool valid;
+};
+
+static void* test_udata(lua_State* L, int idx, const char* tname) {
+    if (!lua_isuserdata(L, idx)) return nullptr;
+    if (lua_getmetatable(L, idx)) {
+        luaL_getmetatable(L, tname);
+        bool match = lua_rawequal(L, -1, -2);
+        lua_pop(L, 2);
+        if (match) return lua_touserdata(L, idx);
+    }
+    return nullptr;
+}
+
 static void push_texture_userdata(lua_State* L, GLuint id, int width, int height) {
     auto* udata = static_cast<LuaTexture*>(lua_newuserdata(L, sizeof(LuaTexture)));
     udata->id = id;
@@ -30,6 +59,22 @@ static void push_model_userdata(lua_State* L, std::shared_ptr<Model3D> model) {
     new (mem) LuaModel{ std::move(model) };
     luaL_getmetatable(L, "Graphics.Model");
     lua_setmetatable(L, -2);
+}
+
+static void push_animator_userdata(lua_State* L, std::shared_ptr<Animator> anim) {
+    void* mem = lua_newuserdata(L, sizeof(LuaAnimator));
+    new (mem) LuaAnimator{ std::move(anim) };
+    luaL_getmetatable(L, "Graphics.Animator");
+    lua_setmetatable(L, -2);
+}
+
+static std::shared_ptr<Animator> check_animator(lua_State* L, int idx) {
+    auto* a = static_cast<LuaAnimator*>(luaL_checkudata(L, idx, "Graphics.Animator"));
+    if (!a || !a->animator) {
+        luaL_error(L, "attempt to use invalid Graphics.Animator");
+        return nullptr;
+    }
+    return a->animator;
 }
 
 static GLuint check_texture(lua_State* L, int idx) {
@@ -337,6 +382,442 @@ static int l_model_gc(lua_State* L) {
     return 0;
 }
 
+// ---------------- Skinned Model & Animator Bindings ----------------
+
+static int l_model_is_skinned(lua_State* L) {
+    auto model = check_model(L, 1);
+    lua_pushboolean(L, model && model->is_skinned());
+    return 1;
+}
+
+static int l_model_get_joint_count(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    const auto* skin = model->get_skin(0);
+    lua_pushinteger(L, skin ? static_cast<lua_Integer>(skin->joints.size()) : 0);
+    return 1;
+}
+
+static int l_model_get_joint_name(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    size_t idx = static_cast<size_t>(luaL_checkinteger(L, 2));
+    const auto* skin = model->get_skin(0);
+    if (skin && idx < skin->joints.size()) {
+        lua_pushstring(L, skin->joints[idx].name.c_str());
+        return 1;
+    }
+    return 0;
+}
+
+static int l_model_get_joint_index(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    std::string name = luaL_checkstring(L, 2);
+    const auto* skin = model->get_skin(0);
+    if (skin) {
+        auto it = skin->joint_name_to_index.find(name);
+        if (it != skin->joint_name_to_index.end()) {
+            lua_pushinteger(L, it->second);
+            return 1;
+        }
+    }
+    lua_pushinteger(L, -1);
+    return 1;
+}
+
+static int l_model_get_joint_names(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    const auto* skin = model->get_skin(0);
+    if (!skin) {
+        lua_newtable(L);
+        return 1;
+    }
+    lua_createtable(L, static_cast<int>(skin->joints.size()), 0);
+    for (size_t i = 0; i < skin->joints.size(); ++i) {
+        lua_pushstring(L, skin->joints[i].name.c_str());
+        lua_rawseti(L, -2, static_cast<int>(i + 1));
+    }
+    return 1;
+}
+
+static int l_model_get_animation_count(lua_State* L) {
+    auto model = check_model(L, 1);
+    lua_pushinteger(L, model ? static_cast<lua_Integer>(model->get_animation_count()) : 0);
+    return 1;
+}
+
+static int l_model_get_animation_names(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    const auto& anims = model->get_animations();
+    lua_createtable(L, static_cast<int>(anims.size()), 0);
+    for (size_t i = 0; i < anims.size(); ++i) {
+        lua_pushstring(L, anims[i].name.c_str());
+        lua_rawseti(L, -2, static_cast<int>(i + 1));
+    }
+    return 1;
+}
+
+static int l_model_get_animation_duration(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    if (lua_isnumber(L, 2)) {
+        size_t idx = static_cast<size_t>(lua_tointeger(L, 2));
+        const auto* anim = model->get_animation(idx);
+        lua_pushnumber(L, anim ? anim->duration : 0.0f);
+        return 1;
+    } else if (lua_isstring(L, 2)) {
+        std::string name = lua_tostring(L, 2);
+        const auto* anim = model->find_animation(name);
+        lua_pushnumber(L, anim ? anim->duration : 0.0f);
+        return 1;
+    }
+    lua_pushnumber(L, 0.0f);
+    return 1;
+}
+
+static int l_model_create_animator(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    auto anim = std::make_shared<Animator>(model);
+    push_animator_userdata(L, anim);
+    return 1;
+}
+
+static int l_model_create_physics_skeleton(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    auto joints = model->get_physics_skeleton_joints();
+    if (joints.empty()) {
+        luaL_error(L, "model has no skinning joints to create physics skeleton");
+        return 0;
+    }
+    auto& ps = Engine::get().get_physics();
+    uint32_t skel_id = ps.create_skeleton(joints);
+    if (skel_id == 0) {
+        luaL_error(L, "failed to create physics skeleton from model");
+        return 0;
+    }
+
+    auto* udata = static_cast<LuaPhysics3DSkeleton*>(lua_newuserdata(L, sizeof(LuaPhysics3DSkeleton)));
+    udata->id = skel_id;
+    udata->physics = &ps;
+    udata->valid = true;
+    luaL_getmetatable(L, "Physics3D.Skeleton");
+    lua_setmetatable(L, -2);
+    return 1;
+}
+
+static int l_graphics_draw_model_skinned(lua_State* L);
+
+static int l_model_draw_skinned(lua_State* L) {
+    return l_graphics_draw_model_skinned(L);
+}
+
+// ---------------- Animator Methods ----------------
+
+static int l_animator_play(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    std::string clip = luaL_checkstring(L, 2);
+    bool loop = lua_isnoneornil(L, 3) ? true : lua_toboolean(L, 3);
+    float speed = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+    anim->play(clip, loop, speed);
+    return 0;
+}
+
+static int l_animator_stop(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (anim) anim->stop();
+    return 0;
+}
+
+static int l_animator_pause(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (anim) anim->pause();
+    return 0;
+}
+
+static int l_animator_resume(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (anim) anim->resume();
+    return 0;
+}
+
+static int l_animator_is_playing(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    lua_pushboolean(L, anim && anim->is_playing());
+    return 1;
+}
+
+static int l_animator_get_current_animation(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    lua_pushstring(L, anim->get_current_animation().c_str());
+    return 1;
+}
+
+static int l_animator_get_time(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    lua_pushnumber(L, anim ? anim->get_time() : 0.0f);
+    return 1;
+}
+
+static int l_animator_set_time(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (anim) {
+        float t = static_cast<float>(luaL_checknumber(L, 2));
+        anim->set_time(t);
+    }
+    return 0;
+}
+
+static int l_animator_get_duration(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    lua_pushnumber(L, anim ? anim->get_duration() : 0.0f);
+    return 1;
+}
+
+static int l_animator_set_speed(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (anim) {
+        float s = static_cast<float>(luaL_checknumber(L, 2));
+        anim->set_speed(s);
+    }
+    return 0;
+}
+
+static int l_animator_get_speed(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    lua_pushnumber(L, anim ? anim->get_speed() : 1.0f);
+    return 1;
+}
+
+static int l_animator_cross_fade(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    std::string target_clip = luaL_checkstring(L, 2);
+    float duration = static_cast<float>(luaL_optnumber(L, 3, 0.2));
+    bool loop = lua_isnoneornil(L, 4) ? true : lua_toboolean(L, 4);
+    anim->cross_fade(target_clip, duration, loop);
+    return 0;
+}
+
+static int l_animator_blend(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    std::string clip_a = luaL_checkstring(L, 2);
+    std::string clip_b = luaL_checkstring(L, 3);
+    float factor = static_cast<float>(luaL_checknumber(L, 4));
+    anim->blend(clip_a, clip_b, factor);
+    return 0;
+}
+
+static int l_animator_set_layer_clip(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    int layer = static_cast<int>(luaL_checkinteger(L, 2));
+    std::string clip = luaL_optstring(L, 3, "");
+    bool loop = lua_isnoneornil(L, 4) ? true : lua_toboolean(L, 4);
+    float speed = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    anim->set_layer_clip(layer, clip, loop, speed);
+    return 0;
+}
+
+static int l_animator_set_layer_weight(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    int layer = static_cast<int>(luaL_checkinteger(L, 2));
+    float weight = static_cast<float>(luaL_checknumber(L, 3));
+    anim->set_layer_weight(layer, weight);
+    return 0;
+}
+
+static int l_animator_set_layer_mask(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    int layer = static_cast<int>(luaL_checkinteger(L, 2));
+    std::string root_joint = luaL_checkstring(L, 3);
+    bool include_children = lua_isnoneornil(L, 4) ? true : lua_toboolean(L, 4);
+    anim->set_layer_mask(layer, root_joint, include_children);
+    return 0;
+}
+
+static int l_animator_set_update_rate(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    int fps = static_cast<int>(luaL_checkinteger(L, 2));
+    anim->set_update_rate(fps);
+    return 0;
+}
+
+static int l_animator_update(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    float dt = static_cast<float>(luaL_checknumber(L, 2));
+    anim->update(dt);
+    return 0;
+}
+
+static int l_animator_apply_to_physics_pose(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    auto* pose = static_cast<LuaPhysics3DSkeletonPose*>(luaL_checkudata(L, 2, "Physics3D.SkeletonPose"));
+    if (!pose || !pose->valid || pose->id == 0) {
+        luaL_error(L, "invalid SkeletonPose passed to applyToPhysicsPose");
+        return 0;
+    }
+    bool ok = anim->apply_to_physics_pose(pose->id);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+static int l_animator_capture_physics_pose(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    auto* pose = static_cast<LuaPhysics3DSkeletonPose*>(luaL_checkudata(L, 2, "Physics3D.SkeletonPose"));
+    if (!pose || !pose->valid || pose->id == 0) {
+        luaL_error(L, "invalid SkeletonPose passed to capturePhysicsPose");
+        return 0;
+    }
+    bool ok = anim->capture_physics_pose(pose->id);
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+static int l_animator_get_model(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim || !anim->get_model()) return 0;
+    push_model_userdata(L, anim->get_model());
+    return 1;
+}
+
+static int l_animator_tostring(lua_State* L) {
+    auto* anim = static_cast<LuaAnimator*>(luaL_checkudata(L, 1, "Graphics.Animator"));
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "Graphics.Animator(%p, clip: %s)",
+                  anim ? anim->animator.get() : nullptr,
+                  (anim && anim->animator) ? anim->animator->get_current_animation().c_str() : "none");
+    lua_pushstring(L, buf);
+    return 1;
+}
+
+static int l_animator_gc(lua_State* L) {
+    auto* anim = static_cast<LuaAnimator*>(luaL_checkudata(L, 1, "Graphics.Animator"));
+    if (anim) {
+        anim->~LuaAnimator();
+    }
+    return 0;
+}
+
+static void register_animator_metatable(lua_State* L) {
+    luaL_newmetatable(L, "Graphics.Animator");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+
+    lua_pushcfunction(L, l_animator_play);
+    lua_setfield(L, -2, "play");
+
+    lua_pushcfunction(L, l_animator_stop);
+    lua_setfield(L, -2, "stop");
+
+    lua_pushcfunction(L, l_animator_pause);
+    lua_setfield(L, -2, "pause");
+
+    lua_pushcfunction(L, l_animator_resume);
+    lua_setfield(L, -2, "resume");
+
+    lua_pushcfunction(L, l_animator_is_playing);
+    lua_setfield(L, -2, "isPlaying");
+    lua_pushcfunction(L, l_animator_is_playing);
+    lua_setfield(L, -2, "is_playing");
+
+    lua_pushcfunction(L, l_animator_get_current_animation);
+    lua_setfield(L, -2, "getCurrentAnimation");
+    lua_pushcfunction(L, l_animator_get_current_animation);
+    lua_setfield(L, -2, "get_current_animation");
+
+    lua_pushcfunction(L, l_animator_get_time);
+    lua_setfield(L, -2, "getTime");
+    lua_pushcfunction(L, l_animator_get_time);
+    lua_setfield(L, -2, "get_time");
+
+    lua_pushcfunction(L, l_animator_set_time);
+    lua_setfield(L, -2, "setTime");
+    lua_pushcfunction(L, l_animator_set_time);
+    lua_setfield(L, -2, "set_time");
+
+    lua_pushcfunction(L, l_animator_get_duration);
+    lua_setfield(L, -2, "getDuration");
+    lua_pushcfunction(L, l_animator_get_duration);
+    lua_setfield(L, -2, "get_duration");
+
+    lua_pushcfunction(L, l_animator_set_speed);
+    lua_setfield(L, -2, "setSpeed");
+    lua_pushcfunction(L, l_animator_set_speed);
+    lua_setfield(L, -2, "set_speed");
+
+    lua_pushcfunction(L, l_animator_get_speed);
+    lua_setfield(L, -2, "getSpeed");
+    lua_pushcfunction(L, l_animator_get_speed);
+    lua_setfield(L, -2, "get_speed");
+
+    lua_pushcfunction(L, l_animator_cross_fade);
+    lua_setfield(L, -2, "crossFade");
+    lua_pushcfunction(L, l_animator_cross_fade);
+    lua_setfield(L, -2, "cross_fade");
+
+    lua_pushcfunction(L, l_animator_blend);
+    lua_setfield(L, -2, "blend");
+
+    lua_pushcfunction(L, l_animator_set_layer_clip);
+    lua_setfield(L, -2, "setLayerClip");
+    lua_pushcfunction(L, l_animator_set_layer_clip);
+    lua_setfield(L, -2, "set_layer_clip");
+
+    lua_pushcfunction(L, l_animator_set_layer_weight);
+    lua_setfield(L, -2, "setLayerWeight");
+    lua_pushcfunction(L, l_animator_set_layer_weight);
+    lua_setfield(L, -2, "set_layer_weight");
+
+    lua_pushcfunction(L, l_animator_set_layer_mask);
+    lua_setfield(L, -2, "setLayerMask");
+    lua_pushcfunction(L, l_animator_set_layer_mask);
+    lua_setfield(L, -2, "set_layer_mask");
+
+    lua_pushcfunction(L, l_animator_set_update_rate);
+    lua_setfield(L, -2, "setUpdateRate");
+    lua_pushcfunction(L, l_animator_set_update_rate);
+    lua_setfield(L, -2, "set_update_rate");
+
+    lua_pushcfunction(L, l_animator_update);
+    lua_setfield(L, -2, "update");
+
+    lua_pushcfunction(L, l_animator_apply_to_physics_pose);
+    lua_setfield(L, -2, "applyToPhysicsPose");
+    lua_pushcfunction(L, l_animator_apply_to_physics_pose);
+    lua_setfield(L, -2, "apply_to_physics_pose");
+
+    lua_pushcfunction(L, l_animator_capture_physics_pose);
+    lua_setfield(L, -2, "capturePhysicsPose");
+    lua_pushcfunction(L, l_animator_capture_physics_pose);
+    lua_setfield(L, -2, "capture_physics_pose");
+
+    lua_pushcfunction(L, l_animator_get_model);
+    lua_setfield(L, -2, "getModel");
+    lua_pushcfunction(L, l_animator_get_model);
+    lua_setfield(L, -2, "get_model");
+
+    lua_pushcfunction(L, l_animator_tostring);
+    lua_setfield(L, -2, "__tostring");
+    lua_pushcfunction(L, l_animator_gc);
+    lua_setfield(L, -2, "__gc");
+
+    lua_pop(L, 1);
+}
+
 static void register_model_metatable(lua_State* L) {
     luaL_newmetatable(L, "Graphics.Model");
     lua_pushvalue(L, -1);
@@ -410,6 +891,61 @@ static void register_model_metatable(lua_State* L) {
     lua_setfield(L, -2, "getTriangles");
     lua_pushcfunction(L, l_model_get_triangles);
     lua_setfield(L, -2, "get_triangles");
+
+    lua_pushcfunction(L, l_model_is_skinned);
+    lua_setfield(L, -2, "isSkinned");
+    lua_pushcfunction(L, l_model_is_skinned);
+    lua_setfield(L, -2, "is_skinned");
+
+    lua_pushcfunction(L, l_model_get_joint_count);
+    lua_setfield(L, -2, "getJointCount");
+    lua_pushcfunction(L, l_model_get_joint_count);
+    lua_setfield(L, -2, "get_joint_count");
+
+    lua_pushcfunction(L, l_model_get_joint_name);
+    lua_setfield(L, -2, "getJointName");
+    lua_pushcfunction(L, l_model_get_joint_name);
+    lua_setfield(L, -2, "get_joint_name");
+
+    lua_pushcfunction(L, l_model_get_joint_index);
+    lua_setfield(L, -2, "getJointIndex");
+    lua_pushcfunction(L, l_model_get_joint_index);
+    lua_setfield(L, -2, "get_joint_index");
+
+    lua_pushcfunction(L, l_model_get_joint_names);
+    lua_setfield(L, -2, "getJointNames");
+    lua_pushcfunction(L, l_model_get_joint_names);
+    lua_setfield(L, -2, "get_joint_names");
+
+    lua_pushcfunction(L, l_model_get_animation_count);
+    lua_setfield(L, -2, "getAnimationCount");
+    lua_pushcfunction(L, l_model_get_animation_count);
+    lua_setfield(L, -2, "get_animation_count");
+
+    lua_pushcfunction(L, l_model_get_animation_names);
+    lua_setfield(L, -2, "getAnimationNames");
+    lua_pushcfunction(L, l_model_get_animation_names);
+    lua_setfield(L, -2, "get_animation_names");
+
+    lua_pushcfunction(L, l_model_get_animation_duration);
+    lua_setfield(L, -2, "getAnimationDuration");
+    lua_pushcfunction(L, l_model_get_animation_duration);
+    lua_setfield(L, -2, "get_animation_duration");
+
+    lua_pushcfunction(L, l_model_create_animator);
+    lua_setfield(L, -2, "createAnimator");
+    lua_pushcfunction(L, l_model_create_animator);
+    lua_setfield(L, -2, "create_animator");
+
+    lua_pushcfunction(L, l_model_create_physics_skeleton);
+    lua_setfield(L, -2, "createPhysicsSkeleton");
+    lua_pushcfunction(L, l_model_create_physics_skeleton);
+    lua_setfield(L, -2, "create_physics_skeleton");
+
+    lua_pushcfunction(L, l_model_draw_skinned);
+    lua_setfield(L, -2, "drawSkinned");
+    lua_pushcfunction(L, l_model_draw_skinned);
+    lua_setfield(L, -2, "draw_skinned");
 
     lua_pushcfunction(L, l_model_tostring);
     lua_setfield(L, -2, "__tostring");
@@ -850,6 +1386,70 @@ static int l_graphics_draw_model(lua_State* L) {
     m = glm::scale(m, glm::vec3(sx, sy, sz));
 
     model->draw(Engine::get().get_mesh_renderer(), m, tex_id);
+    return 0;
+}
+
+static int l_graphics_create_animator(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    auto anim = std::make_shared<Animator>(model);
+    push_animator_userdata(L, anim);
+    return 1;
+}
+
+static int l_graphics_draw_model_skinned(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+
+    std::shared_ptr<Animator> anim = nullptr;
+    auto* anim_udata = static_cast<LuaAnimator*>(test_udata(L, 2, "Graphics.Animator"));
+    if (anim_udata && anim_udata->animator) {
+        anim = anim_udata->animator;
+    }
+
+    auto* pose_udata = static_cast<LuaPhysics3DSkeletonPose*>(test_udata(L, 2, "Physics3D.SkeletonPose"));
+
+    float x = static_cast<float>(luaL_optnumber(L, 3, 0.0));
+    float y = static_cast<float>(luaL_optnumber(L, 4, 0.0));
+    float z = static_cast<float>(luaL_optnumber(L, 5, 0.0));
+
+    float rx = static_cast<float>(luaL_optnumber(L, 6, 0.0));
+    float ry = static_cast<float>(luaL_optnumber(L, 7, 0.0));
+    float rz = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+
+    float sx = static_cast<float>(luaL_optnumber(L, 9, 1.0));
+    float sy = static_cast<float>(luaL_optnumber(L, 10, 1.0));
+    float sz = static_cast<float>(luaL_optnumber(L, 11, 1.0));
+
+    GLuint tex_id = opt_texture(L, 12, 0);
+
+    glm::mat4 m = glm::mat4(1.0f);
+    m = glm::translate(m, glm::vec3(x, y, z));
+    if (rz != 0.0f) m = glm::rotate(m, rz, glm::vec3(0, 0, 1));
+    if (ry != 0.0f) m = glm::rotate(m, ry, glm::vec3(0, 1, 0));
+    if (rx != 0.0f) m = glm::rotate(m, rx, glm::vec3(1, 0, 0));
+    m = glm::scale(m, glm::vec3(sx, sy, sz));
+
+    if (anim) {
+        const auto& palette = anim->get_bone_matrices();
+        model->draw_skinned(Engine::get().get_mesh_renderer(), m, palette.data(), palette.size(), tex_id);
+    } else if (pose_udata && pose_udata->valid && pose_udata->physics) {
+        const auto* skin = model->get_skin(0);
+        if (skin) {
+            size_t j_count = skin->joints.size();
+            std::vector<glm::mat4> palette(j_count);
+            for (size_t j = 0; j < j_count; ++j) {
+                glm::mat4 jm = pose_udata->physics->skeleton_pose_get_joint_matrix(pose_udata->id, static_cast<int>(j));
+                palette[j] = jm * skin->joints[j].inverse_bind_matrix;
+            }
+            model->draw_skinned(Engine::get().get_mesh_renderer(), m, palette.data(), palette.size(), tex_id);
+        } else {
+            model->draw(Engine::get().get_mesh_renderer(), m, tex_id);
+        }
+    } else {
+        model->draw(Engine::get().get_mesh_renderer(), m, tex_id);
+    }
+
     return 0;
 }
 
@@ -2013,6 +2613,7 @@ static int l_graphics_get_white_texture(lua_State* L) {
 void register_graphics_bindings(lua_State* L) {
     register_texture_metatable(L);
     register_model_metatable(L);
+    register_animator_metatable(L);
 
     lua_getglobal(L, "crayon");
     lua_newtable(L);
@@ -2062,9 +2663,19 @@ void register_graphics_bindings(lua_State* L) {
     lua_pushcfunction(L, l_graphics_create_mesh);
     lua_setfield(L, -2, "createMesh");
 
+    lua_pushcfunction(L, l_graphics_create_animator);
+    lua_setfield(L, -2, "createAnimator");
+    lua_pushcfunction(L, l_graphics_create_animator);
+    lua_setfield(L, -2, "create_animator");
+
     // 3D Rendering
     lua_pushcfunction(L, l_graphics_draw_model);
     lua_setfield(L, -2, "drawModel");
+
+    lua_pushcfunction(L, l_graphics_draw_model_skinned);
+    lua_setfield(L, -2, "drawModelSkinned");
+    lua_pushcfunction(L, l_graphics_draw_model_skinned);
+    lua_setfield(L, -2, "draw_model_skinned");
 
     lua_pushcfunction(L, l_graphics_draw_model_node);
     lua_setfield(L, -2, "drawModelNode");

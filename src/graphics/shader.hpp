@@ -19,6 +19,7 @@ public:
     void unbind() const;
 
     void set_mat4(const std::string& name, const glm::mat4& mat);
+    void set_mat4_array(const std::string& name, const glm::mat4* mats, GLsizei count);
     void set_vec4(const std::string& name, const glm::vec4& vec);
     void set_vec3(const std::string& name, const glm::vec3& vec);
     void set_vec2(const std::string& name, const glm::vec2& vec);

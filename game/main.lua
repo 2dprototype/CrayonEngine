@@ -21,6 +21,8 @@ local demo_list = {
     { key = "M", title = "16: 3D Cosserat Rod Plant Simulation",   file = "game/examples/17_3d_softbody_cosserat_rod_plant.lua", desc = "Stretch-shear & bend-twist rod, Bishop frame leaves, wind sway" },
     { key = "G", title = "17: 3D glTF/GLB Model Inspector",       file = "game/examples/18_gltf_model_viewer.lua", desc = "Loads binary GLB & glTF, node hierarchy, materials, bounds, turntable" },
     { key = "L", title = "18: 3D glTF Level Game & Trimesh",      file = "game/examples/19_gltf_3d_level.lua", desc = "glTF level mesh collider, Jolt trimesh, rolling physics ball, pickups" },
+    { key = "K", title = "19: 3D Skeletal Animation & Ragdoll",   file = "game/examples/20_skeletal_animation.lua", desc = "glTF bones, blend tree, upper-body masking, ragdoll transition" },
+    { key = "R", title = "20: 3D Action RPG (Soldier.glb)",       file = "game/examples/21_3d_action_rpg.lua", desc = "Skinned character, follow camera, combat attack, physics world" },
     { key = "P", title = "Featured: Retro 3D World Showcase",     file = "showcase", desc = "Interactive 3D orbit world with matrix hierarchy & coin HUD" }
 }
 

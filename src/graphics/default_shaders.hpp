@@ -40,10 +40,16 @@ layout (location = 0) in vec3 a_pos;
 layout (location = 1) in vec3 a_normal;
 layout (location = 2) in vec2 a_uv;
 layout (location = 3) in vec4 a_color;
+layout (location = 4) in uvec4 a_joints;
+layout (location = 5) in vec4 a_weights;
 
 uniform mat4 u_model;
 uniform mat4 u_view;
 uniform mat4 u_proj;
+
+uniform int u_is_skinned;
+const int MAX_BONES = 128;
+uniform mat4 u_bone_matrices[MAX_BONES];
 
 uniform int u_jitter_enabled;
 uniform vec2 u_jitter_res;
@@ -56,14 +62,26 @@ out vec3 v_world_pos;
 out vec3 v_view_pos;
 
 void main() {
-    vec4 world_pos = u_model * vec4(a_pos, 1.0);
+    vec4 local_pos = vec4(a_pos, 1.0);
+    vec3 local_normal = a_normal;
+
+    if (u_is_skinned != 0) {
+        mat4 skin_mat = u_bone_matrices[a_joints.x] * a_weights.x +
+                        u_bone_matrices[a_joints.y] * a_weights.y +
+                        u_bone_matrices[a_joints.z] * a_weights.z +
+                        u_bone_matrices[a_joints.w] * a_weights.w;
+        local_pos = skin_mat * local_pos;
+        local_normal = mat3(skin_mat) * local_normal;
+    }
+
+    vec4 world_pos = u_model * local_pos;
     v_world_pos = world_pos.xyz;
 
     vec4 view_pos = u_view * world_pos;
     v_view_pos = view_pos.xyz;
 
     mat3 normal_matrix = transpose(inverse(mat3(u_model)));
-    v_normal = normalize(normal_matrix * a_normal);
+    v_normal = normalize(normal_matrix * local_normal);
 
     v_color = a_color;
     v_uv_persp = a_uv;

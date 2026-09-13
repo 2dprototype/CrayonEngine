@@ -49,6 +49,7 @@ void Mesh3D::create_from_data(const std::vector<Vertex3D>& vertices, const std::
 
     m_vertex_count = static_cast<GLsizei>(vertices.size());
     m_index_count = static_cast<GLsizei>(indices.size());
+    m_is_skinned = false;
 
     glGenVertexArrays(1, &m_vao);
     glGenBuffers(1, &m_vbo);
@@ -78,6 +79,58 @@ void Mesh3D::create_from_data(const std::vector<Vertex3D>& vertices, const std::
     // 3: Color (vec4)
     glEnableVertexAttribArray(3);
     glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), reinterpret_cast<void*>(offsetof(Vertex3D, color)));
+
+    glBindVertexArray(0);
+}
+
+void Mesh3D::create_skinned_from_data(const std::vector<SkinnedVertex3D>& vertices, const std::vector<GLuint>& indices) {
+    if (m_vao) {
+        glDeleteVertexArrays(1, &m_vao);
+        glDeleteBuffers(1, &m_vbo);
+        glDeleteBuffers(1, &m_ebo);
+        m_vao = m_vbo = m_ebo = 0;
+    }
+
+    m_vertex_count = static_cast<GLsizei>(vertices.size());
+    m_index_count = static_cast<GLsizei>(indices.size());
+    m_is_skinned = true;
+
+    glGenVertexArrays(1, &m_vao);
+    glGenBuffers(1, &m_vbo);
+
+    glBindVertexArray(m_vao);
+    glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
+    glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(SkinnedVertex3D), vertices.data(), GL_STATIC_DRAW);
+
+    if (!indices.empty()) {
+        glGenBuffers(1, &m_ebo);
+        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
+    }
+
+    // 0: Position (vec3)
+    glEnableVertexAttribArray(0);
+    glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(SkinnedVertex3D), reinterpret_cast<void*>(offsetof(SkinnedVertex3D, position)));
+
+    // 1: Normal (vec3)
+    glEnableVertexAttribArray(1);
+    glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(SkinnedVertex3D), reinterpret_cast<void*>(offsetof(SkinnedVertex3D, normal)));
+
+    // 2: UV (vec2)
+    glEnableVertexAttribArray(2);
+    glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(SkinnedVertex3D), reinterpret_cast<void*>(offsetof(SkinnedVertex3D, uv)));
+
+    // 3: Color (vec4)
+    glEnableVertexAttribArray(3);
+    glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(SkinnedVertex3D), reinterpret_cast<void*>(offsetof(SkinnedVertex3D, color)));
+
+    // 4: Joints (uvec4)
+    glEnableVertexAttribArray(4);
+    glVertexAttribIPointer(4, 4, GL_UNSIGNED_INT, sizeof(SkinnedVertex3D), reinterpret_cast<void*>(offsetof(SkinnedVertex3D, joints)));
+
+    // 5: Weights (vec4)
+    glEnableVertexAttribArray(5);
+    glVertexAttribPointer(5, 4, GL_FLOAT, GL_FALSE, sizeof(SkinnedVertex3D), reinterpret_cast<void*>(offsetof(SkinnedVertex3D, weights)));
 
     glBindVertexArray(0);
 }
@@ -816,6 +869,62 @@ void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuin
     m_shader->set_mat4("u_model", final_model);
     m_shader->set_mat4("u_view", m_view);
     m_shader->set_mat4("u_proj", m_proj);
+    m_shader->set_int("u_is_skinned", 0);
+
+    // Retro Jitter & Affine
+    m_shader->set_int("u_jitter_enabled", m_retro.jitter_enabled ? 1 : 0);
+    m_shader->set_vec2("u_jitter_res", m_retro.jitter_resolution);
+    m_shader->set_float("u_affine_blend", m_retro.affine_blend);
+
+    // Lighting
+    m_shader->set_vec3("u_light_dir", m_light_dir);
+    m_shader->set_vec3("u_light_color", m_light_color);
+    m_shader->set_vec3("u_ambient_color", m_ambient_color);
+
+    // Shading mode
+    m_shader->set_int("u_shading_mode", static_cast<int>(m_shading_mode));
+
+    // Point lights
+    int num_lights = 0;
+    for (int i = 0; i < 4; ++i) {
+        if (m_point_lights[i].enabled) {
+            std::string prefix = "u_point_lights[" + std::to_string(num_lights) + "].";
+            m_shader->set_vec3(prefix + "pos", m_point_lights[i].pos);
+            m_shader->set_vec3(prefix + "color", m_point_lights[i].color);
+            m_shader->set_float(prefix + "radius", m_point_lights[i].radius);
+            m_shader->set_float(prefix + "intensity", m_point_lights[i].intensity);
+            num_lights++;
+        }
+    }
+    m_shader->set_int("u_num_point_lights", num_lights);
+
+    // Distance Fog
+    m_shader->set_int("u_fog_enabled", m_retro.fog_enabled ? 1 : 0);
+    m_shader->set_float("u_fog_start", m_retro.fog_start);
+    m_shader->set_float("u_fog_end", m_retro.fog_end);
+    m_shader->set_vec3("u_fog_color", m_retro.fog_color);
+
+    // Texture
+    m_shader->set_int("u_texture", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, texture_id != 0 ? texture_id : m_checker_texture->get_id());
+
+    mesh.draw();
+
+    m_shader->unbind();
+}
+
+void MeshRenderer3D::draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model, const glm::mat4* bone_matrices, size_t bone_count, GLuint texture_id) {
+    glm::mat4 final_model = m_current_matrix * model;
+
+    m_shader->bind();
+    m_shader->set_mat4("u_model", final_model);
+    m_shader->set_mat4("u_view", m_view);
+    m_shader->set_mat4("u_proj", m_proj);
+    m_shader->set_int("u_is_skinned", 1);
+    if (bone_matrices && bone_count > 0) {
+        m_shader->set_mat4_array("u_bone_matrices", bone_matrices, static_cast<GLsizei>(std::min(bone_count, size_t(128))));
+    }
 
     // Retro Jitter & Affine
     m_shader->set_int("u_jitter_enabled", m_retro.jitter_enabled ? 1 : 0);
@@ -862,6 +971,10 @@ void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuin
 
 void MeshRenderer3D::draw_model(const Model3D& model, const glm::mat4& transform, GLuint override_texture) {
     model.draw(*this, transform, override_texture);
+}
+
+void MeshRenderer3D::draw_model_skinned(const Model3D& model, const glm::mat4& transform, const glm::mat4* bone_matrices, size_t bone_count, GLuint override_texture) {
+    model.draw_skinned(*this, transform, bone_matrices, bone_count, override_texture);
 }
 
 static glm::mat4 make_transform(const glm::vec3& pos, const glm::vec3& scale, const glm::vec3& rot) {

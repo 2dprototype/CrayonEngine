@@ -170,31 +170,57 @@ Access via: `crayon.graphics`
 | `getTextureSize(id)` | Returns texture width, height |
 | `getWhiteTexture()` | Returns white texture ID (fallback) |
 
-### Models (3D)
-
 | Function | Description |
 |----------|-------------|
-| `loadModel(name)` | Load/create model, returns handle |
+| `loadModel(name)` | Load/create model, returns handle (`.obj`, `.gltf`, `.glb`, or primitive) |
 | `createMesh(data)` | Create custom mesh, returns handle |
+| `createAnimator(model)` | Create skeletal `Graphics.Animator` from a skinned model |
 
-**Model Names**: "cube", "plane", "sphere", "cylinder", "cone", "pyramid", "torus", "capsule", "grid", or path to .obj file
+**Model Names**: "cube", "plane", "sphere", "cylinder", "cone", "pyramid", "torus", "capsule", "grid", or path to `.obj`, `.gltf`, `.glb` file.
 
-**Mesh Data**:
-```lua
-{
-    vertices = {
-        {pos = {x,y,z}, norm = {x,y,z}, uv = {u,v}, color = {r,g,b,a}},
-        -- ...
-    },
-    indices = {0,1,2, 0,2,3, ...}  -- Triangle indices
-}
-```
+**Model Methods (glTF & Skinned)**:
+- `:isSkinned()`: Returns true if model has skin/joint data.
+- `:getJointCount()`: Returns total number of joints/bones in the skin.
+- `:getJointName(idx)`: Returns joint name string (1-indexed).
+- `:getJointIndex(name)`: Returns joint index for name (1-indexed) or -1.
+- `:getJointNames()`: Returns array table of all joint names.
+- `:getAnimationCount()`: Returns number of embedded animations.
+- `:getAnimationNames()`: Returns array table of animation clip names.
+- `:getAnimationDuration(name_or_idx)`: Returns duration in seconds.
+- `:createAnimator()`: Creates and returns a `Graphics.Animator` instance.
+- `:createPhysicsSkeleton()`: Creates and returns a 1:1 `Physics3D.Skeleton` matching the glTF skin joints.
+- `:drawSkinned(animator_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)`: Render skinned mesh directly.
+
+### Skeletal Animation (`Graphics.Animator`)
+Created via `model:createAnimator()` or `crayon.graphics.createAnimator(model)`.
+
+| Method | Description |
+|--------|-------------|
+| `:play(clip [, loop, speed])` | Start playing an animation clip (defaults: loop=true, speed=1.0) |
+| `:stop()` | Stop playback and reset time to 0 |
+| `:pause()` / `:resume()` | Pause or resume playback |
+| `:isPlaying()` | Returns boolean playback state |
+| `:getCurrentAnimation()` | Returns current playing clip name |
+| `:getTime()` / `:setTime(t)` | Get or set current playback timestamp (seconds) |
+| `:getDuration()` | Returns duration of the active animation clip |
+| `:setSpeed(speed)` / `:getSpeed()` | Set or get playback playback speed multiplier |
+| `:crossFade(targetClip [, duration, loop])` | Smooth spherical crossfade between animations (default duration: 0.2s) |
+| `:blend(clipA, clipB, factor)` | 1D locomotion blend tree with synchronized phase (factor: 0.0 to 1.0) |
+| `:setLayerClip(layer, clip [, loop, speed])` | Set animation clip for multi-layer evaluation (e.g. layer 1 = upper body) |
+| `:setLayerWeight(layer, weight)` | Set layer blend weight (0.0 to 1.0) |
+| `:setLayerMask(layer, rootJointName [, includeChildren])` | Mask layer to specific bone hierarchy (e.g. "Spine" for upper body actions) |
+| `:setUpdateRate(fps)` | LOD tick throttling (0 = every frame, or target Hz like 30, 15) |
+| `:update(dt)` | Advance animation state by `dt` seconds |
+| `:applyToPhysicsPose(skeletonPose)` | Transfer current animated bone transforms to a `Physics3D.SkeletonPose` |
+| `:capturePhysicsPose(skeletonPose)` | Transfer physics ragdoll transforms into animator for seamless ragdoll-to-animation blending |
+| `:getModel()` | Returns associated Model userdata |
 
 ### 3D Drawing
 
 | Function | Description |
 |----------|-------------|
-| `drawModel(id, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw loaded model |
+| `drawModel(id, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw loaded static model |
+| `drawModelSkinned(model, anim_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw skinned glTF model with `Animator` or `SkeletonPose` |
 | `drawCube(x, y, z, sx, sy, sz, tex, rx, ry, rz)` | Draw cube |
 | `drawPlane(x, y, z, w, d, tex, rx, ry, rz)` | Draw plane |
 | `drawSphere(x, y, z, radius, tex, rx, ry, rz)` | Draw sphere |
@@ -439,6 +465,8 @@ Access via: `crayon.physics3d`
 
 | Function | Description |
 |----------|-------------|
+| `step([dt, collisionSteps])` | Manually advance physics simulation (default: 1/60s, 1 step) |
+| `update([dt, collisionSteps])` | Alias for `step` |
 | `setGravity(gx, gy, gz)` | Set world gravity |
 | `getGravity()` | Returns gx, gy, gz |
 | `destroyAll()` | Destroy all bodies |
@@ -583,6 +611,7 @@ Access via: `crayon.physics3d`
 ```lua
 { name = "Spine", parentIndex = 0 }
 ```
+*(Tip: You can also create a skeleton directly from any skinned glTF model using `local skel = model:createPhysicsSkeleton()`)*
 
 **SkeletonPose Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:setJoint(idx, tx, ty, tz, rx, ry, rz, rw)`, `:calculateMatrices()`, `:getJointMatrix(idx)`, `:setRootOffset(x,y,z)`, `:getRootOffset()`, `:getJointCount()`
 

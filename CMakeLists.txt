@@ -46,6 +46,7 @@ set(SOURCES
     src/graphics/batch2d.cpp
     src/graphics/mesh3d.cpp
     src/graphics/model3d.cpp
+    src/graphics/animator.cpp
     src/physics/physics_system.cpp
     src/scripting/lua_runtime.cpp
     src/scripting/bind_window.cpp

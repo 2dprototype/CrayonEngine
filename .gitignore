@@ -4,3 +4,4 @@
 *.dll
 blueprint.md
 /vendor
+/models

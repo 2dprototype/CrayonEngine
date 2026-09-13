@@ -20,6 +20,15 @@ struct Vertex3D {
     glm::vec4 color;
 };
 
+struct SkinnedVertex3D {
+    glm::vec3 position;
+    glm::vec3 normal;
+    glm::vec2 uv;
+    glm::vec4 color{1.0f};
+    glm::uvec4 joints{0, 0, 0, 0};
+    glm::vec4 weights{0.0f, 0.0f, 0.0f, 0.0f};
+};
+
 struct PointLight {
     glm::vec3 pos{0.0f};
     glm::vec3 color{1.0f};
@@ -70,8 +79,10 @@ public:
     bool load_from_obj(const std::string& filepath);
     bool load_from_gltf(const std::string& filepath);
     void create_from_data(const std::vector<Vertex3D>& vertices, const std::vector<GLuint>& indices);
+    void create_skinned_from_data(const std::vector<SkinnedVertex3D>& vertices, const std::vector<GLuint>& indices);
 
     void draw() const;
+    bool is_skinned() const { return m_is_skinned; }
 
     static std::shared_ptr<Mesh3D> create_cube(float size = 1.0f);
     static std::shared_ptr<Mesh3D> create_plane(float width = 10.0f, float depth = 10.0f, int grid_subdivisions = 10);
@@ -89,6 +100,7 @@ private:
     GLuint m_ebo = 0;
     GLsizei m_index_count = 0;
     GLsizei m_vertex_count = 0;
+    bool m_is_skinned = false;
 };
 
 class MeshRenderer3D {
@@ -103,7 +115,9 @@ public:
     void end();
 
     void draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id = 0);
+    void draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model, const glm::mat4* bone_matrices, size_t bone_count, GLuint texture_id = 0);
     void draw_model(const Model3D& model, const glm::mat4& transform, GLuint override_texture = 0);
+    void draw_model_skinned(const Model3D& model, const glm::mat4& transform, const glm::mat4* bone_matrices, size_t bone_count, GLuint override_texture = 0);
 
     // Direct Primitive Rendering Helpers
     void draw_cube(const glm::vec3& pos, const glm::vec3& size, GLuint texture_id = 0, const glm::vec3& rot = glm::vec3(0.0f));
