@@ -65,14 +65,6 @@ void LuaRuntime::register_modules() {
     register_time_bindings(m_L);
     register_physics3d_bindings(m_L);
     register_physics2d_bindings(m_L);
-
-    // Compatibility shim: crayon.physics = crayon.physics3d
-    lua_getglobal(m_L, "crayon");
-    if (lua_istable(m_L, -1)) {
-        lua_getfield(m_L, -1, "physics3d");
-        lua_setfield(m_L, -2, "physics");
-    }
-    lua_pop(m_L, 1);
 }
 
 int LuaRuntime::push_error_handler() {

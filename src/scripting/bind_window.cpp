@@ -274,7 +274,6 @@ void register_window_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
 
-    // Primary camelCase + backward-compatibility snake_case
     lua_pushcfunction(L, l_window_set_resolution);
     lua_setfield(L, -2, "setResolution");
 

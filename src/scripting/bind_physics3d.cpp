@@ -800,10 +800,10 @@ static int l_character_virtual_get_ground_state(lua_State* L) {
     auto* c = check_character_virtual(L, 1);
     auto state = c->physics->character_virtual_get_ground_state(c->id);
     switch (state) {
-        case PhysicsSystem::GroundState::OnGround: lua_pushstring(L, "on_ground"); break;
-        case PhysicsSystem::GroundState::OnSteepGround: lua_pushstring(L, "on_steep_ground"); break;
-        case PhysicsSystem::GroundState::NotSupported: lua_pushstring(L, "not_supported"); break;
-        case PhysicsSystem::GroundState::InAir: default: lua_pushstring(L, "in_air"); break;
+        case PhysicsSystem::GroundState::OnGround: lua_pushstring(L, "onGround"); break;
+        case PhysicsSystem::GroundState::OnSteepGround: lua_pushstring(L, "onSteepGround"); break;
+        case PhysicsSystem::GroundState::NotSupported: lua_pushstring(L, "notSupported"); break;
+        case PhysicsSystem::GroundState::InAir: default: lua_pushstring(L, "inAir"); break;
     }
     return 1;
 }
@@ -2593,7 +2593,7 @@ static void register_skeleton_mapper_metatable(lua_State* L) {
     luaL_newmetatable(L, "Physics3D.SkeletonMapper");
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "__index");
-
+    
     lua_pushcfunction(L, l_skeleton_mapper_destroy); lua_setfield(L, -2, "destroy");
     lua_pushcfunction(L, l_skeleton_mapper_is_valid); lua_setfield(L, -2, "isValid");
     lua_pushcfunction(L, l_skeleton_mapper_get_id); lua_setfield(L, -2, "getId");
@@ -3494,8 +3494,6 @@ void register_physics3d_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_physics_create_mesh_body);
     lua_setfield(L, -2, "createMeshBody");
-    lua_pushcfunction(L, l_physics_create_mesh_body);
-    lua_setfield(L, -2, "create_mesh_body");
 
     // Characters (camelCase)
     lua_pushcfunction(L, l_physics_create_character);
@@ -3539,8 +3537,6 @@ void register_physics3d_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_physics_step);
     lua_setfield(L, -2, "step");
-    lua_pushcfunction(L, l_physics_step);
-    lua_setfield(L, -2, "update");
 
     lua_pushcfunction(L, l_physics_raycast);
     lua_setfield(L, -2, "raycast");
@@ -3570,36 +3566,23 @@ void register_physics3d_bindings(lua_State* L) {
     lua_pushcfunction(L, l_physics_destroy_constraint);
     lua_setfield(L, -2, "destroyConstraint");
 
-    // Soft Bodies (camelCase & snake_case)
     lua_pushcfunction(L, l_physics_create_soft_body);
     lua_setfield(L, -2, "createSoftBody");
-    lua_pushcfunction(L, l_physics_create_soft_body);
-    lua_setfield(L, -2, "create_soft_body");
 
     lua_pushcfunction(L, l_physics_create_soft_body_cloth);
     lua_setfield(L, -2, "createSoftBodyCloth");
-    lua_pushcfunction(L, l_physics_create_soft_body_cloth);
-    lua_setfield(L, -2, "create_soft_body_cloth");
 
     lua_pushcfunction(L, l_physics_create_soft_body_cube);
     lua_setfield(L, -2, "createSoftBodyCube");
-    lua_pushcfunction(L, l_physics_create_soft_body_cube);
-    lua_setfield(L, -2, "create_soft_body_cube");
-
+    
     lua_pushcfunction(L, l_physics_create_soft_body_sphere);
     lua_setfield(L, -2, "createSoftBodySphere");
-    lua_pushcfunction(L, l_physics_create_soft_body_sphere);
-    lua_setfield(L, -2, "create_soft_body_sphere");
 
     lua_pushcfunction(L, l_physics_create_soft_body_rod);
     lua_setfield(L, -2, "createSoftBodyRod");
-    lua_pushcfunction(L, l_physics_create_soft_body_rod);
-    lua_setfield(L, -2, "create_soft_body_rod");
 
     lua_pushcfunction(L, l_physics_destroy_soft_body);
     lua_setfield(L, -2, "destroySoftBody");
-    lua_pushcfunction(L, l_physics_destroy_soft_body);
-    lua_setfield(L, -2, "destroy_soft_body");
 
     lua_setfield(L, -2, "physics3d");
     lua_pop(L, 1);

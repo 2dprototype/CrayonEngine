@@ -731,84 +731,54 @@ static void register_animator_metatable(lua_State* L) {
 
     lua_pushcfunction(L, l_animator_is_playing);
     lua_setfield(L, -2, "isPlaying");
-    lua_pushcfunction(L, l_animator_is_playing);
-    lua_setfield(L, -2, "is_playing");
 
     lua_pushcfunction(L, l_animator_get_current_animation);
     lua_setfield(L, -2, "getCurrentAnimation");
-    lua_pushcfunction(L, l_animator_get_current_animation);
-    lua_setfield(L, -2, "get_current_animation");
 
     lua_pushcfunction(L, l_animator_get_time);
     lua_setfield(L, -2, "getTime");
-    lua_pushcfunction(L, l_animator_get_time);
-    lua_setfield(L, -2, "get_time");
 
     lua_pushcfunction(L, l_animator_set_time);
     lua_setfield(L, -2, "setTime");
-    lua_pushcfunction(L, l_animator_set_time);
-    lua_setfield(L, -2, "set_time");
 
     lua_pushcfunction(L, l_animator_get_duration);
     lua_setfield(L, -2, "getDuration");
-    lua_pushcfunction(L, l_animator_get_duration);
-    lua_setfield(L, -2, "get_duration");
 
     lua_pushcfunction(L, l_animator_set_speed);
     lua_setfield(L, -2, "setSpeed");
-    lua_pushcfunction(L, l_animator_set_speed);
-    lua_setfield(L, -2, "set_speed");
 
     lua_pushcfunction(L, l_animator_get_speed);
     lua_setfield(L, -2, "getSpeed");
-    lua_pushcfunction(L, l_animator_get_speed);
-    lua_setfield(L, -2, "get_speed");
 
     lua_pushcfunction(L, l_animator_cross_fade);
     lua_setfield(L, -2, "crossFade");
-    lua_pushcfunction(L, l_animator_cross_fade);
-    lua_setfield(L, -2, "cross_fade");
 
     lua_pushcfunction(L, l_animator_blend);
     lua_setfield(L, -2, "blend");
 
     lua_pushcfunction(L, l_animator_set_layer_clip);
     lua_setfield(L, -2, "setLayerClip");
-    lua_pushcfunction(L, l_animator_set_layer_clip);
-    lua_setfield(L, -2, "set_layer_clip");
 
     lua_pushcfunction(L, l_animator_set_layer_weight);
     lua_setfield(L, -2, "setLayerWeight");
-    lua_pushcfunction(L, l_animator_set_layer_weight);
-    lua_setfield(L, -2, "set_layer_weight");
 
     lua_pushcfunction(L, l_animator_set_layer_mask);
     lua_setfield(L, -2, "setLayerMask");
-    lua_pushcfunction(L, l_animator_set_layer_mask);
-    lua_setfield(L, -2, "set_layer_mask");
 
     lua_pushcfunction(L, l_animator_set_update_rate);
     lua_setfield(L, -2, "setUpdateRate");
-    lua_pushcfunction(L, l_animator_set_update_rate);
-    lua_setfield(L, -2, "set_update_rate");
-
+    
     lua_pushcfunction(L, l_animator_update);
     lua_setfield(L, -2, "update");
 
     lua_pushcfunction(L, l_animator_apply_to_physics_pose);
     lua_setfield(L, -2, "applyToPhysicsPose");
-    lua_pushcfunction(L, l_animator_apply_to_physics_pose);
-    lua_setfield(L, -2, "apply_to_physics_pose");
 
     lua_pushcfunction(L, l_animator_capture_physics_pose);
     lua_setfield(L, -2, "capturePhysicsPose");
-    lua_pushcfunction(L, l_animator_capture_physics_pose);
-    lua_setfield(L, -2, "capture_physics_pose");
 
     lua_pushcfunction(L, l_animator_get_model);
     lua_setfield(L, -2, "getModel");
-    lua_pushcfunction(L, l_animator_get_model);
-    lua_setfield(L, -2, "get_model");
 
     lua_pushcfunction(L, l_animator_tostring);
     lua_setfield(L, -2, "__tostring");
@@ -825,127 +795,75 @@ static void register_model_metatable(lua_State* L) {
 
     lua_pushcfunction(L, l_model_is_valid);
     lua_setfield(L, -2, "isValid");
-    lua_pushcfunction(L, l_model_is_valid);
-    lua_setfield(L, -2, "is_valid");
 
     lua_pushcfunction(L, l_model_get_node_count);
     lua_setfield(L, -2, "getNodeCount");
-    lua_pushcfunction(L, l_model_get_node_count);
-    lua_setfield(L, -2, "get_node_count");
 
     lua_pushcfunction(L, l_model_get_node);
     lua_setfield(L, -2, "getNode");
-    lua_pushcfunction(L, l_model_get_node);
-    lua_setfield(L, -2, "get_node");
-    lua_pushcfunction(L, l_model_get_node);
-    lua_setfield(L, -2, "findNode");
-    lua_pushcfunction(L, l_model_get_node);
-    lua_setfield(L, -2, "find_node");
 
     lua_pushcfunction(L, l_model_get_nodes);
     lua_setfield(L, -2, "getNodes");
-    lua_pushcfunction(L, l_model_get_nodes);
-    lua_setfield(L, -2, "get_nodes");
 
     lua_pushcfunction(L, l_model_get_part_count);
     lua_setfield(L, -2, "getPartCount");
-    lua_pushcfunction(L, l_model_get_part_count);
-    lua_setfield(L, -2, "get_part_count");
 
     lua_pushcfunction(L, l_model_get_part_name);
     lua_setfield(L, -2, "getPartName");
-    lua_pushcfunction(L, l_model_get_part_name);
-    lua_setfield(L, -2, "get_part_name");
 
     lua_pushcfunction(L, l_model_get_part_texture);
     lua_setfield(L, -2, "getPartTexture");
-    lua_pushcfunction(L, l_model_get_part_texture);
-    lua_setfield(L, -2, "get_part_texture");
 
     lua_pushcfunction(L, l_model_set_part_texture);
     lua_setfield(L, -2, "setPartTexture");
-    lua_pushcfunction(L, l_model_set_part_texture);
-    lua_setfield(L, -2, "set_part_texture");
 
     lua_pushcfunction(L, l_model_set_part_color);
     lua_setfield(L, -2, "setPartColor");
-    lua_pushcfunction(L, l_model_set_part_color);
-    lua_setfield(L, -2, "set_part_color");
 
     lua_pushcfunction(L, l_model_get_bounds);
     lua_setfield(L, -2, "getBounds");
-    lua_pushcfunction(L, l_model_get_bounds);
-    lua_setfield(L, -2, "get_bounds");
-
+    
     lua_pushcfunction(L, l_model_get_center);
     lua_setfield(L, -2, "getCenter");
-    lua_pushcfunction(L, l_model_get_center);
-    lua_setfield(L, -2, "get_center");
 
     lua_pushcfunction(L, l_model_get_size);
     lua_setfield(L, -2, "getSize");
-    lua_pushcfunction(L, l_model_get_size);
-    lua_setfield(L, -2, "get_size");
 
     lua_pushcfunction(L, l_model_get_triangles);
     lua_setfield(L, -2, "getTriangles");
-    lua_pushcfunction(L, l_model_get_triangles);
-    lua_setfield(L, -2, "get_triangles");
 
     lua_pushcfunction(L, l_model_is_skinned);
     lua_setfield(L, -2, "isSkinned");
-    lua_pushcfunction(L, l_model_is_skinned);
-    lua_setfield(L, -2, "is_skinned");
 
     lua_pushcfunction(L, l_model_get_joint_count);
     lua_setfield(L, -2, "getJointCount");
-    lua_pushcfunction(L, l_model_get_joint_count);
-    lua_setfield(L, -2, "get_joint_count");
 
     lua_pushcfunction(L, l_model_get_joint_name);
     lua_setfield(L, -2, "getJointName");
-    lua_pushcfunction(L, l_model_get_joint_name);
-    lua_setfield(L, -2, "get_joint_name");
 
     lua_pushcfunction(L, l_model_get_joint_index);
     lua_setfield(L, -2, "getJointIndex");
-    lua_pushcfunction(L, l_model_get_joint_index);
-    lua_setfield(L, -2, "get_joint_index");
 
     lua_pushcfunction(L, l_model_get_joint_names);
     lua_setfield(L, -2, "getJointNames");
-    lua_pushcfunction(L, l_model_get_joint_names);
-    lua_setfield(L, -2, "get_joint_names");
 
     lua_pushcfunction(L, l_model_get_animation_count);
     lua_setfield(L, -2, "getAnimationCount");
-    lua_pushcfunction(L, l_model_get_animation_count);
-    lua_setfield(L, -2, "get_animation_count");
 
     lua_pushcfunction(L, l_model_get_animation_names);
     lua_setfield(L, -2, "getAnimationNames");
-    lua_pushcfunction(L, l_model_get_animation_names);
-    lua_setfield(L, -2, "get_animation_names");
 
     lua_pushcfunction(L, l_model_get_animation_duration);
     lua_setfield(L, -2, "getAnimationDuration");
-    lua_pushcfunction(L, l_model_get_animation_duration);
-    lua_setfield(L, -2, "get_animation_duration");
 
     lua_pushcfunction(L, l_model_create_animator);
     lua_setfield(L, -2, "createAnimator");
-    lua_pushcfunction(L, l_model_create_animator);
-    lua_setfield(L, -2, "create_animator");
 
     lua_pushcfunction(L, l_model_create_physics_skeleton);
     lua_setfield(L, -2, "createPhysicsSkeleton");
-    lua_pushcfunction(L, l_model_create_physics_skeleton);
-    lua_setfield(L, -2, "create_physics_skeleton");
 
     lua_pushcfunction(L, l_model_draw_skinned);
     lua_setfield(L, -2, "drawSkinned");
-    lua_pushcfunction(L, l_model_draw_skinned);
-    lua_setfield(L, -2, "draw_skinned");
 
     lua_pushcfunction(L, l_model_tostring);
     lua_setfield(L, -2, "__tostring");
@@ -2665,8 +2583,6 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_create_animator);
     lua_setfield(L, -2, "createAnimator");
-    lua_pushcfunction(L, l_graphics_create_animator);
-    lua_setfield(L, -2, "create_animator");
 
     // 3D Rendering
     lua_pushcfunction(L, l_graphics_draw_model);
@@ -2674,13 +2590,9 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_draw_model_skinned);
     lua_setfield(L, -2, "drawModelSkinned");
-    lua_pushcfunction(L, l_graphics_draw_model_skinned);
-    lua_setfield(L, -2, "draw_model_skinned");
-
+    
     lua_pushcfunction(L, l_graphics_draw_model_node);
     lua_setfield(L, -2, "drawModelNode");
-    lua_pushcfunction(L, l_graphics_draw_model_node);
-    lua_setfield(L, -2, "draw_model_node");
 
     lua_pushcfunction(L, l_graphics_draw_cube);
     lua_setfield(L, -2, "drawCube");
@@ -2876,9 +2788,6 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_draw_ray_3d);
     lua_setfield(L, -2, "drawRay3d");
-
-    lua_pushcfunction(L, l_graphics_draw_ray_3d);
-    lua_setfield(L, -2, "drawRay");
 
     lua_pushcfunction(L, l_graphics_draw_skeleton);
     lua_setfield(L, -2, "drawSkeleton");

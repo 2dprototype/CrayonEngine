@@ -9,7 +9,8 @@ Crayon Engine is a 2D/3D game engine with retro aesthetics, modern physics, and 
 3. [Input Module](#input-module)
 4. [Time Module](#time-module)
 5. [Physics Module](#physics-module)
-6. [Complete Examples](#complete-examples)
+6. [Physics2D Module](#physics2d-module)
+7. [Complete Examples](#complete-examples)
 
 ---
 
@@ -153,6 +154,8 @@ Access via: `crayon.graphics`
 }
 ```
 
+Alternatively, `setCamera3d(x, y, z [, yaw, pitch, fov])` sets position and orients using yaw/pitch degrees.
+
 ### Lighting
 
 | Function | Description |
@@ -166,30 +169,47 @@ Access via: `crayon.graphics`
 
 | Function | Description |
 |----------|-------------|
-| `loadTexture(path)` | Load texture, returns texture ID |
-| `getTextureSize(id)` | Returns texture width, height |
-| `getWhiteTexture()` | Returns white texture ID (fallback) |
+| `loadTexture(path)` | Load texture, returns `Graphics.Texture` userdata |
+| `getTextureSize(tex)` | Returns texture width, height |
+| `getWhiteTexture()` | Returns white texture (fallback) |
+
+**Texture Methods**: `:getSize()`, `:getWidth()`, `:getHeight()`, `:getId()`, `:isValid()`
+
+### Models & Meshes
 
 | Function | Description |
 |----------|-------------|
 | `loadModel(name)` | Load/create model, returns handle (`.obj`, `.gltf`, `.glb`, or primitive) |
-| `createMesh(data)` | Create custom mesh, returns handle |
+| `createMesh(data)` | Create custom mesh, returns `Graphics.Model` handle |
 | `createAnimator(model)` | Create skeletal `Graphics.Animator` from a skinned model |
 
 **Model Names**: "cube", "plane", "sphere", "cylinder", "cone", "pyramid", "torus", "capsule", "grid", or path to `.obj`, `.gltf`, `.glb` file.
 
-**Model Methods (glTF & Skinned)**:
-- `:isSkinned()`: Returns true if model has skin/joint data.
-- `:getJointCount()`: Returns total number of joints/bones in the skin.
-- `:getJointName(idx)`: Returns joint name string (1-indexed).
-- `:getJointIndex(name)`: Returns joint index for name (1-indexed) or -1.
-- `:getJointNames()`: Returns array table of all joint names.
-- `:getAnimationCount()`: Returns number of embedded animations.
-- `:getAnimationNames()`: Returns array table of animation clip names.
-- `:getAnimationDuration(name_or_idx)`: Returns duration in seconds.
-- `:createAnimator()`: Creates and returns a `Graphics.Animator` instance.
-- `:createPhysicsSkeleton()`: Creates and returns a 1:1 `Physics3D.Skeleton` matching the glTF skin joints.
-- `:drawSkinned(animator_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)`: Render skinned mesh directly.
+**Model Methods**:
+- `:isValid()` — Returns true if the underlying model loaded correctly.
+- `:getNodeCount()` — Returns number of nodes in the hierarchy.
+- `:getNode(idx_or_name)` — Returns a node table `{name, index, parent, x, y, z, rx, ry, rz, rw, sx, sy, sz}`, or `nil` if not found.
+- `:getNodes()` — Returns array table of all node tables.
+- `:getPartCount()` — Returns number of drawable parts (materials).
+- `:getPartName(idx)` — Returns `name, material_name` (1-indexed).
+- `:getPartTexture(idx)` — Returns texture ID for a part.
+- `:setPartTexture(idx, tex)` — Assign a texture to a part.
+- `:setPartColor(idx, r, g, b [, a])` — Set a part color override.
+- `:getBounds()` — Returns `minX, minY, minZ, maxX, maxY, maxZ`.
+- `:getCenter()` — Returns `cx, cy, cz`.
+- `:getSize()` — Returns `sx, sy, sz`.
+- `:getTriangles()` — Returns a table of triangles (`{{p1},{p2},{p3}}`).
+- `:isSkinned()` — Returns true if the model has skin/joint data.
+- `:getJointCount()` — Returns total joints/bones.
+- `:getJointName(idx)` — Returns joint name string (1-indexed).
+- `:getJointIndex(name)` — Returns joint index (1-indexed) or -1.
+- `:getJointNames()` — Returns array table of all joint names.
+- `:getAnimationCount()` — Returns number of embedded animations.
+- `:getAnimationNames()` — Returns array table of animation clip names.
+- `:getAnimationDuration(name_or_idx)` — Returns duration in seconds.
+- `:createAnimator()` — Creates and returns a `Graphics.Animator`.
+- `:createPhysicsSkeleton()` — Creates a 1:1 `Physics3D.Skeleton` from glTF skin joints.
+- `:drawSkinned(animator_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)` — Render skinned mesh directly.
 
 ### Skeletal Animation (`Graphics.Animator`)
 Created via `model:createAnimator()` or `crayon.graphics.createAnimator(model)`.
@@ -203,16 +223,16 @@ Created via `model:createAnimator()` or `crayon.graphics.createAnimator(model)`.
 | `:getCurrentAnimation()` | Returns current playing clip name |
 | `:getTime()` / `:setTime(t)` | Get or set current playback timestamp (seconds) |
 | `:getDuration()` | Returns duration of the active animation clip |
-| `:setSpeed(speed)` / `:getSpeed()` | Set or get playback playback speed multiplier |
-| `:crossFade(targetClip [, duration, loop])` | Smooth spherical crossfade between animations (default duration: 0.2s) |
+| `:setSpeed(speed)` / `:getSpeed()` | Set or get playback speed multiplier |
+| `:crossFade(targetClip [, duration, loop])` | Smooth crossfade between animations (default duration: 0.2s) |
 | `:blend(clipA, clipB, factor)` | 1D locomotion blend tree with synchronized phase (factor: 0.0 to 1.0) |
-| `:setLayerClip(layer, clip [, loop, speed])` | Set animation clip for multi-layer evaluation (e.g. layer 1 = upper body) |
+| `:setLayerClip(layer, clip [, loop, speed])` | Set animation clip for multi-layer evaluation |
 | `:setLayerWeight(layer, weight)` | Set layer blend weight (0.0 to 1.0) |
-| `:setLayerMask(layer, rootJointName [, includeChildren])` | Mask layer to specific bone hierarchy (e.g. "Spine" for upper body actions) |
+| `:setLayerMask(layer, rootJointName [, includeChildren])` | Mask layer to specific bone hierarchy |
 | `:setUpdateRate(fps)` | LOD tick throttling (0 = every frame, or target Hz like 30, 15) |
 | `:update(dt)` | Advance animation state by `dt` seconds |
 | `:applyToPhysicsPose(skeletonPose)` | Transfer current animated bone transforms to a `Physics3D.SkeletonPose` |
-| `:capturePhysicsPose(skeletonPose)` | Transfer physics ragdoll transforms into animator for seamless ragdoll-to-animation blending |
+| `:capturePhysicsPose(skeletonPose)` | Transfer physics ragdoll transforms into animator |
 | `:getModel()` | Returns associated Model userdata |
 
 ### 3D Drawing
@@ -221,6 +241,7 @@ Created via `model:createAnimator()` or `crayon.graphics.createAnimator(model)`.
 |----------|-------------|
 | `drawModel(id, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw loaded static model |
 | `drawModelSkinned(model, anim_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw skinned glTF model with `Animator` or `SkeletonPose` |
+| `drawModelNode(model, node, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw a single node (index or name) |
 | `drawCube(x, y, z, sx, sy, sz, tex, rx, ry, rz)` | Draw cube |
 | `drawPlane(x, y, z, w, d, tex, rx, ry, rz)` | Draw plane |
 | `drawSphere(x, y, z, radius, tex, rx, ry, rz)` | Draw sphere |
@@ -232,7 +253,7 @@ Created via `model:createAnimator()` or `crayon.graphics.createAnimator(model)`.
 | `drawBillboard(x, y, z, w, h, tex, mode, u0, v0, u1, v1)` | Draw billboard (mode: "cylindrical" or nil for spherical) |
 | `drawBillboardRot(tex, x, y, z, w, h, angle, mode, color)` | Rotated billboard |
 | `drawLine3d(x1,y1,z1, x2,y2,z2)` | Draw 3D line |
-| `drawLines3d(points)` | Draw multiple 3D lines |
+| `drawLines3d(points)` | Draw multiple 3D line segments |
 | `drawGrid3d(size, divs, y)` | Draw 3D grid |
 | `drawTriangle3d(p1, p2, p3, tex)` | Draw 3D triangle |
 | `drawQuad3d(p1, p2, p3, p4, tex)` | Draw 3D quad |
@@ -260,18 +281,18 @@ Created via `model:createAnimator()` or `crayon.graphics.createAnimator(model)`.
 | `drawRoundedRectEx(mode, x, y, w, h, rtl, rtr, rbr, rbl, segs)` | Per-corner rounded rect |
 | `drawTriangle(mode, x1,y1, x2,y2, x3,y3)` | Draw triangle |
 | `drawQuad(mode, x1,y1, x2,y2, x3,y3, x4,y4)` | Draw quad |
-| `drawPolygon(mode, points)` | Draw polygon (points: {{x,y}, ...}) |
+| `drawPolygon(mode, points)` | Draw polygon (points: `{{x,y}, ...}` or flat `{x1,y1, x2,y2, ...}`) |
 | `drawCircle(mode, cx, cy, radius, segs)` | Draw circle |
 | `drawEllipse(mode, cx, cy, rx, ry, segs)` | Draw ellipse |
 | `drawArc(mode, cx, cy, radius, a0, a1, segs)` | Draw arc |
 | `drawRing(mode, cx, cy, innerR, outerR, segs)` | Draw ring |
 | `drawPie(mode, cx, cy, radius, a1, a2, segs)` | Draw pie slice |
-| `drawGradientRect(x, y, w, h, cTl, cTr, cBr, cBl)` | Draw gradient rect |
+| `drawGradientRect(x, y, w, h, cTl, cTr, cBr, cBl)` | Draw gradient rect (colors as `{r,g,b,a}`) |
 | `drawGradientH(x, y, w, h, cLeft, cRight)` | Horizontal gradient |
 | `drawGradientV(x, y, w, h, cTop, cBottom)` | Vertical gradient |
 | `drawPolyline(points, thick, loop)` | Draw polyline |
 | `drawBezier(x0,y0, x1,y1, x2,y2, thick, segs)` | Draw quadratic bezier |
-| `drawBezier(x0,y0, x1,y1, x2,y2, x3,y3, thick, segs)` | Draw cubic bezier (4 control points) |
+| `drawBezier(x0,y0, x1,y1, x2,y2, x3,y3, thick, segs)` | Draw cubic bezier |
 
 ### 2D Transforms & Camera
 
@@ -415,15 +436,19 @@ Access via: `crayon.physics3d`
 
 | Function | Description |
 |----------|-------------|
-| `createBox(x, y, z, hx, hy, hz, motion, friction, restitution, density)` | Create box body |
-| `createSphere(x, y, z, radius, motion, friction, restitution, density)` | Create sphere body |
-| `createCapsule(x, y, z, halfH, radius, motion, friction, restitution, density)` | Create capsule body |
-| `createCylinder(x, y, z, halfH, radius, motion, friction, restitution, density)` | Create cylinder body |
-| `createPlane(x, y, z, nx, ny, nz, halfExtent)` | Create static plane body |
+| `createBox(x, y, z, hx, hy, hz [, motion, friction, restitution, density])` | Create box body |
+| `createSphere(x, y, z, radius [, motion, friction, restitution, density])` | Create sphere body |
+| `createCapsule(x, y, z, halfH, radius [, motion, friction, restitution, density])` | Create capsule body |
+| `createCylinder(x, y, z, halfH, radius [, motion, friction, restitution, density])` | Create cylinder body |
+| `createPlane(x, y, z [, nx, ny, nz, halfExtent])` | Create static plane body |
+| `createMeshBody(x, y, z, model, friction, restitution)` | Create static mesh body from `Graphics.Model` |
+| `createMeshBody(model, friction, restitution)` | Same, at origin |
+| `createMeshBody(x, y, z, vertices, indices, friction, restitution)` | From flat vertex/indices tables |
+| `createMeshBody(meshData, friction, restitution)` | `meshData = {vertices={...}, indices={...}}` |
 
-**Motion Types**: "static", "kinematic", "dynamic" (or 0, 1, 2)
+**Motion Types**: "static", "kinematic", "dynamic" (or 0, 1, 2). Default: "dynamic".
 
-### Body Methods (returned userdata)
+### Body Methods
 
 | Method | Description |
 |--------|-------------|
@@ -432,20 +457,10 @@ Access via: `crayon.physics3d`
 | `body:isActive()` | Body active? |
 | `body:setActive(active)` | Activate/deactivate body |
 | `body:destroy()` | Destroy this body |
-
-### Transforms
-
-| Method | Description |
-|--------|-------------|
 | `body:getPosition()` | Returns x, y, z |
 | `body:setPosition(x, y, z [, activate])` | Set position |
 | `body:getRotation()` | Returns euler x, y, z (radians) |
 | `body:setRotation(rx, ry, rz [, activate])` | Set rotation (radians) |
-
-### Dynamics
-
-| Method | Description |
-|--------|-------------|
 | `body:getVelocity()` | Returns vx, vy, vz |
 | `body:setVelocity(vx, vy, vz)` | Set linear velocity |
 | `body:getAngularVelocity()` | Returns wx, wy, wz |
@@ -457,7 +472,7 @@ Access via: `crayon.physics3d`
 | `body:setFriction(friction)` | Set friction |
 | `body:setRestitution(restitution)` | Set restitution |
 | `body:setMotionType(type)` | Change motion type |
-| `body:setDamping(linearDamping, angularDamping)` | Set damping |
+| `body:setDamping(linearDamping [, angularDamping])` | Set damping |
 | `body:setSensor(isSensor)` | Make body a sensor (trigger) |
 | `body:isSensor()` | Is body a sensor? |
 
@@ -466,36 +481,51 @@ Access via: `crayon.physics3d`
 | Function | Description |
 |----------|-------------|
 | `step([dt, collisionSteps])` | Manually advance physics simulation (default: 1/60s, 1 step) |
-| `update([dt, collisionSteps])` | Alias for `step` |
 | `setGravity(gx, gy, gz)` | Set world gravity |
 | `getGravity()` | Returns gx, gy, gz |
 | `destroyAll()` | Destroy all bodies |
 | `getBodyCount()` | Returns total bodies, active bodies |
 
+> Note: `crayon.update(dt)` is called every frame by the runtime. Calling `crayon.physics.step(dt)` manually lets you drive the simulation yourself (useful for fixed-timestep or headless contexts).
+
 ### Raycast
 
 | Function | Description |
 |----------|-------------|
-| `raycast(ox, oy, oz, dx, dy, dz, maxDist)` | Cast ray. Returns hit, pos x/y/z, normal x/y/z, distance, body |
-
-### Constraints
-
-| Function | Description |
-|----------|-------------|
-| `createPointConstraint(b1, b2, px, py, pz)` | Create point constraint |
-| `createHingeConstraint(b1, b2, px, py, pz, ax, ay, az, minAngle, maxAngle)` | Create hinge constraint |
-| `createDistanceConstraint(b1, b2, p1x, p1y, p1z, p2x, p2y, p2z, minD, maxD)` | Create distance constraint |
-| `createFixedConstraint(b1, b2)` | Create fixed constraint |
-| `destroyConstraint(c)` | Destroy constraint |
-
-**Constraint Methods**: `:destroy()`, `:isValid()`, `:getId()`
+| `raycast(ox, oy, oz, dx, dy, dz, maxDist)` | Returns `hit, posX, posY, posZ, normalX, normalY, normalZ, distance, body`. When no hit, only `false` is returned. |
 
 ### Queries & Debug
 
 | Function | Description |
 |----------|-------------|
 | `overlapSphere(cx, cy, cz, radius)` | Returns table of body userdata in sphere |
-| `drawDebug(r, g, b, a, sr, sg, sb, sa)` | Draw physics debug (AABB wireframes) |
+| `drawDebug([opts])` | Draw physics debug visualization |
+| `drawDebug(r, g, b, a, sr, sg, sb, sa [, flags])` | Draw with explicit active/sleep colors |
+
+**Debug Flags Table** (`opts` or trailing `flags` arg):
+```lua
+{
+    shapes = true,                 -- Draw collision shapes
+    softBodies = true,             -- Draw soft bodies
+    constraints = true,            -- Draw constraints
+    softBodyConstraints = true,    -- Draw soft body constraints
+    softBodyRods = true,           -- Draw soft body rods
+    bounds = false,                -- Draw bounding boxes
+    velocities = false             -- Draw velocity vectors
+}
+```
+
+### Constraints
+
+| Function | Description |
+|----------|-------------|
+| `createPointConstraint(b1, b2, px, py, pz)` | Create point constraint |
+| `createHingeConstraint(b1, b2, px, py, pz, ax, ay, az [, minAngle, maxAngle])` | Create hinge constraint |
+| `createDistanceConstraint(b1, b2, p1x, p1y, p1z, p2x, p2y, p2z [, minD, maxD])` | Create distance constraint |
+| `createFixedConstraint(b1, b2)` | Create fixed constraint |
+| `destroyConstraint(c)` | Destroy constraint (userdata or id) |
+
+**Constraint Methods**: `:destroy()`, `:isValid()`, `:getId()`
 
 ### Characters
 
@@ -613,6 +643,8 @@ Access via: `crayon.physics3d`
 ```
 *(Tip: You can also create a skeleton directly from any skinned glTF model using `local skel = model:createPhysicsSkeleton()`)*
 
+**Skeleton Methods**: `:getId()`, `:isValid()`, `:destroy()`
+
 **SkeletonPose Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:setJoint(idx, tx, ty, tz, rx, ry, rz, rw)`, `:calculateMatrices()`, `:getJointMatrix(idx)`, `:setRootOffset(x,y,z)`, `:getRootOffset()`, `:getJointCount()`
 
 **SkeletonMapper Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:map(poseLow, poseHighLocal, poseHighOutModel)`, `:mapReverse(poseHighModel, poseLowOutModel)`, `:lockAllTranslations(skelHigh, neutralPose)`
@@ -650,6 +682,117 @@ Access via: `crayon.physics3d`
 
 **Ragdoll Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:setPose(pose)`, `:driveToPoseKinematics(pose, dt)`, `:driveToPoseMotors(pose)`, `:driveToPoseMotorsVelocity(prevPose, pose, dt)`, `:getPose(pose)`, `:setHardKeying(enabled)`, `:activate()`, `:isActive()`, `:getBodyId(partIdx)`, `:getPartCount()`, `:getSkeletonId()`
 
+### Soft Bodies
+
+| Function | Description |
+|----------|-------------|
+| `createSoftBody(config)` | Create a soft body from a full config table (see below) |
+| `createSoftBodyCloth(opts_or_x, y, z, w, h, segX, segY, compliance, bendCompliance, pinCorners, addLra)` | Create a cloth soft body |
+| `createSoftBodyCube(opts_or_x, y, z, size, gridSize, compliance, pressure)` | Create a soft cube |
+| `createSoftBodySphere(opts_or_x, y, z, radius, rings, sectors, compliance, pressure)` | Create a soft sphere |
+| `createSoftBodyRod(opts)` | Create a rod from a `points` array |
+| `destroySoftBody(sb_or_id)` | Destroy a soft body (userdata or id) |
+
+**Cloth Options Table** (all optional):
+```lua
+{
+    x = 0, y = 0, z = 0,
+    width = 4.0, height = 4.0,
+    segmentsX = 10, segmentsY = 10,
+    compliance = 0.0,
+    bendCompliance = 0.01,
+    pinCorners = true,
+    addLra = true
+}
+```
+
+**Cube Options Table**:
+```lua
+{ x=0, y=0, z=0, size=2.0, gridSize=3, compliance=0.0, pressure=0.0 }
+```
+
+**Sphere Options Table**:
+```lua
+{ x=0, y=0, z=0, radius=1.0, rings=8, sectors=12, compliance=0.0, pressure=500.0 }
+```
+
+**Rod Options Table**:
+```lua
+{
+    points = { {x,y,z}, {x,y,z}, ... },   -- required
+    stretchCompliance = 0.0,
+    bendTwistCompliance = 0.001,
+    pinRoot = true
+}
+```
+
+**Full Config (`createSoftBody`)**:
+```lua
+{
+    position = {x, y, z},
+    rotation = {x, y, z, w},              -- quaternion
+    vertices = { {x, y, z, mass=1.0}, ... },
+    faces = { {v1, v2, v3}, ... },        -- 1-indexed vertex indices
+    edges = { {v1, v2, compliance=0.0}, ... },        -- or `edgeConstraints`
+    bends = { {v1, v2, v3, v4, compliance}, ... },    -- or `dihedralBendConstraints`
+    volumes = { {v1, v2, v3, v4, compliance}, ... },  -- or `volumeConstraints`
+    tethers = { {kinematicV, dynamicV, maxDistance}, ... },  -- or `lraConstraints`
+    rods = { {v1, v2, compliance}, ... },             -- or `rodStretchShearConstraints`
+    rodBendTwistConstraints = { {rod0, rod1, compliance}, ... },
+
+    pressure = 0.0,
+    vertexRadius = 0.0,
+    linearDamping = 0.0,
+    maxLinearVelocity = 0.0,
+    friction = 0.5,
+    restitution = 0.2,
+    gravityFactor = 1.0,
+    numIterations = 3,
+    updatePosition = true,
+    allowSleeping = true,
+    facesDoubleSided = true,
+
+    -- Auto-constraint generation (if `faces` is set and edges omitted):
+    autoGenerateConstraints = true,
+    compliance = 0.0,
+    shearCompliance = 0.0,
+    bendCompliance = 0.0,
+    lraMultiplier = 1.0,
+    bendType = "dihedral",                -- "dihedral", "distance", "none"
+    lraType = "euclidean"                 -- "euclidean", "geodesic", "none"
+}
+```
+
+**SoftBody Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `:getId()` | Returns soft body ID |
+| `:isValid()` | Soft body still exists? |
+| `:destroy()` | Destroy this soft body |
+| `:getBodyId()` | Returns underlying physics body ID |
+| `:getPosition()` / `:setPosition(x,y,z)` | Get or set body position |
+| `:getRotation()` / `:setRotation(x,y,z,w)` | Get or set body rotation (quaternion) |
+| `:getVertexCount()` | Returns number of vertices |
+| `:getVertex(idx)` | Returns `posX, posY, posZ, velX, velY, velZ, invMass` (1-indexed) |
+| `:setVertex(idx, x, y, z [, vx, vy, vz [, invMass]])` | Set vertex position (and optionally velocity / inverse mass) |
+| `:getVertices()` | Returns array of `{x, y, z}` |
+| `:getVerticesFlat()` | Returns flat `{x,y,z, x,y,z, ...}` |
+| `:getFaces()` | Returns array of `{i, j, k}` (1-indexed) |
+| `:getFacesFlat()` | Returns flat `{i,j,k, i,j,k, ...}` (1-indexed) |
+| `:getPressure()` / `:setPressure(p)` | Get or set pressure |
+| `:getNumIterations()` / `:setNumIterations(n)` | Get or set solver iterations |
+| `:getVolume()` | Returns current volume |
+| `:applyImpulse(ix, iy, iz)` | Apply impulse to all vertices |
+| `:applyImpulse(vertexIdx, ix, iy, iz)` | Apply impulse to one vertex (1-indexed) |
+| `:applyForce(fx, fy, fz)` | Apply force to all vertices |
+| `:applyForce(vertexIdx, fx, fy, fz)` | Apply force to one vertex |
+| `:skinVertices(jointMatrices [, hardSkin])` | Skin vertices to a list of 4x4 matrices (16-element tables) |
+| `:setSkinnedMaxDistanceMultiplier(mult)` | Set skinned max distance multiplier |
+| `:getRodTransform(rodIdx)` | Returns `posX, posY, posZ, rotX, rotY, rotZ, rotW` (1-indexed) |
+| `:activate()` | Wake soft body |
+| `:isActive()` | Is soft body active? |
+
 ---
 
 ## Physics2D Module
@@ -675,7 +818,7 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setWindowSize(960, 720)
     crayon.window.setTitle("My Game")
-    
+
     -- Setup graphics
     crayon.graphics.setColor(1, 1, 1)
 end
@@ -688,10 +831,10 @@ end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.2)
-    
+
     -- Draw some text
     crayon.graphics.drawText("Hello World!", 10, 10, 2)
-    
+
     -- Draw FPS
     local fps = crayon.window.getFps()
     crayon.graphics.drawText("FPS: " .. tostring(fps), 10, 30, 1)
@@ -705,36 +848,36 @@ function crayon.init()
     crayon.window.setResolution(640, 480)
     crayon.window.setWindowSize(1280, 960)
     crayon.window.setTitle("2D Demo")
-    
+
     tex = crayon.graphics.loadTexture("assets/player.png")
 end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.2)
-    
+
     -- Sprites
     local x, y = crayon.input.getMousePos()
     crayon.graphics.drawSprite(tex, x, y, 32, 32, 0, 16, 16)
-    
+
     -- Sprite part (sprite sheet)
     crayon.graphics.drawSpritePart(tex, 100, 100, 0, 0, 16, 16, 32, 32)
-    
+
     -- Tiled sprite
     crayon.graphics.drawSpriteTiled(tex, 200, 200, 100, 100, 16, 16)
-    
+
     -- 9-slice
     crayon.graphics.drawSprite9slice(tex, 300, 300, 64, 64, 8, 8, 8, 8)
-    
+
     -- Shapes
     crayon.graphics.setColor(1, 0, 0, 1)
     crayon.graphics.drawRect("fill", 10, 10, 50, 50)
-    
+
     crayon.graphics.setColor(0, 1, 0, 1)
     crayon.graphics.drawCircle("fill", 100, 100, 30)
-    
+
     crayon.graphics.setColor(1, 1, 0, 1)
     crayon.graphics.drawLine(200, 200, 300, 300, 2)
-    
+
     -- Polygon (hexagon)
     local hex = {}
     for i = 0, 5 do
@@ -743,7 +886,7 @@ function crayon.draw()
     end
     crayon.graphics.setColor(0.5, 0, 1, 1)
     crayon.graphics.drawPolygon("fill", hex)
-    
+
     -- Text
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawText("Hello 2D!", 20, 200, 2)
@@ -759,17 +902,17 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setWindowSize(960, 720)
     crayon.window.setTitle("3D Physics Demo")
-    
+
     -- Setup camera
     crayon.graphics.setCamera3d({
         position = {0, 3, 8},
         target = {0, 0, 0},
         fov = 60
     })
-    
+
     -- Setup lighting
     crayon.graphics.setLight(-0.5, -1, -0.7, 1, 0.95, 0.9, 0.25, 0.25, 0.3)
-    
+
     -- Retro effects
     crayon.graphics.setRetroEffects({
         jitterResolution = {160, 120},
@@ -778,19 +921,19 @@ function crayon.init()
         colorDepth = 32,
         fog = {startDist = 10, endDist = 30, color = {0.1, 0.1, 0.2}}
     })
-    
+
     -- Load textures
     floor_tex = crayon.graphics.loadTexture("assets/floor.png")
     player_tex = crayon.graphics.loadTexture("assets/player.png")
-    
+
     -- Create physics floor
     floor = crayon.physics.createPlane(0, -0.5, 0, 0, 1, 0, 50)
-    
+
     -- Create player
     player = crayon.physics.createSphere(0, 2, 0, 0.5, "dynamic", 0.5, 0.5)
     player:setFriction(0.8)
     player:setRestitution(0.3)
-    
+
     -- Create some obstacles
     obstacles = {}
     for i = 1, 5 do
@@ -805,7 +948,7 @@ function crayon.update(dt)
     -- Player controls
     local speed = 5
     local jump_force = 5
-    
+
     local vx, vy, vz = player:getVelocity()
     if crayon.input.isDown("w") or crayon.input.isDown("up") then
         player:setVelocity(vx, vy, -speed)
@@ -819,16 +962,16 @@ function crayon.update(dt)
     if crayon.input.isDown("d") or crayon.input.isDown("right") then
         player:setVelocity(speed, vy, vz)
     end
-    
+
     if crayon.input.isPressed("space") then
         player:setVelocity(vx, jump_force, vz)
     end
-    
+
     -- Quit
     if crayon.input.isPressed("escape") then
         crayon.window.quit()
     end
-    
+
     -- Physics camera follows player
     local px, py, pz = player:getPosition()
     crayon.graphics.setCamera3d({
@@ -840,22 +983,26 @@ end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.2)
-    
+
     -- Draw floor
     crayon.graphics.drawPlane(0, 0, 0, 20, 20, floor_tex, 0, 0, 0)
-    
+
     -- Draw player
     local px, py, pz = player:getPosition()
     crayon.graphics.drawSphere(px, py, pz, 0.5, player_tex)
-    
+
     -- Draw obstacles
     for _, obs in ipairs(obstacles) do
         crayon.graphics.drawCube(obs.x, 0.5, obs.z, 1, 1, 1)
     end
-    
+
     -- Debug: physics visualization
-    crayon.physics.drawDebug(0.2, 1, 0.4, 1, 0.5, 0.5, 0.5, 1)
-    
+    crayon.physics.drawDebug({
+        shapes = true,
+        constraints = true,
+        bounds = true
+    })
+
     -- UI overlay
     crayon.graphics.setColor(1, 1, 1, 1)
     local fps = crayon.window.getFps()
@@ -870,19 +1017,19 @@ end
 function crayon.init()
     crayon.window.setResolution(640, 480)
     crayon.window.setTitle("3D Models")
-    
+
     crayon.graphics.setCamera3d({
         position = {0, 3, 10},
         target = {0, 0, 0}
     })
-    
+
     crayon.graphics.setLight(-0.5, -1, -0.7, 1, 0.95, 0.9, 0.3, 0.3, 0.35)
-    
+
     -- Load models
     cube = crayon.graphics.loadModel("cube")
     sphere = crayon.graphics.loadModel("sphere")
     torus = crayon.graphics.loadModel("torus")
-    
+
     -- Load custom OBJ
     character = crayon.graphics.loadModel("assets/character.obj")
     tex = crayon.graphics.loadTexture("assets/character.png")
@@ -890,17 +1037,17 @@ end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.2)
-    
+
     local t = crayon.time.getTime()
-    
+
     -- Draw models with transforms
     crayon.graphics.drawModel(cube, -4, 0, 0, t, t*0.5, 0, 1, 1, 1)
     crayon.graphics.drawModel(sphere, -1.5, 0.5, 0, 0, t, 0, 1, 1, 1)
     crayon.graphics.drawModel(torus, 1.5, 0.5, 0, t, t*0.7, t*0.3, 1, 1, 1)
-    
+
     -- Custom model with texture
     crayon.graphics.drawModel(character, 4, 0, 0, 0, t, 0, 1, 1, 1, tex)
-    
+
     -- Using transform stack
     crayon.graphics.pushMatrix()
     crayon.graphics.translate(0, 2, 0)
@@ -908,7 +1055,7 @@ function crayon.draw()
     crayon.graphics.scale(1.5, 1.5, 1.5)
     crayon.graphics.drawModel(sphere, 0, 0, 0, 0, 0, 0, 1, 1, 1)
     crayon.graphics.popMatrix()
-    
+
     -- UI
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawText("3D Models Demo", 10, 10, 2)
@@ -921,26 +1068,26 @@ end
 function crayon.init()
     crayon.window.setResolution(640, 480)
     crayon.window.setTitle("2D Camera Demo")
-    
+
     tex = crayon.graphics.loadTexture("assets/character.png")
 end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.2)
-    
+
     local t = crayon.time.getTime()
-    
+
     -- Camera controls
     local cx = math.sin(t * 0.3) * 100
     local cy = math.cos(t * 0.2) * 50
     local zoom = 1.0 + math.sin(t * 0.5) * 0.3
-    
+
     crayon.graphics.setCamera2d({
         x = cx, y = cy,
         zoom = zoom,
         angle = t * 0.1
     })
-    
+
     -- Draw grid
     for i = -20, 20 do
         for j = -15, 15 do
@@ -951,11 +1098,11 @@ function crayon.draw()
             crayon.graphics.drawRect("fill", x, y, 32, 32)
         end
     end
-    
+
     -- Draw character
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawSprite(tex, 0, 0, 32, 32, t, 16, 16)
-    
+
     -- Reset camera for UI
     crayon.graphics.resetCamera2d()
     crayon.graphics.setColor(1, 1, 1, 1)
@@ -970,7 +1117,7 @@ end
 function crayon.init()
     crayon.window.setResolution(640, 480)
     crayon.window.setTitle("Input Demo")
-    
+
     crayon.input.startTextInput()
 end
 
@@ -979,28 +1126,28 @@ function crayon.update(dt)
     if crayon.input.isPressed("space") then
         print("Space pressed!")
     end
-    
+
     -- Modifiers
     if crayon.input.isShiftDown() and crayon.input.isPressed("s") then
         print("Shift+S pressed!")
     end
-    
+
     -- Mouse
     local mx, my = crayon.input.getMousePos()
     local mdx, mdy = crayon.input.getMouseDelta()
-    
+
     if crayon.input.isMousePressed("left") then
         print("Left click at:", mx, my)
     end
-    
+
     -- Gamepad
     if crayon.input.gamepadIsDown(0) then  -- A button
         print("A button held!")
     end
-    
+
     local lx = crayon.input.gamepadAxis(0)   -- Left stick X
     local ly = crayon.input.gamepadAxis(1)   -- Left stick Y
-    
+
     -- Text input
     local text = crayon.input.getTextInput()
     if text ~= "" then
@@ -1010,18 +1157,18 @@ end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.2)
-    
+
     local mx, my = crayon.input.getMousePos()
     local mwx, mwy = crayon.input.getMouseWindowPos()
-    
+
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawText("Input Demo", 10, 10, 2)
     crayon.graphics.drawText("Mouse: " .. tostring(mx) .. ", " .. tostring(my), 10, 40, 1)
     crayon.graphics.drawText("Window Mouse: " .. tostring(mwx) .. ", " .. tostring(mwy), 10, 55, 1)
-    
+
     local text = crayon.input.getTextInput()
     crayon.graphics.drawText("Text: " .. text, 10, 70, 1)
-    
+
     -- Draw crosshair at mouse position
     crayon.graphics.setColor(1, 0, 0, 1)
     crayon.graphics.drawLine(mx - 10, my, mx + 10, my, 1)
@@ -1035,18 +1182,18 @@ end
 function crayon.init()
     crayon.window.setResolution(640, 480)
     crayon.window.setTitle("Constraints Demo")
-    
+
     crayon.graphics.setCamera3d({
         position = {0, 5, 15},
         target = {0, 2, 0}
     })
-    
+
     -- Create two dynamic bodies
     body1 = crayon.physics.createBox(-2, 3, 0, 0.5, 0.5, 0.5, "dynamic")
     body2 = crayon.physics.createBox(2, 3, 0, 0.5, 0.5, 0.5, "dynamic")
-    
+
     body1:setMotionType("kinematic")  -- Make one kinematic
-    
+
     -- Create constraint between them
     constraint = crayon.physics.createDistanceConstraint(
         body1, body2,
@@ -1054,7 +1201,7 @@ function crayon.init()
         2, 3, 0,   -- Point on body2
         2, 4       -- Min and max distance
     )
-    
+
     -- Static floor
     floor = crayon.physics.createPlane(0, -0.5, 0, 0, 1, 0, 20)
 end
@@ -1070,12 +1217,12 @@ end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.2)
-    
+
     -- Draw bodies
     crayon.graphics.drawCube(-2, 3, 0, 1, 1, 1, 0, 0, 0, 0)
     crayon.graphics.drawCube(2, 3, 0, 1, 1, 1, 0, 0, 0, 0)
     crayon.graphics.drawPlane(0, 0, 0, 20, 20)
-    
+
     -- Debug
     crayon.physics.drawDebug()
 end
@@ -1087,12 +1234,12 @@ end
 function crayon.init()
     crayon.window.setResolution(640, 480)
     crayon.window.setTitle("Raycast Demo")
-    
+
     crayon.graphics.setCamera3d({
         position = {0, 10, 10},
         target = {0, 0, 0}
     })
-    
+
     -- Create some obstacles
     obstacles = {}
     for i = 1, 8 do
@@ -1108,13 +1255,13 @@ function crayon.update(dt)
     -- Raycast from camera center
     local mx, my = crayon.input.getMousePos()
     local origin_x, origin_y, origin_z, dir_x, dir_y, dir_z = crayon.graphics.unproject(mx, my)
-    
+
     local hit, hx, hy, hz, nx, ny, nz, dist, body = crayon.physics.raycast(
         origin_x, origin_y, origin_z,
         dir_x, dir_y, dir_z,
         100
     )
-    
+
     if hit then
         print("Hit at:", hx, hy, hz, "Distance:", dist)
         last_hit = {hx, hy, hz}
@@ -1123,18 +1270,18 @@ end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.2)
-    
+
     -- Draw obstacles
     for _, obs in ipairs(obstacles) do
         crayon.graphics.drawCube(obs.x, 0.5, obs.z, 1, 1, 1)
     end
-    
+
     -- Draw hit point
     if last_hit then
         crayon.graphics.setColor(1, 0, 0, 1)
         crayon.graphics.drawSphere(last_hit[1], last_hit[2], last_hit[3], 0.2, 0)
     end
-    
+
     -- UI
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawText("Click to raycast", 10, 10, 2)
@@ -1147,15 +1294,15 @@ end
 function crayon.init()
     crayon.window.setResolution(640, 480)
     crayon.window.setTitle("Character Controller")
-    
+
     crayon.graphics.setCamera3d({
         position = {0, 5, 10},
         target = {0, 1, 0}
     })
-    
+
     -- Static ground
     crayon.physics.createPlane(0, 0, 0, 0, 1, 0, 100)
-    
+
     -- Create character
     player = crayon.physics.createCharacter({
         pos = {0, 1, 0},
@@ -1171,19 +1318,19 @@ function crayon.update(dt)
     local speed = 5.0
     local px, py, pz = player:getPosition()
     local vx, vy, vz = player:getLinearVelocity()
-    
+
     local move_x, move_z = 0, 0
     if crayon.input.isDown("w") then move_z = move_z - speed end
     if crayon.input.isDown("s") then move_z = move_z + speed end
     if crayon.input.isDown("a") then move_x = move_x - speed end
     if crayon.input.isDown("d") then move_x = move_x + speed end
-    
+
     player:setLinearVelocity(move_x, vy, move_z)
-    
+
     if crayon.input.isPressed("space") and player:isSupported() then
         player:setLinearVelocity(move_x, 8.0, move_z)
     end
-    
+
     -- Update camera to follow
     crayon.graphics.setCamera3d({
         position = {px, py + 4, pz + 8},
@@ -1194,13 +1341,67 @@ end
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.2)
     crayon.graphics.drawPlane(0, 0, 0, 50, 50)
-    
+
     local px, py, pz = player:getPosition()
     crayon.graphics.drawCapsule(px, py, pz, 0.4, 1.2)
-    
+
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawText("State: " .. player:getGroundState(), 10, 10, 1)
     crayon.graphics.drawText("Supported: " .. tostring(player:isSupported()), 10, 25, 1)
+end
+```
+
+### Example 10: Cloth Soft Body
+
+```lua
+function crayon.init()
+    crayon.window.setResolution(640, 480)
+    crayon.window.setTitle("Soft Body Cloth")
+
+    crayon.graphics.setCamera3d({
+        position = {0, 3, 8},
+        target = {0, 2, 0}
+    })
+
+    crayon.graphics.setLight(-0.5, -1, -0.7, 1, 0.95, 0.9, 0.3, 0.3, 0.35)
+
+    -- Cloth pinned at two corners
+    cloth = crayon.physics.createSoftBodyCloth({
+        x = -2, y = 4, z = 0,
+        width = 4, height = 4,
+        segmentsX = 12, segmentsY = 12,
+        compliance = 0.0,
+        bendCompliance = 0.05,
+        pinCorners = true,
+        addLra = true
+    })
+
+    -- Ball that can fall on the cloth
+    ball = crayon.physics.createSphere(0, 6, 0, 0.4, "dynamic")
+end
+
+function crayon.update(dt)
+    if crayon.input.isPressed("r") then
+        cloth:setPosition(0, 4, 0)
+    end
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0.1, 0.1, 0.2)
+
+    -- Draw the ball
+    local bx, by, bz = ball:getPosition()
+    crayon.graphics.drawSphere(bx, by, bz, 0.4)
+
+    -- Draw the cloth as a triangle mesh
+    local verts = cloth:getVertices()
+    local faces = cloth:getFaces()
+    for _, f in ipairs(faces) do
+        crayon.graphics.drawTriangle3d(verts[f[1]], verts[f[2]], verts[f[3]])
+    end
+
+    crayon.graphics.setColor(1, 1, 1, 1)
+    crayon.graphics.drawText("Press R to reset", 10, 10, 1)
 end
 ```
 

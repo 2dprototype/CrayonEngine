@@ -191,7 +191,6 @@ void register_input_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
 
-    // Keyboard (camelCase + snake_case)
     lua_pushcfunction(L, l_input_is_down);
     lua_setfield(L, -2, "isDown");
 
