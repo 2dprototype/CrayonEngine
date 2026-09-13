@@ -152,6 +152,8 @@ function crayon.update(dt)
     if crayon.input.isPressed("k") and soft_ball and soft_ball:isValid() then
         soft_ball:applyImpulse(0.0, 15.0, 0.0)
     end
+    
+    crayon.physics3d.step(dt)
 end
 
 function crayon.draw()

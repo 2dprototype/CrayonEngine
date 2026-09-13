@@ -1521,6 +1521,8 @@ uint32_t PhysicsSystem::create_wheeled_vehicle(const WheeledVehicleConfig& confi
     vcs.mController = controller;
 
     std::vector<float> radii, widths;
+    std::vector<int> drive_wheels;
+    int wheel_index = 0;
     for (const auto& w : config.wheels) {
         auto* wheel = new JPH::WheelSettingsWV();
         wheel->mPosition = to_jolt_vec3(w.position);
@@ -1535,6 +1537,28 @@ uint32_t PhysicsSystem::create_wheeled_vehicle(const WheeledVehicleConfig& confi
         vcs.mWheels.push_back(wheel);
         radii.push_back(w.radius);
         widths.push_back(w.width);
+
+        if (w.is_drive) {
+            drive_wheels.push_back(wheel_index);
+        }
+        wheel_index++;
+    }
+
+    // Connect drive wheels to transmission via differentials
+    if (drive_wheels.empty()) {
+        for (int i = 0; i < wheel_index; ++i) drive_wheels.push_back(i);
+    }
+    for (size_t i = 0; i < drive_wheels.size(); i += 2) {
+        JPH::VehicleDifferentialSettings diff;
+        diff.mLeftWheel = drive_wheels[i];
+        diff.mRightWheel = (i + 1 < drive_wheels.size()) ? drive_wheels[i + 1] : -1;
+        controller->mDifferentials.push_back(diff);
+    }
+    if (!controller->mDifferentials.empty()) {
+        float ratio = 1.0f / static_cast<float>(controller->mDifferentials.size());
+        for (auto& d : controller->mDifferentials) {
+            d.mEngineTorqueRatio = ratio;
+        }
     }
 
     auto* vehicle = new JPH::VehicleConstraint(chassis_body, vcs);
@@ -1660,6 +1684,12 @@ uint32_t PhysicsSystem::create_motorcycle(const MotorcycleConfig& config) {
         widths.push_back(config.rear_wheel.width);
     }
 
+    // Motorcycle drives rear wheel (index 1)
+    controller->mDifferentials.resize(1);
+    controller->mDifferentials[0].mLeftWheel = -1;
+    controller->mDifferentials[0].mRightWheel = 1;
+    controller->mDifferentials[0].mEngineTorqueRatio = 1.0f;
+
     auto* vehicle = new JPH::VehicleConstraint(chassis_body, vcs);
     vehicle->SetVehicleCollisionTester(new JPH::VehicleCollisionTesterRay(Layers::NON_MOVING));
     m_impl->physics_system.AddConstraint(vehicle);
@@ -1686,8 +1716,8 @@ bool PhysicsSystem::destroy_vehicle(uint32_t id) {
 
 void PhysicsSystem::vehicle_set_input_wheeled(uint32_t id, float forward, float steer, float brake, bool handbrake) {
     auto it = m_impl->vehicles.find(id);
-    if (it != m_impl->vehicles.end() && it->second.constraint) {
-        auto* controller = dynamic_cast<JPH::WheeledVehicleController*>(it->second.constraint->GetController());
+    if (it != m_impl->vehicles.end() && it->second.constraint && it->second.type == Impl::VehicleType::Wheeled) {
+        auto* controller = static_cast<JPH::WheeledVehicleController*>(it->second.constraint->GetController());
         if (controller) {
             controller->SetDriverInput(forward, steer, brake, handbrake ? 1.0f : 0.0f);
         }
@@ -1756,10 +1786,13 @@ float PhysicsSystem::vehicle_get_speed_kmh(uint32_t id) const {
 float PhysicsSystem::vehicle_get_engine_rpm(uint32_t id) const {
     auto it = m_impl->vehicles.find(id);
     if (it != m_impl->vehicles.end() && it->second.constraint) {
-        auto* wvc = dynamic_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
-        if (wvc) return wvc->GetEngine().GetCurrentRPM();
-        auto* tvc = dynamic_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
-        if (tvc) return tvc->GetEngine().GetCurrentRPM();
+        if (it->second.type == Impl::VehicleType::Wheeled) {
+            auto* wvc = static_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
+            return wvc->GetEngine().GetCurrentRPM();
+        } else if (it->second.type == Impl::VehicleType::Tracked) {
+            auto* tvc = static_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
+            return tvc->GetEngine().GetCurrentRPM();
+        }
     }
     return 0.0f;
 }
@@ -1767,10 +1800,13 @@ float PhysicsSystem::vehicle_get_engine_rpm(uint32_t id) const {
 int PhysicsSystem::vehicle_get_transmission_gear(uint32_t id) const {
     auto it = m_impl->vehicles.find(id);
     if (it != m_impl->vehicles.end() && it->second.constraint) {
-        auto* wvc = dynamic_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
-        if (wvc) return wvc->GetTransmission().GetCurrentGear();
-        auto* tvc = dynamic_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
-        if (tvc) return tvc->GetTransmission().GetCurrentGear();
+        if (it->second.type == Impl::VehicleType::Wheeled) {
+            auto* wvc = static_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
+            if (wvc) return wvc->GetTransmission().GetCurrentGear();
+        } else if (it->second.type == Impl::VehicleType::Tracked) {
+            auto* tvc = static_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
+            if (tvc) return tvc->GetTransmission().GetCurrentGear();
+        }
     }
     return 0;
 }

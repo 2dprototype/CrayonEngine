@@ -430,105 +430,105 @@ function crayon.draw()
     })
 
     -- 2. Draw Floor Arena Grid
-    -- crayon.graphics.setColor(0.3, 0.35, 0.45, 1.0)
-    -- crayon.graphics.drawGrid3d(40.0, 40, 0.0)
+    crayon.graphics.setColor(0.3, 0.35, 0.45, 1.0)
+    crayon.graphics.drawGrid3d(40.0, 40, 0.0)
 
-    -- -- Central Plaza Ring
-    -- crayon.graphics.setColor(0.5, 0.55, 0.65, 1.0)
-    -- crayon.graphics.drawCylinder(0, 0.05, 0, 8.0, 0.1, nil)
+    -- Central Plaza Ring
+    crayon.graphics.setColor(0.5, 0.55, 0.65, 1.0)
+    crayon.graphics.drawCylinder(0, 0.05, 0, 8.0, 0.1, nil)
 
-    -- -- 3. Draw Town Ruins / Pillars
-    -- for _, prop in ipairs(physics_props) do
-        -- if prop.type == "pillar" then
-            -- crayon.graphics.setColor(prop.col[1], prop.col[2], prop.col[3], 1.0)
-            -- crayon.graphics.drawCylinder(prop.x, prop.y, prop.z, prop.r, prop.h, nil)
-            -- -- Capital atop pillar
-            -- crayon.graphics.drawCube(prop.x, prop.y + prop.h * 0.5, prop.z, prop.r * 2.4, 0.4, prop.r * 2.4)
-        -- elseif prop.type == "box" and prop.body and prop.body:isValid() then
-            -- local bx, by, bz = prop.body:getPosition()
-            -- local qx, qy, qz, qw = prop.body:getRotation()
-            -- crayon.graphics.setColor(prop.col[1], prop.col[2], prop.col[3], 1.0)
-            -- crayon.graphics.drawCube(bx, by, bz, prop.size[1], prop.size[2], prop.size[3])
-        -- end
-    -- end
+    -- 3. Draw Town Ruins / Pillars
+    for _, prop in ipairs(physics_props) do
+        if prop.type == "pillar" then
+            crayon.graphics.setColor(prop.col[1], prop.col[2], prop.col[3], 1.0)
+            crayon.graphics.drawCylinder(prop.x, prop.y, prop.z, prop.r, prop.h, nil)
+            -- Capital atop pillar
+            crayon.graphics.drawCube(prop.x, prop.y + prop.h * 0.5, prop.z, prop.r * 2.4, 0.4, prop.r * 2.4)
+        elseif prop.type == "box" and prop.body and prop.body:isValid() then
+            local bx, by, bz = prop.body:getPosition()
+            local qx, qy, qz, qw = prop.body:getRotation()
+            crayon.graphics.setColor(prop.col[1], prop.col[2], prop.col[3], 1.0)
+            crayon.graphics.drawCube(bx, by, bz, prop.size[1], prop.size[2], prop.size[3])
+        end
+    end
 
-    -- -- 4. Draw Interactive Target Dummies / Enemies
-    -- for _, e in ipairs(enemies) do
-        -- if e.body and e.body:isValid() then
-            -- local ex, ey, ez = e.body:getPosition()
-            -- if e.hit_flash > 0 then
-                -- crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0) -- Flash white on hit
-            -- elseif e.hp <= 0 then
-                -- crayon.graphics.setColor(0.3, 0.3, 0.35, 1.0) -- Defeated
-            -- else
-                -- crayon.graphics.setColor(0.85, 0.25, 0.3, 1.0) -- Active enemy
-            -- end
-            -- crayon.graphics.drawSphere(ex, ey, ez, e.radius)
+    -- 4. Draw Interactive Target Dummies / Enemies
+    for _, e in ipairs(enemies) do
+        if e.body and e.body:isValid() then
+            local ex, ey, ez = e.body:getPosition()
+            if e.hit_flash > 0 then
+                crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0) -- Flash white on hit
+            elseif e.hp <= 0 then
+                crayon.graphics.setColor(0.3, 0.3, 0.35, 1.0) -- Defeated
+            else
+                crayon.graphics.setColor(0.85, 0.25, 0.3, 1.0) -- Active enemy
+            end
+            crayon.graphics.drawSphere(ex, ey, ez, e.radius)
 
-            -- -- HP Bar billboard
-            -- if e.hp > 0 then
-                -- crayon.graphics.setColor(0.1, 0.1, 0.1, 0.8)
-                -- crayon.graphics.drawBillboard(ex, ey + 0.9, ez, 0.9, 0.15)
-                -- crayon.graphics.setColor(0.2, 0.85, 0.3, 1.0)
-                -- crayon.graphics.drawBillboard(ex - 0.45 * (1.0 - e.hp / e.max_hp), ey + 0.9, ez, 0.85 * (e.hp / e.max_hp), 0.1)
-            -- end
-        -- end
-    -- end
+            -- HP Bar billboard
+            if e.hp > 0 then
+                crayon.graphics.setColor(0.1, 0.1, 0.1, 0.8)
+                crayon.graphics.drawBillboard(ex, ey + 0.9, ez, 0.9, 0.15)
+                crayon.graphics.setColor(0.2, 0.85, 0.3, 1.0)
+                crayon.graphics.drawBillboard(ex - 0.45 * (1.0 - e.hp / e.max_hp), ey + 0.9, ez, 0.85 * (e.hp / e.max_hp), 0.1)
+            end
+        end
+    end
 
-    -- -- 5. Draw Player Character Model (Skinned glTF Mesh with Animator)
-    -- if character_model and character_model:isValid() then
-        -- crayon.graphics.setColor(1, 1, 1, 1)
+    -- 5. Draw Player Character Model (Skinned glTF Mesh with Animator)
+    if character_model and character_model:isValid() then
+        crayon.graphics.setColor(1, 1, 1, 1)
 
-        -- -- Soldier model glTF default orientation and scale adjustment
-        -- local model_scale = 1.0
-        -- local y_rot = player.rot_y
+        -- Soldier model glTF default orientation and scale adjustment
+        local model_scale = 1.0
+        local y_rot = player.rot_y
 
-        -- if is_skinned and animator then
-            -- character_model:drawSkinned(
-                -- animator,
-                -- player.x, player.y, player.z,
-                -- 0, y_rot, 0,
-                -- model_scale, model_scale, model_scale
-            -- )
-        -- else
-            -- character_model:draw(
-                -- player.x, player.y, player.z,
-                -- 0, y_rot, 0,
-                -- model_scale, model_scale, model_scale
-            -- )
-        -- end
-    -- else
-        -- -- Fallback Mannequin if model fails to load
-        -- crayon.graphics.setColor(0.2, 0.5, 0.9, 1.0)
-        -- crayon.graphics.drawCapsule(player.x, player.y + 0.9, player.z, 0.4, 0.5)
-    -- end
+        if is_skinned and animator then
+            character_model:drawSkinned(
+                animator,
+                player.x, player.y, player.z,
+                0, y_rot, 0,
+                model_scale, model_scale, model_scale
+            )
+        else
+            character_model:draw(
+                player.x, player.y, player.z,
+                0, y_rot, 0,
+                model_scale, model_scale, model_scale
+            )
+        end
+    else
+        -- Fallback Mannequin if model fails to load
+        crayon.graphics.setColor(0.2, 0.5, 0.9, 1.0)
+        crayon.graphics.drawCapsule(player.x, player.y + 0.9, player.z, 0.4, 0.5)
+    end
 
-    -- -- 6. HUD / UI Display
-    -- crayon.graphics.resetCamera2d()
+    -- 6. HUD / UI Display
+    crayon.graphics.resetCamera2d()
 
-    -- -- Title & Stats Bar
-    -- crayon.graphics.setColor(0, 0, 0, 0.55)
-    -- crayon.graphics.drawRect("fill", 10, 10, 260, 105)
+    -- Title & Stats Bar
+    crayon.graphics.setColor(0, 0, 0, 0.55)
+    crayon.graphics.drawRect("fill", 10, 10, 260, 105)
 
-    -- crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
-    -- crayon.graphics.drawText("=== CRAYON 3D ACTION RPG ===", 20, 18, 1)
+    crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
+    crayon.graphics.drawText("=== CRAYON 3D ACTION RPG ===", 20, 18, 1)
 
-    -- crayon.graphics.setColor(1, 1, 1, 1)
-    -- crayon.graphics.drawText("Action: " .. string.upper(current_anim), 20, 35, 1)
-    -- crayon.graphics.drawText("Score:  " .. tostring(player.score), 20, 50, 1)
-    -- crayon.graphics.drawText("FPS:    " .. tostring(crayon.window.getFps()), 20, 65, 1)
+    crayon.graphics.setColor(1, 1, 1, 1)
+    crayon.graphics.drawText("Action: " .. string.upper(current_anim), 20, 35, 1)
+    crayon.graphics.drawText("Score:  " .. tostring(player.score), 20, 50, 1)
+    crayon.graphics.drawText("FPS:    " .. tostring(crayon.window.getFps()), 20, 65, 1)
 
-    -- -- Controls legend
-    -- crayon.graphics.setColor(0.8, 0.85, 0.9, 1.0)
-    -- crayon.graphics.drawText("WASD: Move  |  LSHIFT: Run  |  SPACE: Jump", 20, 80, 1)
-    -- crayon.graphics.drawText("Left Mouse / F: Attack  |  Right Mouse: Orbit Cam", 20, 95, 1)
+    -- Controls legend
+    crayon.graphics.setColor(0.8, 0.85, 0.9, 1.0)
+    crayon.graphics.drawText("WASD: Move  |  LSHIFT: Run  |  SPACE: Jump", 20, 80, 1)
+    crayon.graphics.drawText("Left Mouse / F: Attack  |  Right Mouse: Orbit Cam", 20, 95, 1)
 
-    -- -- Player Health Bar
-    -- crayon.graphics.setColor(0.1, 0.1, 0.1, 0.8)
-    -- crayon.graphics.drawRect("fill", 15, 122, 160, 16)
-    -- crayon.graphics.setColor(0.9, 0.2, 0.25, 1.0)
-    -- crayon.graphics.drawRect("fill", 17, 124, 156 * (player.health / player.max_health), 12)
-    -- crayon.graphics.setColor(1, 1, 1, 1)
-    -- crayon.graphics.drawText("HP: " .. player.health .. "/" .. player.max_health, 25, 125, 1)
-    crayon.physics3d.drawDebug(0.3, 1.0, 0.4, 1.0, 0.6, 0.6, 0.8, 0.8)
+    -- Player Health Bar
+    crayon.graphics.setColor(0.1, 0.1, 0.1, 0.8)
+    crayon.graphics.drawRect("fill", 15, 122, 160, 16)
+    crayon.graphics.setColor(0.9, 0.2, 0.25, 1.0)
+    crayon.graphics.drawRect("fill", 17, 124, 156 * (player.health / player.max_health), 12)
+    crayon.graphics.setColor(1, 1, 1, 1)
+    crayon.graphics.drawText("HP: " .. player.health .. "/" .. player.max_health, 25, 125, 1)
+    -- crayon.physics3d.drawDebug(0.3, 1.0, 0.4, 1.0, 0.6, 0.6, 0.8, 0.8)
 end

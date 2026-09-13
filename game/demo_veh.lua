@@ -54,11 +54,9 @@ function crayon.update(dt)
     local brake = crayon.input.isDown("m") and 1.0 or 0.0
 
     -- Send to the vehicle
-	print(3)
     if car and car:isValid() then
         car:setInputWheeled(throttle, steer, brake, false)
     end
-	print(4)
 
     -- Reset with R
     if crayon.input.isPressed("r") then
