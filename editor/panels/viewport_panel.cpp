@@ -1,78 +1,95 @@
 #include "viewport_panel.hpp"
+#include "../scene_context.hpp"
 #include "../../src/core/engine.hpp"
-#include "../../src/scripting/lua_runtime.hpp"
 #include <algorithm>
-#include <cmath>
 
 namespace crayon::editor {
 
-ViewportPanel::ViewportPanel(crayon::Engine& engine)
-    : EditorPanel("Viewport"), m_engine(engine) {}
+ViewportPanel::ViewportPanel(crayon::Engine& engine, EditorCamera& camera)
+    : EditorPanel("3D Viewport"), m_engine(engine), m_camera(camera) {}
 
-void ViewportPanel::set_play_state(PlayState state) {
-    m_play_state = state;
-    if (m_play_state == PlayState::Play) {
-        m_engine.set_paused(false);
-    } else if (m_play_state == PlayState::Pause) {
-        m_engine.set_paused(true);
-    } else { // Edit
-        m_engine.set_paused(true);
+void ViewportPanel::handle_input(float dt) {
+    if (!m_is_hovered) return;
+
+    ImGuiIO& io = ImGui::GetIO();
+
+    // Mouse scroll zooming
+    if (io.MouseWheel != 0.0f) {
+        m_camera.process_mouse_scroll(io.MouseWheel);
+    }
+
+    // Middle mouse button panning
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Middle)) {
+        m_camera.process_mouse_pan(io.MouseDelta.x, io.MouseDelta.y);
+    }
+
+    // Right mouse button free-look + WASD fly
+    if (ImGui::IsMouseDown(ImGuiMouseButton_Right)) {
+        m_camera.process_mouse_movement(io.MouseDelta.x, io.MouseDelta.y);
+
+        if (ImGui::IsKeyDown(ImGuiKey_W)) m_camera.process_keyboard(0, dt);
+        if (ImGui::IsKeyDown(ImGuiKey_S)) m_camera.process_keyboard(1, dt);
+        if (ImGui::IsKeyDown(ImGuiKey_A)) m_camera.process_keyboard(2, dt);
+        if (ImGui::IsKeyDown(ImGuiKey_D)) m_camera.process_keyboard(3, dt);
+        if (ImGui::IsKeyDown(ImGuiKey_E)) m_camera.process_keyboard(4, dt);
+        if (ImGui::IsKeyDown(ImGuiKey_Q)) m_camera.process_keyboard(5, dt);
     }
 }
 
 void ViewportPanel::render_toolbar() {
-    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(6.0f, 3.0f));
-    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(5.0f, 4.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_FramePadding, ImVec2(5.0f, 2.0f));
+    ImGui::PushStyleVar(ImGuiStyleVar_ItemSpacing, ImVec2(4.0f, 4.0f));
 
-    // Play / Pause / Step / Reload buttons
-    bool is_playing = (m_play_state == PlayState::Play);
-    bool is_paused = (m_play_state == PlayState::Pause);
-
-    if (is_playing) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.18f, 0.55f, 0.25f, 1.0f));
+    if (ImGui::Button("+ Cube")) {
+        SceneEntity e;
+        e.name = "Cube";
+        e.type = "cube";
+        e.position = glm::vec3(0.0f, 0.5f, 0.0f);
+        SceneContext::get().add_entity(e);
     }
-    if (ImGui::Button(is_playing ? "Playing##btn" : "Play##btn")) {
-        set_play_state(PlayState::Play);
-    }
-    if (is_playing) {
-        ImGui::PopStyleColor();
-    }
-
     ImGui::SameLine();
-    if (is_paused) {
-        ImGui::PushStyleColor(ImGuiCol_Button, ImVec4(0.70f, 0.45f, 0.15f, 1.0f));
+    if (ImGui::Button("+ Plane")) {
+        SceneEntity e;
+        e.name = "Plane";
+        e.type = "plane";
+        e.scale = glm::vec3(10.0f, 1.0f, 10.0f);
+        e.position = glm::vec3(0.0f, 0.0f, 0.0f);
+        SceneContext::get().add_entity(e);
     }
-    if (ImGui::Button(is_paused ? "Paused##btn" : "Pause##btn")) {
-        set_play_state(PlayState::Pause);
-    }
-    if (is_paused) {
-        ImGui::PopStyleColor();
-    }
-
     ImGui::SameLine();
-    if (ImGui::Button("Step##btn")) {
-        set_play_state(PlayState::Pause);
-        m_engine.step_simulation(1.0f / 60.0f);
+    if (ImGui::Button("+ Sphere")) {
+        SceneEntity e;
+        e.name = "Sphere";
+        e.type = "sphere";
+        e.position = glm::vec3(0.0f, 0.5f, 0.0f);
+        SceneContext::get().add_entity(e);
     }
-
     ImGui::SameLine();
-    if (ImGui::Button("Reload (F5)##btn")) {
-        m_engine.request_hot_reload();
+    if (ImGui::Button("+ Cylinder")) {
+        SceneEntity e;
+        e.name = "Cylinder";
+        e.type = "cylinder";
+        e.position = glm::vec3(0.0f, 0.5f, 0.0f);
+        SceneContext::get().add_entity(e);
     }
 
     ImGui::SameLine();
     ImGui::TextDisabled("|");
     ImGui::SameLine();
 
-    ImGui::Checkbox("Aspect Fit", &m_aspect_locked);
+    ImGui::Checkbox("Grid", &m_show_grid);
     ImGui::SameLine();
-    ImGui::Checkbox("Integer Scale", &m_pixel_perfect);
+    if (ImGui::Button("Reset View")) {
+        m_camera.reset();
+    }
 
-    // Resolution display
-    int virt_w = m_engine.get_window().get_virtual_width();
-    int virt_h = m_engine.get_window().get_virtual_height();
     ImGui::SameLine();
-    ImGui::TextDisabled("| Canvas: %dx%d @ %.1f FPS", virt_w, virt_h, m_engine.get_fps());
+    ImGui::SetNextItemWidth(70.0f);
+    ImGui::DragFloat("##speed", &m_camera.get_move_speed(), 0.5f, 1.0f, 50.0f, "Spd: %.0f");
+
+    ImGui::SameLine();
+    const glm::vec3& cam_p = m_camera.get_position();
+    ImGui::TextDisabled("| Cam: [%.1f, %.1f, %.1f]", cam_p.x, cam_p.y, cam_p.z);
 
     ImGui::PopStyleVar(2);
     ImGui::Separator();
@@ -83,48 +100,8 @@ void ViewportPanel::render_canvas() {
     if (avail.x < 32.0f) avail.x = 32.0f;
     if (avail.y < 32.0f) avail.y = 32.0f;
 
-    int virt_w = m_engine.get_window().get_virtual_width();
-    int virt_h = m_engine.get_window().get_virtual_height();
-    if (virt_w <= 0) virt_w = 320;
-    if (virt_h <= 0) virt_h = 240;
-
-    float aspect = static_cast<float>(virt_w) / static_cast<float>(virt_h);
-
-    float target_w = avail.x;
-    float target_h = avail.y;
-
-    if (m_aspect_locked) {
-        if (m_pixel_perfect) {
-            int scale_x = static_cast<int>(avail.x / virt_w);
-            int scale_y = static_cast<int>(avail.y / virt_h);
-            int scale = std::max(1, std::min(scale_x, scale_y));
-            target_w = static_cast<float>(virt_w * scale);
-            target_h = static_cast<float>(virt_h * scale);
-        } else {
-            if (avail.x / avail.y > aspect) {
-                target_w = avail.y * aspect;
-                target_h = avail.y;
-            } else {
-                target_w = avail.x;
-                target_h = avail.x / aspect;
-            }
-        }
-    }
-
-    // Centered placement
-    float pad_x = (avail.x - target_w) * 0.5f;
-    float pad_y = (avail.y - target_h) * 0.5f;
-
-    ImVec2 cursor_start = ImGui::GetCursorScreenPos();
-    m_viewport_pos = cursor_start;
-    m_viewport_size = avail;
-
-    m_image_pos = ImVec2(cursor_start.x + pad_x, cursor_start.y + pad_y);
-    m_image_size = ImVec2(target_w, target_h);
-
-    if (pad_x > 0.0f || pad_y > 0.0f) {
-        ImGui::SetCursorPos(ImVec2(ImGui::GetCursorPosX() + pad_x, ImGui::GetCursorPosY() + pad_y));
-    }
+    m_image_pos = ImGui::GetCursorScreenPos();
+    m_image_size = avail;
 
     GLuint tex_id = m_engine.get_fbo().get_color_texture();
     // Invert Y for OpenGL FBO texture in ImGui
@@ -136,7 +113,7 @@ void ViewportPanel::render_canvas() {
     // Border around active canvas
     ImDrawList* draw_list = ImGui::GetWindowDrawList();
     draw_list->AddRect(m_image_pos, ImVec2(m_image_pos.x + m_image_size.x, m_image_pos.y + m_image_size.y),
-                       IM_COL32(80, 85, 100, 180), 3.0f, 0, 1.0f);
+                       IM_COL32(70, 75, 90, 180), 2.0f, 0, 1.0f);
 }
 
 void ViewportPanel::on_render() {
@@ -153,27 +130,6 @@ void ViewportPanel::on_render() {
     }
     ImGui::End();
     ImGui::PopStyleVar();
-}
-
-bool ViewportPanel::get_virtual_mouse_pos(float& out_vx, float& out_vy) const {
-    if (!m_is_hovered || m_image_size.x <= 0.0f || m_image_size.y <= 0.0f) {
-        return false;
-    }
-
-    ImVec2 mouse = ImGui::GetMousePos();
-    float rel_x = mouse.x - m_image_pos.x;
-    float rel_y = mouse.y - m_image_pos.y;
-
-    if (rel_x < 0.0f || rel_x > m_image_size.x || rel_y < 0.0f || rel_y > m_image_size.y) {
-        return false;
-    }
-
-    int virt_w = m_engine.get_window().get_virtual_width();
-    int virt_h = m_engine.get_window().get_virtual_height();
-
-    out_vx = (rel_x / m_image_size.x) * static_cast<float>(virt_w);
-    out_vy = (rel_y / m_image_size.y) * static_cast<float>(virt_h);
-    return true;
 }
 
 } // namespace crayon::editor

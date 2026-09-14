@@ -93,9 +93,6 @@ set(EDITOR_SOURCES
     editor/panels/scene_panel.cpp
     editor/panels/inspector_panel.cpp
     editor/panels/asset_browser_panel.cpp
-    editor/panels/retro_fx_panel.cpp
-    editor/panels/console_panel.cpp
-    editor/panels/stats_panel.cpp
     editor/main.cpp
 )
 

@@ -21,16 +21,10 @@ EditorApp::~EditorApp() {
 
 bool EditorApp::init(int width, int height, const std::string& title) {
     // 1. Initialize Engine subsystems with starting resolution (630x450, resizable)
-    // Virtual game canvas default is 320x240 retro resolution
-    if (!m_engine.init(width, height, 320, 240, title)) {
+    // We intentionally DO NOT load main.lua for the scene editor!
+    if (!m_engine.init(width, height, 480, 360, title)) {
         CRAYON_LOG_ERROR("EditorApp failed to initialize Engine");
         return false;
-    }
-
-    // Default to game/main.lua if present
-    if (std::filesystem::exists("game/main.lua")) {
-        m_engine.set_game_script_path("game/main.lua");
-        m_engine.request_hot_reload();
     }
 
     // 2. Setup Dear ImGui context
@@ -39,7 +33,7 @@ bool EditorApp::init(int width, int height, const std::string& title) {
     ImGuiIO& io = ImGui::GetIO();
     io.ConfigFlags |= ImGuiConfigFlags_NavEnableKeyboard;
 
-    // Apply sleek, modern dark theme
+    // Apply modern dark theme
     apply_modern_dark_theme();
 
     // 3. Setup Platform/Renderer backends
@@ -56,25 +50,14 @@ bool EditorApp::init(int width, int height, const std::string& title) {
         return false;
     }
 
-    // 4. Instantiate panels
-    m_viewport_panel = std::make_shared<ViewportPanel>(m_engine);
+    // 4. Instantiate 3D scene editing panels
+    m_viewport_panel = std::make_shared<ViewportPanel>(m_engine, m_camera);
     m_scene_panel = std::make_shared<ScenePanel>();
     m_inspector_panel = std::make_shared<InspectorPanel>();
     m_asset_panel = std::make_shared<AssetBrowserPanel>(m_engine);
-    m_retro_panel = std::make_shared<RetroFXPanel>(m_engine);
-    m_console_panel = std::make_shared<ConsolePanel>(m_engine);
-    m_stats_panel = std::make_shared<StatsPanel>(m_engine);
-
-    m_panels.push_back(m_viewport_panel);
-    m_panels.push_back(m_scene_panel);
-    m_panels.push_back(m_inspector_panel);
-    m_panels.push_back(m_asset_panel);
-    m_panels.push_back(m_retro_panel);
-    m_panels.push_back(m_console_panel);
-    m_panels.push_back(m_stats_panel);
 
     m_running = true;
-    CRAYON_LOG_INFO("Crayon Game Editor initialized successfully ({}x{})", width, height);
+    CRAYON_LOG_INFO("Crayon 3D Scene Editor initialized successfully ({}x{})", width, height);
     return true;
 }
 
@@ -82,11 +65,18 @@ void EditorApp::render_menu_bar() {
     if (ImGui::BeginMainMenuBar()) {
         if (ImGui::BeginMenu("File")) {
             if (ImGui::MenuItem("New Scene", "Ctrl+N")) {
-                SceneContext::get().populate_default_retro_scene();
-                CRAYON_LOG_INFO("Reset to default retro scene");
+                SceneContext::get().reset_to_default_scene();
+                CRAYON_LOG_INFO("Reset to default 3D scene");
             }
-            if (ImGui::MenuItem("Save Scene (Lua)", "Ctrl+S")) {
-                CRAYON_LOG_INFO("Scene saved to game/scenes/main.scene.lua");
+            if (ImGui::MenuItem("Open Scene (.scene.lua)...", "Ctrl+O")) {
+                SceneContext::get().load_from_lua(SceneContext::get().get_scene_path(), m_engine.get_lua_runtime());
+            }
+            if (ImGui::MenuItem("Save Scene", "Ctrl+S")) {
+                SceneContext::get().save_to_lua(SceneContext::get().get_scene_path());
+            }
+            if (ImGui::MenuItem("Save Scene As...")) {
+                m_show_save_modal = true;
+                snprintf(m_save_path_buf, sizeof(m_save_path_buf), "%s", SceneContext::get().get_scene_path().c_str());
             }
             ImGui::Separator();
             if (ImGui::MenuItem("Exit", "Alt+F4")) {
@@ -95,53 +85,128 @@ void EditorApp::render_menu_bar() {
             ImGui::EndMenu();
         }
 
+        if (ImGui::BeginMenu("Add 3D")) {
+            if (ImGui::MenuItem("Cube Primitive")) {
+                SceneEntity e;
+                e.name = "Cube";
+                e.type = "cube";
+                e.position = glm::vec3(0.0f, 0.5f, 0.0f);
+                SceneContext::get().add_entity(e);
+            }
+            if (ImGui::MenuItem("Ground Plane")) {
+                SceneEntity e;
+                e.name = "Plane";
+                e.type = "plane";
+                e.scale = glm::vec3(10.0f, 1.0f, 10.0f);
+                e.position = glm::vec3(0.0f, 0.0f, 0.0f);
+                SceneContext::get().add_entity(e);
+            }
+            if (ImGui::MenuItem("Sphere Primitive")) {
+                SceneEntity e;
+                e.name = "Sphere";
+                e.type = "sphere";
+                e.position = glm::vec3(0.0f, 0.5f, 0.0f);
+                SceneContext::get().add_entity(e);
+            }
+            if (ImGui::MenuItem("Cylinder Primitive")) {
+                SceneEntity e;
+                e.name = "Cylinder";
+                e.type = "cylinder";
+                e.position = glm::vec3(0.0f, 0.5f, 0.0f);
+                SceneContext::get().add_entity(e);
+            }
+            ImGui::EndMenu();
+        }
+
         if (ImGui::BeginMenu("View")) {
-            for (auto& panel : m_panels) {
-                ImGui::MenuItem(panel->get_title().c_str(), nullptr, &panel->is_open());
-            }
-            ImGui::Separator();
-            ImGui::MenuItem("ImGui Demo Window", nullptr, &m_demo_window);
+            ImGui::MenuItem("Scene Hierarchy", nullptr, &m_scene_panel->is_open());
+            ImGui::MenuItem("3D Viewport", nullptr, &m_viewport_panel->is_open());
+            ImGui::MenuItem("Object Inspector", nullptr, &m_inspector_panel->is_open());
+            ImGui::MenuItem("Model Browser", nullptr, &m_asset_panel->is_open());
             ImGui::EndMenu();
         }
 
-        if (ImGui::BeginMenu("Game")) {
-            if (ImGui::MenuItem("Play / Resume", "F6", m_viewport_panel->get_play_state() == PlayState::Play)) {
-                m_viewport_panel->set_play_state(PlayState::Play);
-            }
-            if (ImGui::MenuItem("Pause", "F7", m_viewport_panel->get_play_state() == PlayState::Pause)) {
-                m_viewport_panel->set_play_state(PlayState::Pause);
-            }
-            if (ImGui::MenuItem("Step Frame", "F8")) {
-                m_viewport_panel->set_play_state(PlayState::Pause);
-                m_engine.step_simulation(1.0f / 60.0f);
-            }
-            ImGui::Separator();
-            if (ImGui::MenuItem("Hot Reload Script", "F5")) {
-                m_engine.request_hot_reload();
-            }
-            ImGui::EndMenu();
-        }
-
-        if (ImGui::BeginMenu("Help")) {
-            if (ImGui::MenuItem("About Crayon Engine")) {
-                CRAYON_LOG_INFO("Crayon Retro 2D+3D Game Engine (modern C++20 + LuaJIT)");
-            }
-            ImGui::EndMenu();
-        }
+        // Display current map name in menu bar
+        ImGui::SameLine(ImGui::GetWindowWidth() - 220.0f);
+        ImGui::TextDisabled("Map: %s", SceneContext::get().get_scene_name().c_str());
 
         ImGui::EndMainMenuBar();
     }
+
+    // Save As Modal Dialog
+    if (m_show_save_modal) {
+        ImGui::OpenPopup("Save Scene As##Modal");
+    }
+
+    if (ImGui::BeginPopupModal("Save Scene As##Modal", &m_show_save_modal, ImGuiWindowFlags_AlwaysAutoResize)) {
+        ImGui::Text("Enter scene file path to save (.scene.lua):");
+        ImGui::InputText("##savepath", m_save_path_buf, sizeof(m_save_path_buf));
+        ImGui::Separator();
+
+        if (ImGui::Button("Save##btn", ImVec2(100, 0))) {
+            SceneContext::get().save_to_lua(m_save_path_buf);
+            m_show_save_modal = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::SameLine();
+        if (ImGui::Button("Cancel##btn", ImVec2(100, 0))) {
+            m_show_save_modal = false;
+            ImGui::CloseCurrentPopup();
+        }
+        ImGui::EndPopup();
+    }
 }
 
-void EditorApp::render_workspace() {
+void EditorApp::render_scene_fbo() {
+    auto& fbo = m_engine.get_fbo();
+    int virt_w = m_engine.get_window().get_virtual_width();
+    int virt_h = m_engine.get_window().get_virtual_height();
+    if (fbo.get_width() != virt_w || fbo.get_height() != virt_h) {
+        fbo.resize(virt_w, virt_h);
+    }
+
+    fbo.bind();
+    glViewport(0, 0, virt_w, virt_h);
+
+    glClearColor(0.10f, 0.11f, 0.14f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+
+    float aspect = static_cast<float>(virt_w) / static_cast<float>(virt_h);
+
+    crayon::Camera cam = m_camera.to_crayon_camera();
+    auto& renderer = m_engine.get_mesh_renderer();
+    auto& batch2d = m_engine.get_batch2d();
+
+    renderer.begin(cam, aspect);
+    batch2d.begin(virt_w, virt_h);
+
+    // 1. Draw 3D floor grid & axes
+    if (m_viewport_panel->is_grid_enabled()) {
+        renderer.draw_grid_3d(40.0f, 40, 0.0f, glm::vec4(0.35f, 0.35f, 0.45f, 0.6f));
+        renderer.draw_axes_3d(glm::vec3(0.0f, 0.01f, 0.0f), 2.0f);
+    }
+
+    // 2. Render all 3D scene objects and selection wireframes
+    SceneContext::get().render_scene_3d(renderer, m_engine);
+
+    batch2d.end();
+    renderer.end();
+
+    fbo.unbind();
+}
+
+void EditorApp::render_workspace(float dt) {
+    // 1. Update camera movement from viewport input
+    m_viewport_panel->handle_input(dt);
+
     const ImGuiViewport* vp = ImGui::GetMainViewport();
     ImVec2 pos = vp->WorkPos;
     ImVec2 size = vp->WorkSize;
 
     // Responsive panel dimensions
-    float left_w = std::max(120.0f, std::min(size.x * 0.22f, 280.0f));
-    float right_w = std::max(150.0f, std::min(size.x * 0.28f, 360.0f));
-    float bottom_h = std::max(100.0f, std::min(size.y * 0.32f, 260.0f));
+    float left_w = std::max(120.0f, std::min(size.x * 0.22f, 260.0f));
+    float right_w = std::max(160.0f, std::min(size.x * 0.30f, 360.0f));
+    float bottom_h = std::max(90.0f, std::min(size.y * 0.30f, 240.0f));
 
     float center_w = size.x - left_w - right_w;
     float center_h = size.y - bottom_h;
@@ -149,7 +214,7 @@ void EditorApp::render_workspace() {
     ImGuiWindowFlags tile_flags = ImGuiWindowFlags_NoCollapse | ImGuiWindowFlags_NoResize |
                                   ImGuiWindowFlags_NoMove | ImGuiWindowFlags_NoBringToFrontOnFocus;
 
-    // 1. Left Window: Scene Hierarchy
+    // Left Pane: Scene Hierarchy Tree
     if (m_scene_panel->is_open()) {
         ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y));
         ImGui::SetNextWindowSize(ImVec2(left_w, center_h));
@@ -159,52 +224,32 @@ void EditorApp::render_workspace() {
         ImGui::End();
     }
 
-    // 2. Center Window: Viewport
+    // Center Pane: 3D Scene Viewport
     if (m_viewport_panel->is_open()) {
         ImGui::SetNextWindowPos(ImVec2(pos.x + left_w, pos.y));
         ImGui::SetNextWindowSize(ImVec2(center_w, center_h));
         m_viewport_panel->on_render();
     }
 
-    // 3. Right Window: Tabbed (Inspector & Retro FX)
-    ImGui::SetNextWindowPos(ImVec2(pos.x + left_w + center_w, pos.y));
-    ImGui::SetNextWindowSize(ImVec2(right_w, center_h));
-    if (ImGui::Begin("Inspector & FX##RightDock", nullptr, tile_flags)) {
-        if (ImGui::BeginTabBar("RightTabBar")) {
-            if (m_inspector_panel->is_open() && ImGui::BeginTabItem("Inspector")) {
-                m_inspector_panel->render_content();
-                ImGui::EndTabItem();
-            }
-            if (m_retro_panel->is_open() && ImGui::BeginTabItem("Retro FX Tuner")) {
-                m_retro_panel->render_content();
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
+    // Right Pane: 3D Object Inspector
+    if (m_inspector_panel->is_open()) {
+        ImGui::SetNextWindowPos(ImVec2(pos.x + left_w + center_w, pos.y));
+        ImGui::SetNextWindowSize(ImVec2(right_w, center_h));
+        if (ImGui::Begin(m_inspector_panel->get_title().c_str(), &m_inspector_panel->is_open(), tile_flags)) {
+            m_inspector_panel->render_content();
         }
+        ImGui::End();
     }
-    ImGui::End();
 
-    // 4. Bottom Window: Tabbed (Asset Browser, Console, Stats)
-    ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y + center_h));
-    ImGui::SetNextWindowSize(ImVec2(size.x, bottom_h));
-    if (ImGui::Begin("Tools & Assets##BottomDock", nullptr, tile_flags)) {
-        if (ImGui::BeginTabBar("BottomTabBar")) {
-            if (m_asset_panel->is_open() && ImGui::BeginTabItem("Asset Browser")) {
-                m_asset_panel->render_content();
-                ImGui::EndTabItem();
-            }
-            if (m_console_panel->is_open() && ImGui::BeginTabItem("Console")) {
-                m_console_panel->render_content();
-                ImGui::EndTabItem();
-            }
-            if (m_stats_panel->is_open() && ImGui::BeginTabItem("Profiler & Stats")) {
-                m_stats_panel->render_content();
-                ImGui::EndTabItem();
-            }
-            ImGui::EndTabBar();
+    // Bottom Pane: 3D Model & Scene Asset Picker
+    if (m_asset_panel->is_open()) {
+        ImGui::SetNextWindowPos(ImVec2(pos.x, pos.y + center_h));
+        ImGui::SetNextWindowSize(ImVec2(size.x, bottom_h));
+        if (ImGui::Begin(m_asset_panel->get_title().c_str(), &m_asset_panel->is_open(), tile_flags)) {
+            m_asset_panel->render_content();
         }
+        ImGui::End();
     }
-    ImGui::End();
 }
 
 void EditorApp::run() {
@@ -219,78 +264,27 @@ void EditorApp::run() {
         float dt = static_cast<float>(elapsed.count());
         if (dt > 0.1f) dt = 0.1f;
 
-        // Hot Reload check
-        if (m_engine.check_hot_reload()) {
-            CRAYON_LOG_INFO("Hot-reloading script: {}", m_engine.get_game_script_path());
-            m_engine.get_lua_runtime().reload_script(m_engine.get_game_script_path());
-        }
-
-        // Process Window & Input events
+        // Process SDL Events
         m_engine.get_input().begin_frame();
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
-
             m_engine.get_window().handle_event(event);
-
-            // Forward to game input if viewport is focused or playing
-            bool game_active = (m_viewport_panel->get_play_state() == PlayState::Play);
-            if (game_active && m_viewport_panel->is_hovered()) {
-                m_engine.get_input().handle_event(event, m_engine.get_window());
-
-                if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
-                    float vx = 0, vy = 0;
-                    if (m_viewport_panel->get_virtual_mouse_pos(vx, vy)) {
-                        int btn = 1;
-                        if (event.button.button == SDL_BUTTON_LEFT) btn = 1;
-                        else if (event.button.button == SDL_BUTTON_RIGHT) btn = 2;
-                        else if (event.button.button == SDL_BUTTON_MIDDLE) btn = 3;
-                        m_engine.get_lua_runtime().call_mouse_down(vx, vy, btn);
-                    }
-                } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
-                    float vx = 0, vy = 0;
-                    if (m_viewport_panel->get_virtual_mouse_pos(vx, vy)) {
-                        int btn = 1;
-                        if (event.button.button == SDL_BUTTON_LEFT) btn = 1;
-                        else if (event.button.button == SDL_BUTTON_RIGHT) btn = 2;
-                        else if (event.button.button == SDL_BUTTON_MIDDLE) btn = 3;
-                        m_engine.get_lua_runtime().call_mouse_up(vx, vy, btn);
-                    }
-                } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
-                    float vx = 0, vy = 0;
-                    if (m_viewport_panel->get_virtual_mouse_pos(vx, vy)) {
-                        m_engine.get_lua_runtime().call_mouse_moved(vx, vy, event.motion.xrel, event.motion.yrel);
-                    }
-                }
-            }
-
-            if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
-                m_engine.request_hot_reload();
-            }
         }
 
-        // Update simulation if in play mode
-        if (m_viewport_panel->get_play_state() == PlayState::Play) {
-            m_engine.step_simulation(dt);
-        }
-
-        // 1. Render game world to virtual FBO
-        m_engine.render_to_fbo();
+        // 1. Render 3D scene to FBO using EditorCamera
+        render_scene_fbo();
 
         // 2. Begin ImGui frame
         ImGui_ImplOpenGL3_NewFrame();
         ImGui_ImplSDL3_NewFrame();
         ImGui::NewFrame();
 
-        // Setup Workspace & Menu
+        // Setup 3D Editor Menu & Workspace
         render_menu_bar();
-        render_workspace();
+        render_workspace(dt);
 
-        if (m_demo_window) {
-            ImGui::ShowDemoWindow(&m_demo_window);
-        }
-
-        // 3. Render ImGui to main window
+        // 3. Render ImGui to physical window
         ImGui::Render();
 
         int win_w = 0, win_h = 0;

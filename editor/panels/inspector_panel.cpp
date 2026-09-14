@@ -3,17 +3,18 @@
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
 #include <format>
+#include <algorithm>
 
 namespace crayon::editor {
 
 InspectorPanel::InspectorPanel()
-    : EditorPanel("Inspector") {}
+    : EditorPanel("Object Inspector") {}
 
 void InspectorPanel::render_transform_control(const char* label, float* values, float reset_val) {
     ImGui::PushID(label);
 
     ImGui::Columns(2, nullptr, false);
-    ImGui::SetColumnWidth(0, 80.0f);
+    ImGui::SetColumnWidth(0, 75.0f);
     ImGui::Text("%s", label);
     ImGui::NextColumn();
 
@@ -68,70 +69,102 @@ void InspectorPanel::on_render() {
 }
 
 void InspectorPanel::render_content() {
-    SceneObject* obj = SceneContext::get().get_selected_object();
-    if (!obj) {
-        ImGui::TextDisabled("No entity selected.");
-        ImGui::TextWrapped("Select an entity from the Scene Hierarchy to view its components and properties.");
+    SceneEntity* entity = SceneContext::get().get_selected_entity();
+    if (!entity) {
+        ImGui::TextDisabled("No 3D object selected.");
+        ImGui::TextWrapped("Select an object from the Scene Hierarchy to inspect its 3D transform, model, and collider.");
         return;
     }
 
-        // Entity Header
-        ImGui::InputText("Name", &obj->name);
-        ImGui::Checkbox("Visible", &obj->visible);
-        ImGui::SameLine();
-        ImGui::Checkbox("Wireframe", &obj->wireframe);
+    // Entity Header
+    ImGui::InputText("Name", &entity->name);
+    ImGui::Checkbox("Visible", &entity->visible);
 
-        ImGui::Separator();
+    ImGui::Separator();
 
-        // Transform Component
-        if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
-            render_transform_control("Position", &obj->position.x, 0.0f);
-            render_transform_control("Rotation", &obj->rotation.x, 0.0f);
-            render_transform_control("Scale", &obj->scale.x, 1.0f);
-        }
+    // Transform Component
+    if (ImGui::CollapsingHeader("Transform", ImGuiTreeNodeFlags_DefaultOpen)) {
+        render_transform_control("Position", &entity->position.x, 0.0f);
+        render_transform_control("Rotation", &entity->rotation.x, 0.0f);
+        render_transform_control("Scale", &entity->scale.x, 1.0f);
+    }
 
-        // Mesh / Visual Component
-        if (ImGui::CollapsingHeader("Visual & Material", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::ColorEdit4("Color Tint", &obj->color.r);
-            ImGui::InputText("Asset Path", &obj->asset_path);
-        }
-
-        // Physics Component
-        if (ImGui::CollapsingHeader("Physics Collider", ImGuiTreeNodeFlags_DefaultOpen)) {
-            ImGui::Checkbox("Enable Physics", &obj->has_physics);
-            if (obj->has_physics) {
-                const char* types[] = { "Static", "Dynamic", "Kinematic" };
-                ImGui::Combo("Body Type", &obj->physics_type, types, 3);
-                if (obj->physics_type == 1) { // Dynamic
-                    ImGui::DragFloat("Mass (kg)", &obj->mass, 0.1f, 0.01f, 1000.0f);
-                }
-                ImGui::SliderFloat("Friction", &obj->friction, 0.0f, 1.0f);
-                ImGui::SliderFloat("Restitution", &obj->restitution, 0.0f, 1.0f);
+    // Mesh / Model Component
+    if (ImGui::CollapsingHeader("Mesh & Material", ImGuiTreeNodeFlags_DefaultOpen)) {
+        const char* types[] = { "cube", "plane", "sphere", "cylinder", "model" };
+        int current_type = 0;
+        for (int i = 0; i < 5; ++i) {
+            if (entity->type == types[i]) {
+                current_type = i;
+                break;
             }
         }
-
-        ImGui::Separator();
-
-        // Export to Lua snippet
-        if (ImGui::Button("Copy Lua Entity Table", ImVec2(-1, 0))) {
-            std::string code = std::format(
-                "local entity = {{\n"
-                "    name = \"{}\",\n"
-                "    pos = {{ {:.2f}, {:.2f}, {:.2f} }},\n"
-                "    rot = {{ {:.2f}, {:.2f}, {:.2f} }},\n"
-                "    scale = {{ {:.2f}, {:.2f}, {:.2f} }},\n"
-                "    color = {{ {:.2f}, {:.2f}, {:.2f}, {:.2f} }},\n"
-                "    asset = \"{}\",\n"
-                "}}",
-                obj->name,
-                obj->position.x, obj->position.y, obj->position.z,
-                obj->rotation.x, obj->rotation.y, obj->rotation.z,
-                obj->scale.x, obj->scale.y, obj->scale.z,
-                obj->color.r, obj->color.g, obj->color.b, obj->color.a,
-                obj->asset_path
-            );
-            ImGui::SetClipboardText(code.c_str());
+        if (ImGui::Combo("Geometry Type", &current_type, types, 5)) {
+            entity->type = types[current_type];
         }
+
+        if (entity->type == "model") {
+            ImGui::InputText("Asset Path", &entity->asset_path);
+            ImGui::TextDisabled("Path to .obj, .gltf, or .glb");
+        }
+
+        ImGui::ColorEdit4("Color Tint", &entity->color.r);
+    }
+
+    // Physics / Collision Component
+    if (ImGui::CollapsingHeader("Collider", ImGuiTreeNodeFlags_DefaultOpen)) {
+        ImGui::Checkbox("Enable Collider", &entity->has_collider);
+        if (entity->has_collider) {
+            const char* col_types[] = { "box", "sphere", "plane" };
+            int current_col = 0;
+            for (int i = 0; i < 3; ++i) {
+                if (entity->collider_type == col_types[i]) {
+                    current_col = i;
+                    break;
+                }
+            }
+            if (ImGui::Combo("Collider Shape", &current_col, col_types, 3)) {
+                entity->collider_type = col_types[current_col];
+            }
+
+            const char* motions[] = { "static", "dynamic" };
+            int current_motion = (entity->collider_motion == "dynamic") ? 1 : 0;
+            if (ImGui::Combo("Motion Type", &current_motion, motions, 2)) {
+                entity->collider_motion = motions[current_motion];
+            }
+        }
+    }
+
+    ImGui::Separator();
+
+    // Export to Lua snippet button
+    if (ImGui::Button("Copy Lua Object Table", ImVec2(-1, 0))) {
+        std::string code = std::format(
+            "local obj = {{\n"
+            "    name = \"{}\",\n"
+            "    type = \"{}\",\n"
+            "    asset = \"{}\",\n"
+            "    pos = {{ {:.2f}, {:.2f}, {:.2f} }},\n"
+            "    rot = {{ {:.2f}, {:.2f}, {:.2f} }},\n"
+            "    scale = {{ {:.2f}, {:.2f}, {:.2f} }},\n"
+            "    color = {{ {:.2f}, {:.2f}, {:.2f}, {:.2f} }},\n"
+            "    has_collider = {},\n"
+            "    collider_type = \"{}\",\n"
+            "    collider_motion = \"{}\"\n"
+            "}}",
+            entity->name,
+            entity->type,
+            entity->asset_path,
+            entity->position.x, entity->position.y, entity->position.z,
+            entity->rotation.x, entity->rotation.y, entity->rotation.z,
+            entity->scale.x, entity->scale.y, entity->scale.z,
+            entity->color.r, entity->color.g, entity->color.b, entity->color.a,
+            entity->has_collider ? "true" : "false",
+            entity->collider_type,
+            entity->collider_motion
+        );
+        ImGui::SetClipboardText(code.c_str());
+    }
 }
 
 } // namespace crayon::editor
