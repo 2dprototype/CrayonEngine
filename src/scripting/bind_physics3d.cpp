@@ -73,15 +73,17 @@ static MotionType parse_motion_type(lua_State* L, int index) {
         const char* str = lua_tostring(L, index);
         if (std::strcmp(str, "static") == 0) return MotionType::Static;
         if (std::strcmp(str, "kinematic") == 0) return MotionType::Kinematic;
-        return MotionType::Dynamic;
-    }
-    if (lua_isnumber(L, index)) {
+        if (std::strcmp(str, "dynamic") == 0) return MotionType::Dynamic;
+    } else if (lua_isnumber(L, index)) {
         int val = static_cast<int>(lua_tointeger(L, index));
         if (val == 0) return MotionType::Static;
         if (val == 1) return MotionType::Kinematic;
-        return MotionType::Dynamic;
+        if (val == 2) return MotionType::Dynamic;
     }
-    return MotionType::Dynamic;
+    
+    // Throw a loud error instead of silently swallowing typos
+    luaL_error(L, "Physics3D: Invalid motion type. Expected 'static', 'kinematic', 'dynamic' or 0, 1, 2.");
+    return MotionType::Dynamic; // Unreachable, but satisfies compiler warnings
 }
 
 static LuaPhysics3DBody* check_body(lua_State* L, int idx) {
@@ -1962,15 +1964,22 @@ static int l_physics_draw_debug(lua_State* L) {
     glm::vec4 sleep_col(0.5f, 0.5f, 0.5f, 1.0f);
     PhysicsSystem::PhysicsDebugDrawFlags flags;
 
+    auto read_flags = [&](int idx) {
+        lua_getfield(L, idx, "shapes");               if (!lua_isnil(L, -1)) flags.draw_shapes               = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, idx, "softBodies");           if (!lua_isnil(L, -1)) flags.draw_soft_bodies          = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, idx, "constraints");          if (!lua_isnil(L, -1)) flags.draw_constraints          = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, idx, "softBodyConstraints");  if (!lua_isnil(L, -1)) flags.draw_soft_body_constraints= lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, idx, "softBodyRods");         if (!lua_isnil(L, -1)) flags.draw_soft_body_rods       = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, idx, "bounds");               if (!lua_isnil(L, -1)) flags.draw_bounding_boxes       = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, idx, "velocities");           if (!lua_isnil(L, -1)) flags.draw_velocities           = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, idx, "characters");           if (!lua_isnil(L, -1)) flags.draw_characters           = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, idx, "vehicles");             if (!lua_isnil(L, -1)) flags.draw_vehicles             = lua_toboolean(L, -1); lua_pop(L, 1);
+        lua_getfield(L, idx, "ragdolls");             if (!lua_isnil(L, -1)) flags.draw_ragdolls             = lua_toboolean(L, -1); lua_pop(L, 1);
+    };
+
     int top = lua_gettop(L);
     if (top >= 1 && lua_istable(L, 1)) {
-        lua_getfield(L, 1, "shapes"); if (!lua_isnil(L, -1)) flags.draw_shapes = lua_toboolean(L, -1); lua_pop(L, 1);
-        lua_getfield(L, 1, "softBodies"); if (!lua_isnil(L, -1)) flags.draw_soft_bodies = lua_toboolean(L, -1); lua_pop(L, 1);
-        lua_getfield(L, 1, "constraints"); if (!lua_isnil(L, -1)) flags.draw_constraints = lua_toboolean(L, -1); lua_pop(L, 1);
-        lua_getfield(L, 1, "softBodyConstraints"); if (!lua_isnil(L, -1)) flags.draw_soft_body_constraints = lua_toboolean(L, -1); lua_pop(L, 1);
-        lua_getfield(L, 1, "softBodyRods"); if (!lua_isnil(L, -1)) flags.draw_soft_body_rods = lua_toboolean(L, -1); lua_pop(L, 1);
-        lua_getfield(L, 1, "bounds"); if (!lua_isnil(L, -1)) flags.draw_bounding_boxes = lua_toboolean(L, -1); lua_pop(L, 1);
-        lua_getfield(L, 1, "velocities"); if (!lua_isnil(L, -1)) flags.draw_velocities = lua_toboolean(L, -1); lua_pop(L, 1);
+        read_flags(1);
     } else {
         if (top >= 4) {
             active_col.r = static_cast<float>(luaL_checknumber(L, 1));
@@ -1985,13 +1994,7 @@ static int l_physics_draw_debug(lua_State* L) {
             sleep_col.a = static_cast<float>(luaL_optnumber(L, 8, 1.0));
         }
         if (top >= 9 && lua_istable(L, 9)) {
-            lua_getfield(L, 9, "shapes"); if (!lua_isnil(L, -1)) flags.draw_shapes = lua_toboolean(L, -1); lua_pop(L, 1);
-            lua_getfield(L, 9, "softBodies"); if (!lua_isnil(L, -1)) flags.draw_soft_bodies = lua_toboolean(L, -1); lua_pop(L, 1);
-            lua_getfield(L, 9, "constraints"); if (!lua_isnil(L, -1)) flags.draw_constraints = lua_toboolean(L, -1); lua_pop(L, 1);
-            lua_getfield(L, 9, "softBodyConstraints"); if (!lua_isnil(L, -1)) flags.draw_soft_body_constraints = lua_toboolean(L, -1); lua_pop(L, 1);
-            lua_getfield(L, 9, "softBodyRods"); if (!lua_isnil(L, -1)) flags.draw_soft_body_rods = lua_toboolean(L, -1); lua_pop(L, 1);
-            lua_getfield(L, 9, "bounds"); if (!lua_isnil(L, -1)) flags.draw_bounding_boxes = lua_toboolean(L, -1); lua_pop(L, 1);
-            lua_getfield(L, 9, "velocities"); if (!lua_isnil(L, -1)) flags.draw_velocities = lua_toboolean(L, -1); lua_pop(L, 1);
+            read_flags(9);
         }
     }
 
@@ -2054,13 +2057,9 @@ static int l_physics_create_hinge_constraint(lua_State* L) {
     float ax = static_cast<float>(luaL_checknumber(L, 6));
     float ay = static_cast<float>(luaL_checknumber(L, 7));
     float az = static_cast<float>(luaL_checknumber(L, 8));
-    float min_angle = static_cast<float>(luaL_optnumber(L, 9, -3.14159265));
-    float max_angle = static_cast<float>(luaL_optnumber(L, 10, 3.14159265));
 
     auto& ps = Engine::get().get_physics();
-    uint32_t cid = ps.create_hinge_constraint(
-        b1, b2, glm::vec3(px, py, pz), glm::vec3(ax, ay, az), min_angle, max_angle
-    );
+    uint32_t cid = ps.create_hinge_constraint(b1, b2, glm::vec3(px, py, pz), glm::vec3(ax, ay, az));
     push_constraint_userdata(L, cid, &ps);
     return 1;
 }

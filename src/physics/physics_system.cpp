@@ -248,6 +248,7 @@ struct PhysicsSystem::Impl {
     SoftBodyContactListenerImpl soft_body_listener;
 
     bool initialized = false;
+    float last_dt = 0.0f;
 };
 
 PhysicsSystem::PhysicsSystem() : m_impl(std::make_unique<Impl>()) {}
@@ -305,6 +306,7 @@ void PhysicsSystem::shutdown() {
 
 void PhysicsSystem::update(float dt, int collision_steps) {
     if (!m_impl->initialized) return;
+    m_impl->last_dt = dt;
     m_impl->physics_system.Update(dt, collision_steps, m_impl->temp_allocator.get(), m_impl->job_system.get());
 
     for (auto& [id, ch] : m_impl->characters) {
@@ -472,8 +474,18 @@ uint32_t PhysicsSystem::create_plane(const glm::vec3& pos, const glm::vec3& norm
     JPH::ShapeSettings::ShapeResult result = shape_settings.Create();
     if (result.HasError()) return 0;
 
+    glm::vec3 n = glm::normalize(normal);
     glm::vec3 up(0.0f, 1.0f, 0.0f);
-    glm::quat rot = glm::rotation(up, glm::normalize(normal));
+    float d = glm::dot(up, n);
+    glm::quat rot;
+    if (d > 0.9999f) {
+        rot = glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+    } else if (d < -0.9999f) {
+        // 180 degrees around X — safe for antiparallel case
+        rot = glm::quat(glm::vec3(glm::pi<float>(), 0.0f, 0.0f));
+    } else {
+        rot = glm::rotation(up, n);
+    }
 
     JPH::BodyCreationSettings settings(
         result.Get(),
@@ -1215,7 +1227,7 @@ uint32_t PhysicsSystem::create_character(const CharacterConfig& config) {
 
     JPH::CharacterSettings settings;
     settings.mShape = new JPH::CapsuleShape(config.half_height, config.radius);
-    settings.mLayer = to_jolt_layer(config.motion);
+    settings.mLayer = Layers::MOVING;   // Characters always live in MOVING
     settings.mMass = config.mass;
     settings.mFriction = config.friction;
     settings.mGravityFactor = config.gravity_factor;
@@ -2695,10 +2707,17 @@ uint32_t PhysicsSystem::create_soft_body_sphere(const glm::vec3& origin, float r
 
     for (int r = 0; r < rings; ++r) {
         for (int s = 0; s < sectors; ++s) {
-            uint32_t cur = r * (sectors + 1) + s;
+            uint32_t cur  = r * (sectors + 1) + s;
             uint32_t next = cur + sectors + 1;
-            config.faces.push_back({ {cur, next, cur + 1}, 0 });
-            config.faces.push_back({ {cur + 1, next, next + 1}, 0 });
+
+            // Skip north-pole fan (all vertices coincide at r == 0)
+            if (r > 0) {
+                config.faces.push_back({ {cur, next, cur + 1}, 0 });
+            }
+            // Skip south-pole fan (all vertices coincide at r == rings-1)
+            if (r < rings - 1) {
+                config.faces.push_back({ {cur + 1, next, next + 1}, 0 });
+            }
         }
     }
 
@@ -2959,8 +2978,12 @@ void PhysicsSystem::add_soft_body_impulse_to_vertex(uint32_t id, uint32_t v_idx,
 }
 
 void PhysicsSystem::add_soft_body_force_to_vertex(uint32_t id, uint32_t v_idx, const glm::vec3& force) {
-    // F * dt will be handled by setting velocity delta or continuous impulse
-    add_soft_body_impulse_to_vertex(id, v_idx, force * (1.0f / 60.0f));
+    // Treat force as an impulse integrated over the current physics step.
+    // Default to 1/60 only if update() has never run. If you call this from
+    // a context that knows the real dt, pass dt via add_soft_body_impulse_to_vertex
+    // directly instead.
+    float dt = m_impl->last_dt > 0.0f ? m_impl->last_dt : (1.0f / 60.0f);
+    add_soft_body_impulse_to_vertex(id, v_idx, force * dt);
 }
 
 void PhysicsSystem::skin_soft_body_vertices(uint32_t id, const std::vector<glm::mat4>& joint_matrices, bool hard_skin) {

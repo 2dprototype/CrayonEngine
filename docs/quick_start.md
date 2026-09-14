@@ -4,39 +4,64 @@
 Crayon Engine is a 2D/3D game engine with retro aesthetics, modern physics, and Lua scripting. All engine functionality is accessed through the global `crayon` table.
 
 ## Table of Contents
-1. [Window Module](#window-module)
-2. [Graphics Module](#graphics-module)
+1. [Time Module](#time-module)
+2. [Window Module](#window-module)
 3. [Input Module](#input-module)
-4. [Time Module](#time-module)
-5. [Physics Module](#physics-module)
+4. [Graphics Module](#graphics-module)
+5. [Physics3D Module](#physics3d-module)
 6. [Physics2D Module](#physics2d-module)
-7. [Complete Examples](#complete-examples)
+7. [Lua Callbacks](#lua-callbacks)
+8. [Complete Examples](#complete-examples)
+
+---
+
+## Time Module
+Access via: `crayon.time`
+
+| Function | Description |
+|----------|-------------|
+| `getTime()` | Total elapsed time (seconds) |
+| `getDt()` | Delta time (seconds since last frame) |
+
+```lua
+local t = crayon.time.getTime()
+local dt = crayon.time.getDt()
+```
 
 ---
 
 ## Window Module
 Access via: `crayon.window`
 
-### Functions
+### Resolution & Size
 
 | Function | Description |
 |----------|-------------|
 | `setResolution(w, h)` | Set virtual resolution (default: 320x240) |
-| `getResolution()` | Returns current virtual resolution |
+| `getResolution()` | Returns virtual width, height |
 | `setWindowSize(w, h)` | Set physical window size |
-| `getWindowSize()` | Returns current window size |
-| `setPosition(x, y)` | Set window position on screen |
-| `getPosition()` | Returns window position |
-| `center()` | Center window on screen |
+| `getWindowSize()` | Returns window width, height |
 | `setMinSize(w, h)` | Set minimum window size |
 | `setMaxSize(w, h)` | Set maximum window size |
+| `getDisplaySize()` | Returns primary monitor width, height |
+
+### Position
+
+| Function | Description |
+|----------|-------------|
+| `setPosition(x, y)` | Set window position on screen |
+| `getPosition()` | Returns window x, y |
+| `center()` | Center window on screen |
+
+### Display State
+
+| Function | Description |
+|----------|-------------|
 | `setFullscreen(enabled)` | Toggle fullscreen |
 | `isFullscreen()` | Returns fullscreen state |
 | `setVsync(enabled)` | Toggle VSync |
 | `getVsync()` | Returns VSync state |
-| `setTitle(title)` | Set window title |
-| `getTitle()` | Returns window title |
-| `setResizable(enabled)` | Allow/disable window resizing |
+| `setResizable(enabled)` | Allow/disable resizing |
 | `isResizable()` | Returns resizable state |
 | `setBordered(enabled)` | Show/hide window borders |
 | `isBordered()` | Returns bordered state |
@@ -46,49 +71,158 @@ Access via: `crayon.window`
 | `isMaximized()` | Returns maximized state |
 | `isMinimized()` | Returns minimized state |
 | `isFocused()` | Returns focused state |
-| `setScalingMode(mode)` | Set scaling: "integer", "aspect", "stretch", "center" |
-| `getScalingMode()` | Returns current scaling mode |
-| `setOpacity(opacity)` | Set window opacity (0.0-1.0) |
-| `getOpacity()` | Returns window opacity |
-| `setAlwaysOnTop(enabled)` | Keep window on top |
-| `isAlwaysOnTop()` | Returns always-on-top state |
 | `raise()` | Raise window to front |
 | `focus()` | Focus window |
 | `flash()` | Flash taskbar icon |
+
+### Title
+
+| Function | Description |
+|----------|-------------|
+| `setTitle(title)` | Set window title |
+| `getTitle()` | Returns window title |
+
+### Scaling
+
+| Function | Description |
+|----------|-------------|
+| `setScalingMode(mode)` | Set scaling: "integer", "aspect", "stretch", "center" |
+| `getScalingMode()` | Returns current scaling mode |
+
+### Opacity & Layering
+
+| Function | Description |
+|----------|-------------|
+| `setOpacity(opacity)` | Set window opacity (0.0–1.0) |
+| `getOpacity()` | Returns window opacity |
+| `setAlwaysOnTop(enabled)` | Keep window on top |
+| `isAlwaysOnTop()` | Returns always-on-top state |
+| `setTransparent(enabled)` | Enable transparent window |
+| `isTransparent()` | Returns transparency state |
+
+### Mouse & Cursor
+
+| Function | Description |
+|----------|-------------|
 | `setMouseGrab(enabled)` | Grab mouse to window |
 | `isMouseGrabbed()` | Returns mouse grab state |
-| `setTransparent(enabled)` | Enable transparent window (requires OS support) |
-| `isTransparent()` | Returns transparency state |
-| `showCursor(show)` | Show/hide cursor |
-| `isCursorVisible()` | Returns cursor visibility |
 | `setMouseRelative(enabled)` | Enable relative mouse mode |
 | `isMouseRelative()` | Returns relative mouse state |
-| `getDisplaySize()` | Get primary monitor resolution |
+| `showCursor(show)` | Show/hide cursor |
+| `isCursorVisible()` | Returns cursor visibility |
+
+### Misc
+
+| Function | Description |
+|----------|-------------|
 | `getFps()` | Returns current FPS |
 | `quit()` | Quit the engine |
 
-### Window Module Examples
+### Window Examples
 
 ```lua
--- Basic window setup
 crayon.window.setResolution(640, 360)
 crayon.window.setWindowSize(1280, 720)
 crayon.window.setTitle("My Game")
 crayon.window.setVsync(true)
+crayon.window.setScalingMode("integer")
 
--- Scaling modes
-crayon.window.setScalingMode("integer")  -- Pixel-perfect
-crayon.window.setScalingMode("aspect")   -- Letterbox
-crayon.window.setScalingMode("stretch")  -- Fill screen
-
--- Fullscreen toggle
-if crayon.input.isPressed("f11") then
-    crayon.window.setFullscreen(not crayon.window.isFullscreen())
-end
-
--- Get display info
 local w, h = crayon.window.getDisplaySize()
 print("Display:", w, "x", h)
+```
+
+---
+
+## Input Module
+
+> **Note:** The API is split into three sub-tables: `crayon.key`, `crayon.mouse`, and `crayon.gamepad`. There is **no** `crayon.input` table.
+
+### `crayon.key`
+
+| Function | Description |
+|----------|-------------|
+| `isDown(...keys)` | Returns true if **any** listed key is held |
+| `isPressed(...keys)` | Returns true if **any** listed key was just pressed |
+| `isReleased(...keys)` | Returns true if **any** listed key was just released |
+| `isScancodeDown(...codes)` | Returns true if any scancode is held |
+| `anyPressed()` | Returns true if any key was just pressed |
+| `anyDown()` | Returns true if any key is held |
+| `getPressedKeys()` | Returns array of key names pressed this frame |
+| `getDownKeys()` | Returns array of key names currently held |
+| `isShiftDown()` | Shift held? |
+| `isCtrlDown()` | Ctrl held? |
+| `isAltDown()` | Alt held? |
+| `isGuiDown()` | GUI (Windows/Command) held? |
+| `isCapsLock()` | Caps Lock active? |
+
+**Text Input & Clipboard:**
+
+| Function | Description |
+|----------|-------------|
+| `setTextInput([enabled])` | Start/stop text input (IME). Default: true |
+| `hasTextInput()` | Returns true if text input is active |
+| `getTextInput()` | Get current text input buffer |
+| `getClipboard()` | Get clipboard text |
+| `setClipboard(text)` | Set clipboard text |
+
+**Key Names**: `"a"`–`"z"`, `"space"`, `"enter"`, `"escape"`, `"tab"`, `"backspace"`, `"up"`, `"down"`, `"left"`, `"right"`, `"shift"`, `"ctrl"`, `"alt"`, `"gui"`, `"f1"`–`"f12"`.
+
+### `crayon.mouse`
+
+| Function | Description |
+|----------|-------------|
+| `isDown(...buttons)` | Any listed button held? |
+| `isPressed(...buttons)` | Any listed button just pressed? |
+| `isReleased(...buttons)` | Any listed button just released? |
+| `getPosition()` | Returns virtual x, y |
+| `getX()` / `getY()` | Returns virtual x or y |
+| `getDelta()` | Returns mouse delta x, y |
+| `getDeltaX()` / `getDeltaY()` | Returns delta x or y |
+| `getWindowPosition()` | Returns window x, y |
+| `getWindowX()` / `getWindowY()` | Returns window x or y |
+| `getWindowDelta()` | Returns window delta x, y |
+| `getWheel()` | Returns wheel x, y |
+| `getWheelX()` / `getWheelY()` | Returns wheel x or y |
+| `setPosition(x, y)` | Set mouse virtual position |
+| `setWindowPosition(x, y)` | Set mouse window position |
+| `setVisible(visible)` | Show/hide cursor |
+| `isVisible()` | Cursor visible? |
+| `setGrabbed(grab)` | Grab mouse to window |
+| `isGrabbed()` | Mouse grabbed? |
+| `setRelativeMode(enabled)` | Enable relative mode |
+| `isRelativeMode()` | Relative mode active? |
+
+**Button Types**: `1`–`5`, `"left"`/`"l"`/`"1"`, `"middle"`/`"mid"`/`"m"`/`"2"`, `"right"`/`"r"`/`"3"`, `"x1"`/`"mouse4"`/`"4"`, `"x2"`/`"mouse5"`/`"5"`.
+
+### `crayon.gamepad`
+
+| Function | Description |
+|----------|-------------|
+| `isDown(button)` | Gamepad button held? |
+| `isPressed(button)` | Gamepad button just pressed? |
+| `isReleased(button)` | Gamepad button just released? |
+| `getAxis(axis)` | Get axis value (-1 to 1) |
+| `isConnected([idx])` | Gamepad connected? Default idx: 0 |
+| `getName([idx])` | Gamepad name string |
+| `getCount()` | Number of connected gamepads |
+
+### Input Examples
+
+```lua
+-- Keyboard
+if crayon.key.isPressed("space") then jump() end
+if crayon.key.isDown("w", "up") then moveUp() end
+if crayon.key.isShiftDown() then run() end
+
+-- Mouse
+local mx, my = crayon.mouse.getPosition()
+local dx, dy = crayon.mouse.getDelta()
+if crayon.mouse.isPressed(1) then shoot() end
+local wx, wy = crayon.mouse.getWheel()
+
+-- Gamepad
+if crayon.gamepad.isDown(0) then fire() end
+local lx = crayon.gamepad.getAxis("leftx")
 ```
 
 ---
@@ -100,8 +234,8 @@ Access via: `crayon.graphics`
 
 | Function | Description |
 |----------|-------------|
-| `clear(r, g, b [, a])` | Clear screen with color (0-1) |
-| `setColor(r, g, b [, a])` | Set active drawing color (0-1) |
+| `clear(r, g, b [, a])` | Clear screen with color (0–1) |
+| `setColor(r, g, b [, a])` | Set active drawing color (0–1) |
 
 ### Retro Effects
 
@@ -109,10 +243,10 @@ Access via: `crayon.graphics`
 |----------|-------------|
 | `setRetroEffects(opts)` | Apply retro visual effects |
 
-**Options Table**:
+**Options Table:**
 ```lua
 {
-    jitterResolution = {160, 120},  -- Pixel snap resolution, or nil to disable
+    jitterResolution = {160, 120},  -- Pixel snap resolution, or nil/false to disable
     affine = 1.0,                    -- 0=perspective, 1=affine texture mapping
     dither = true,                   -- Enable dithering
     colorDepth = 32,                 -- 32 or 8 (bits per channel)
@@ -138,9 +272,9 @@ Access via: `crayon.graphics`
 | Function | Description |
 |----------|-------------|
 | `setCamera3d(cam)` | Set 3D camera parameters |
-| `getCameraRay(sx, sy)` | Get 3D ray from screen position |
+| `getCameraRay(sx, sy)` | Returns `{origin={x,y,z}, direction={x,y,z}}` for screen pos |
 
-**Camera Table**:
+**Camera Table:**
 ```lua
 {
     position = {x, y, z},
@@ -154,14 +288,14 @@ Access via: `crayon.graphics`
 }
 ```
 
-Alternatively, `setCamera3d(x, y, z [, yaw, pitch, fov])` sets position and orients using yaw/pitch degrees.
+Alternative: `setCamera3d(x, y, z [, yaw, pitch, fov])` — sets position and orients using yaw/pitch in degrees.
 
 ### Lighting
 
 | Function | Description |
 |----------|-------------|
-| `setLight(dx, dy, dz, lr, lg, lb, ar, ag, ab)` | Set directional light |
-| `setPointLight(idx, x, y, z, r, g, b, radius, intensity)` | Set point light (idx: 0-3) |
+| `setLight(dx, dy, dz [, lr, lg, lb, ar, ag, ab])` | Set directional light |
+| `setPointLight(idx, x, y, z [, r, g, b, radius, intensity])` | Set point light (idx 0-based or 1-based accepted) |
 | `setPointLightEnabled(idx, enabled)` | Enable/disable point light |
 | `setShadingMode(mode)` | Set shading: "gouraud", "flat", "unlit" |
 
@@ -170,8 +304,8 @@ Alternatively, `setCamera3d(x, y, z [, yaw, pitch, fov])` sets position and orie
 | Function | Description |
 |----------|-------------|
 | `loadTexture(path)` | Load texture, returns `Graphics.Texture` userdata |
-| `getTextureSize(tex)` | Returns texture width, height |
-| `getWhiteTexture()` | Returns white texture (fallback) |
+| `getTextureSize(tex_or_id)` | Returns width, height |
+| `getWhiteTexture()` | Returns white 1x1 texture userdata |
 
 **Texture Methods**: `:getSize()`, `:getWidth()`, `:getHeight()`, `:getId()`, `:isValid()`
 
@@ -179,69 +313,58 @@ Alternatively, `setCamera3d(x, y, z [, yaw, pitch, fov])` sets position and orie
 
 | Function | Description |
 |----------|-------------|
-| `loadModel(name)` | Load/create model, returns handle (`.obj`, `.gltf`, `.glb`, or primitive) |
-| `createMesh(data)` | Create custom mesh, returns `Graphics.Model` handle |
+| `loadModel(name)` | Load/create model. Primitives or file path (`.obj`, `.gltf`, `.glb`) |
+| `createMesh(data)` | Create custom mesh from `{vertices, indices}` |
 | `createAnimator(model)` | Create skeletal `Graphics.Animator` from a skinned model |
 
-**Model Names**: "cube", "plane", "sphere", "cylinder", "cone", "pyramid", "torus", "capsule", "grid", or path to `.obj`, `.gltf`, `.glb` file.
+**Primitive Names**: `"cube"`, `"plane"`, `"sphere"`, `"cylinder"`, `"cone"`, `"pyramid"`, `"torus"`, `"capsule"`, `"grid"`.
 
-**Model Methods**:
-- `:isValid()` — Returns true if the underlying model loaded correctly.
-- `:getNodeCount()` — Returns number of nodes in the hierarchy.
-- `:getNode(idx_or_name)` — Returns a node table `{name, index, parent, x, y, z, rx, ry, rz, rw, sx, sy, sz}`, or `nil` if not found.
-- `:getNodes()` — Returns array table of all node tables.
-- `:getPartCount()` — Returns number of drawable parts (materials).
-- `:getPartName(idx)` — Returns `name, material_name` (1-indexed).
-- `:getPartTexture(idx)` — Returns texture ID for a part.
-- `:setPartTexture(idx, tex)` — Assign a texture to a part.
-- `:setPartColor(idx, r, g, b [, a])` — Set a part color override.
-- `:getBounds()` — Returns `minX, minY, minZ, maxX, maxY, maxZ`.
-- `:getCenter()` — Returns `cx, cy, cz`.
-- `:getSize()` — Returns `sx, sy, sz`.
-- `:getTriangles()` — Returns a table of triangles (`{{p1},{p2},{p3}}`).
-- `:isSkinned()` — Returns true if the model has skin/joint data.
-- `:getJointCount()` — Returns total joints/bones.
-- `:getJointName(idx)` — Returns joint name string (1-indexed).
-- `:getJointIndex(name)` — Returns joint index (1-indexed) or -1.
-- `:getJointNames()` — Returns array table of all joint names.
-- `:getAnimationCount()` — Returns number of embedded animations.
-- `:getAnimationNames()` — Returns array table of animation clip names.
-- `:getAnimationDuration(name_or_idx)` — Returns duration in seconds.
-- `:createAnimator()` — Creates and returns a `Graphics.Animator`.
-- `:createPhysicsSkeleton()` — Creates a 1:1 `Physics3D.Skeleton` from glTF skin joints.
-- `:drawSkinned(animator_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)` — Render skinned mesh directly.
+**Model Methods:**
+- `:isValid()`
+- `:getNodeCount()` / `:getNode(idx_or_name)` / `:getNodes()`
+- `:getPartCount()` / `:getPartName(idx)` → name, material_name
+- `:getPartTexture(idx)` / `:setPartTexture(idx, tex)` / `:setPartColor(idx, r, g, b [, a])`
+- `:getBounds()` → minX, minY, minZ, maxX, maxY, maxZ
+- `:getCenter()` → cx, cy, cz
+- `:getSize()` → sx, sy, sz
+- `:getTriangles()` → table of `{{p1},{p2},{p3}}`
+- `:isSkinned()` / `:getJointCount()` / `:getJointName(idx)` / `:getJointIndex(name)` / `:getJointNames()`
+- `:getAnimationCount()` / `:getAnimationNames()` / `:getAnimationDuration(name_or_idx)`
+- `:createAnimator()` → `Graphics.Animator`
+- `:createPhysicsSkeleton()` → `Physics3D.Skeleton`
+- `:drawSkinned(animator_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)`
 
 ### Skeletal Animation (`Graphics.Animator`)
-Created via `model:createAnimator()` or `crayon.graphics.createAnimator(model)`.
 
 | Method | Description |
 |--------|-------------|
-| `:play(clip [, loop, speed])` | Start playing an animation clip (defaults: loop=true, speed=1.0) |
-| `:stop()` | Stop playback and reset time to 0 |
-| `:pause()` / `:resume()` | Pause or resume playback |
-| `:isPlaying()` | Returns boolean playback state |
-| `:getCurrentAnimation()` | Returns current playing clip name |
-| `:getTime()` / `:setTime(t)` | Get or set current playback timestamp (seconds) |
-| `:getDuration()` | Returns duration of the active animation clip |
-| `:setSpeed(speed)` / `:getSpeed()` | Set or get playback speed multiplier |
-| `:crossFade(targetClip [, duration, loop])` | Smooth crossfade between animations (default duration: 0.2s) |
-| `:blend(clipA, clipB, factor)` | 1D locomotion blend tree with synchronized phase (factor: 0.0 to 1.0) |
-| `:setLayerClip(layer, clip [, loop, speed])` | Set animation clip for multi-layer evaluation |
-| `:setLayerWeight(layer, weight)` | Set layer blend weight (0.0 to 1.0) |
-| `:setLayerMask(layer, rootJointName [, includeChildren])` | Mask layer to specific bone hierarchy |
-| `:setUpdateRate(fps)` | LOD tick throttling (0 = every frame, or target Hz like 30, 15) |
-| `:update(dt)` | Advance animation state by `dt` seconds |
-| `:applyToPhysicsPose(skeletonPose)` | Transfer current animated bone transforms to a `Physics3D.SkeletonPose` |
-| `:capturePhysicsPose(skeletonPose)` | Transfer physics ragdoll transforms into animator |
-| `:getModel()` | Returns associated Model userdata |
+| `:play(clip [, loop, speed])` | Start clip (defaults: loop=true, speed=1.0) |
+| `:stop()` | Stop and reset time |
+| `:pause()` / `:resume()` | Pause / resume |
+| `:isPlaying()` | Playback state |
+| `:getCurrentAnimation()` | Current clip name |
+| `:getTime()` / `:setTime(t)` | Playback timestamp |
+| `:getDuration()` | Duration of active clip |
+| `:setSpeed(s)` / `:getSpeed()` | Speed multiplier |
+| `:crossFade(targetClip [, duration, loop])` | Crossfade (default duration: 0.2s) |
+| `:crossFadeFromCurrentPose(targetClip [, duration, loop])` | Crossfade preserving pose |
+| `:blend(clipA, clipB, factor)` | 1D locomotion blend (factor 0–1) |
+| `:setLayerClip(layer, clip [, loop, speed])` | Set layer clip |
+| `:setLayerWeight(layer, weight)` | Set layer weight |
+| `:setLayerMask(layer, rootJointName [, includeChildren])` | Bone hierarchy mask |
+| `:setUpdateRate(fps)` | LOD tick throttling |
+| `:update(dt)` | Advance by dt seconds |
+| `:applyToPhysicsPose(pose [, x,y,z, qx,qy,qz,qw])` | Transfer to `SkeletonPose`. Returns bool |
+| `:capturePhysicsPose(pose)` | Transfer from pose. Returns bool |
+| `:getModel()` | Associated Model |
 
 ### 3D Drawing
 
 | Function | Description |
 |----------|-------------|
-| `drawModel(id, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw loaded static model |
-| `drawModelSkinned(model, anim_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw skinned glTF model with `Animator` or `SkeletonPose` |
-| `drawModelNode(model, node, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw a single node (index or name) |
+| `drawModel(model, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw static model |
+| `drawModelSkinned(model, anim_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw skinned model |
+| `drawModelNode(model, node, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw single node |
 | `drawCube(x, y, z, sx, sy, sz, tex, rx, ry, rz)` | Draw cube |
 | `drawPlane(x, y, z, w, d, tex, rx, ry, rz)` | Draw plane |
 | `drawSphere(x, y, z, radius, tex, rx, ry, rz)` | Draw sphere |
@@ -250,20 +373,22 @@ Created via `model:createAnimator()` or `crayon.graphics.createAnimator(model)`.
 | `drawPyramid(x, y, z, baseSize, height, tex, rx, ry, rz)` | Draw pyramid |
 | `drawTorus(x, y, z, radius, tube, tex, rx, ry, rz)` | Draw torus |
 | `drawCapsule(x, y, z, radius, height, tex, rx, ry, rz)` | Draw capsule |
-| `drawBillboard(x, y, z, w, h, tex, mode, u0, v0, u1, v1)` | Draw billboard (mode: "cylindrical" or nil for spherical) |
+| `drawBillboard(x, y, z, w, h, tex, mode, u0, v0, u1, v1)` | Billboard ("cylindrical" or nil) |
 | `drawBillboardRot(tex, x, y, z, w, h, angle, mode, color)` | Rotated billboard |
-| `drawLine3d(x1,y1,z1, x2,y2,z2)` | Draw 3D line |
-| `drawLines3d(points)` | Draw multiple 3D line segments |
-| `drawGrid3d(size, divs, y)` | Draw 3D grid |
-| `drawTriangle3d(p1, p2, p3, tex)` | Draw 3D triangle |
-| `drawQuad3d(p1, p2, p3, p4, tex)` | Draw 3D quad |
-| `drawAxes3d(x, y, z, size)` | Draw coordinate axes |
-| `drawCubeWires(x,y,z, sx,sy,sz, color, rx,ry,rz)` | Draw wireframe cube |
-| `drawCapsuleWires(x,y,z, radius, halfH, color, rx,ry,rz)` | Draw wireframe capsule |
-| `drawCylinderWires(x,y,z, radius, halfH, color, rx,ry,rz)` | Draw wireframe cylinder |
-| `drawRay3d(sx,sy,sz, dx,dy,dz, length, color)` | Draw a ray |
-| `drawSkeleton(positions, connections, color)` | Draw a skeleton |
-| `drawSegmentedMesh(meshes, transforms, textures)` | Draw segmented mesh |
+| `drawLine3d(x1, y1, z1, x2, y2, z2)` | 3D line |
+| `drawLines3d(points)` | Multiple 3D segments |
+| `drawGrid3d([size, divs, y])` | 3D grid |
+| `drawTriangle3d(p1, p2, p3 [, tex])` | 3D triangle |
+| `drawQuad3d(p1, p2, p3, p4 [, tex])` | 3D quad |
+| `drawAxes3d(x, y, z, size)` | Coordinate axes |
+| `drawCubeWires(x, y, z, sx, sy, sz [, color, rx, ry, rz])` | Wireframe cube |
+| `drawCapsuleWires(x, y, z, radius, halfH [, color, rx, ry, rz])` | Wireframe capsule |
+| `drawCylinderWires(x, y, z, radius, halfH [, color, rx, ry, rz])` | Wireframe cylinder |
+| `drawRay3d(sx, sy, sz, dx, dy, dz, length, color)` | Draw ray |
+| `drawSkeleton(positions, connections [, color])` | Draw skeleton |
+| `drawSegmentedMesh(meshes, transforms [, textures])` | Draw segmented mesh |
+| `project(x, y, z)` | Returns sx, sy, visible |
+| `unproject(sx, sy)` | Returns ox, oy, oz, dx, dy, dz |
 
 ### 2D Drawing
 
@@ -271,247 +396,112 @@ Created via `model:createAnimator()` or `crayon.graphics.createAnimator(model)`.
 |----------|-------------|
 | `drawSprite(tex, x, y, w, h, rot, ox, oy)` | Draw sprite |
 | `drawSpritePart(tex, x, y, u0, v0, u1, v1, w, h, rot, ox, oy)` | Draw sprite part |
-| `drawSpriteTiled(tex, x, y, w, h, tileW, tileH, ox, oy)` | Draw tiled sprite |
-| `drawSprite9slice(tex, x, y, w, h, left, top, right, bottom, texW, texH)` | Draw 9-slice sprite |
-| `drawTextureRot(tex, x, y, w, h, angle, ox, oy)` | Draw rotated texture |
+| `drawSpriteTiled(tex, x, y, w, h, tileW, tileH, ox, oy)` | Tiled sprite |
+| `drawSprite9slice(tex, x, y, w, h, left, top, right, bottom [, texW, texH])` | 9-slice sprite |
+| `drawTextureRot(tex, x, y, w, h, angle [, ox, oy])` | Rotated texture |
 | `drawPoint(x, y, size)` | Draw point |
-| `drawLine(x1,y1, x2,y2, thick)` | Draw line |
-| `drawRect(mode, x, y, w, h, thick)` | Draw rectangle (mode: "fill" or "line") |
-| `drawRoundedRect(mode, x, y, w, h, radius, segs)` | Draw rounded rectangle |
-| `drawRoundedRectEx(mode, x, y, w, h, rtl, rtr, rbr, rbl, segs)` | Per-corner rounded rect |
-| `drawTriangle(mode, x1,y1, x2,y2, x3,y3)` | Draw triangle |
-| `drawQuad(mode, x1,y1, x2,y2, x3,y3, x4,y4)` | Draw quad |
-| `drawPolygon(mode, points)` | Draw polygon (points: `{{x,y}, ...}` or flat `{x1,y1, x2,y2, ...}`) |
-| `drawCircle(mode, cx, cy, radius, segs)` | Draw circle |
-| `drawEllipse(mode, cx, cy, rx, ry, segs)` | Draw ellipse |
-| `drawArc(mode, cx, cy, radius, a0, a1, segs)` | Draw arc |
-| `drawRing(mode, cx, cy, innerR, outerR, segs)` | Draw ring |
-| `drawPie(mode, cx, cy, radius, a1, a2, segs)` | Draw pie slice |
-| `drawGradientRect(x, y, w, h, cTl, cTr, cBr, cBl)` | Draw gradient rect (colors as `{r,g,b,a}`) |
+| `drawLine(x1, y1, x2, y2, thick)` | Draw line |
+| `drawRect(mode, x, y, w, h [, thick])` | Rect ("fill" or "line") |
+| `drawRoundedRect(mode, x, y, w, h, radius [, segs])` | Rounded rect |
+| `drawRoundedRectEx(mode, x, y, w, h, rtl, rtr, rbr, rbl [, segs])` | Per-corner rounded |
+| `drawTriangle(mode, x1, y1, x2, y2, x3, y3)` | Triangle |
+| `drawQuad(mode, x1, y1, x2, y2, x3, y3, x4, y4)` | Quad |
+| `drawPolygon(mode, points)` | Polygon (`{{x,y},...}` or flat) |
+| `drawPolyline(points, thick, loop)` | Polyline |
+| `drawCircle(mode, cx, cy, r [, segs])` | Circle |
+| `drawEllipse(mode, cx, cy, rx, ry [, segs])` | Ellipse |
+| `drawArc(mode, cx, cy, r, a0, a1 [, segs])` | Arc |
+| `drawRing(mode, cx, cy, innerR, outerR [, segs])` | Ring |
+| `drawPie(mode, cx, cy, r, a1, a2 [, segs])` | Pie slice |
+| `drawBezier(x0, y0, x1, y1, x2, y2 [, x3, y3, thick, segs])` | Quadratic or cubic |
+| `drawGradientRect(x, y, w, h, cTl, cTr, cBr, cBl)` | 4-corner gradient |
 | `drawGradientH(x, y, w, h, cLeft, cRight)` | Horizontal gradient |
 | `drawGradientV(x, y, w, h, cTop, cBottom)` | Vertical gradient |
-| `drawPolyline(points, thick, loop)` | Draw polyline |
-| `drawBezier(x0,y0, x1,y1, x2,y2, thick, segs)` | Draw quadratic bezier |
-| `drawBezier(x0,y0, x1,y1, x2,y2, x3,y3, thick, segs)` | Draw cubic bezier |
+| `drawText(text, x, y, scale)` | Draw text |
+| `getTextWidth(text, scale)` | Text width |
+| `getTextHeight(text, scale)` | Text height |
 
-### 2D Transforms & Camera
+### State
 
 | Function | Description |
 |----------|-------------|
-| `pushMatrix2d()` | Push 2D transform matrix |
-| `popMatrix2d()` | Pop 2D transform matrix |
-| `translate2d(x, y)` | Translate 2D |
-| `rotate2d(angle)` | Rotate 2D (radians) |
-| `scale2d(sx, sy)` | Scale 2D |
-| `setCamera2d(cam)` | Set 2D camera |
-| `resetCamera2d()` | Reset 2D camera |
+| `setBlendMode(mode)` | "alpha", "additive", "multiply", "none" |
+| `setScissor(x, y, w, h)` / `resetScissor()` | Scissor rect |
+| `pushScissor(x, y, w, h)` / `popScissor()` | Scissor stack |
+| `setCamera2d(cam)` / `resetCamera2d()` | 2D camera |
 
-**2D Camera Table**:
+**2D Camera Table:**
 ```lua
-{
-    x = 0, y = 0,      -- Position
-    zoom = 1.0,        -- Zoom factor
-    angle = 0.0,       -- Rotation (radians)
-    originX = 0,       -- Origin offset X
-    originY = 0        -- Origin offset Y
-}
+{ x = 0, y = 0, zoom = 1.0, angle = 0.0, originX = 0, originY = 0 }
 ```
 
-### 3D Transforms
+### Transform Stacks
 
-| Function | Description |
-|----------|-------------|
-| `pushMatrix()` | Push 3D transform matrix |
-| `popMatrix()` | Pop 3D transform matrix |
-| `translate(x, y, z)` | Translate 3D |
-| `rotate(angle, ax, ay, az)` | Rotate 3D (radians) |
-| `scale(sx, sy, sz)` | Scale 3D |
+**3D:** `pushMatrix()`, `popMatrix()`, `translate(x,y,z)`, `rotate(angle, ax,ay,az)`, `scale(sx,sy,sz)`
 
-### Scissor
-
-| Function | Description |
-|----------|-------------|
-| `setScissor(x, y, w, h)` | Set scissor rect |
-| `resetScissor()` | Reset scissor |
-| `pushScissor(x, y, w, h)` | Push scissor with intersection |
-| `popScissor()` | Pop scissor |
-
-### Blend Modes
-
-| Function | Description |
-|----------|-------------|
-| `setBlendMode(mode)` | Set blend mode: "alpha", "additive", "multiply", "none" |
-
-### Text
-
-| Function | Description |
-|----------|-------------|
-| `drawText(text, x, y, scale)` | Draw text (8x8 monospace font) |
-| `getTextWidth(text, scale)` | Get text width |
-| `getTextHeight(text, scale)` | Get text height |
-
-### 3D Helpers
-
-| Function | Description |
-|----------|-------------|
-| `project(x, y, z)` | Project 3D point to screen (returns x, y, visible) |
-| `unproject(sx, sy)` | Get 3D ray from screen (returns origin x,y,z, dir x,y,z) |
+**2D:** `pushMatrix2d()`, `popMatrix2d()`, `translate2d(x,y)`, `rotate2d(angle)`, `scale2d(sx,sy)`
 
 ---
 
-## Input Module
-Access via: `crayon.input`
-
-### Keyboard
-
-| Function | Description |
-|----------|-------------|
-| `isDown(key)` | Key currently held? |
-| `isPressed(key)` | Key just pressed? |
-| `isReleased(key)` | Key just released? |
-| `anyKeyPressed()` | Any key pressed? |
-| `getPressedKeys()` | List of pressed keys |
-
-**Key Names**: "a", "b", ..., "z", "space", "enter", "escape", "tab", "backspace", "up", "down", "left", "right", "shift", "ctrl", "alt", "gui", "f1", "f2", ..., "f12"
-
-### Modifiers
-
-| Function | Description |
-|----------|-------------|
-| `isShiftDown()` | Shift held? |
-| `isCtrlDown()` | Ctrl held? |
-| `isAltDown()` | Alt held? |
-| `isGuiDown()` | GUI (Windows/Command) held? |
-| `isCapsLock()` | Caps Lock active? |
-
-### Mouse
-
-| Function | Description |
-|----------|-------------|
-| `getMousePos()` | Returns virtual x, y |
-| `getMouseWindowPos()` | Returns window x, y |
-| `getMouseDelta()` | Returns mouse delta x, y |
-| `isMouseDown(btn)` | Mouse button held? |
-| `isMousePressed(btn)` | Mouse button just pressed? |
-| `isMouseReleased(btn)` | Mouse button just released? |
-| `getMouseWheel()` | Returns wheel x, y |
-| `setMousePosition(x, y)` | Set mouse position |
-
-**Button Types**: 1-5, "left"/"l"/"1", "middle"/"mid"/"m"/"2", "right"/"r"/"3", "x1"/"mouse4"/"4", "x2"/"mouse5"/"5"
-
-### Text Input & Clipboard
-
-| Function | Description |
-|----------|-------------|
-| `startTextInput()` | Start text input (IME) |
-| `stopTextInput()` | Stop text input |
-| `isTextInputActive()` | Text input active? |
-| `getTextInput()` | Get input text |
-| `getClipboard()` | Get clipboard text |
-| `setClipboard(text)` | Set clipboard text |
-
-### Gamepad
-
-| Function | Description |
-|----------|-------------|
-| `gamepadIsDown(btn)` | Gamepad button held? |
-| `gamepadAxis(axis)` | Get gamepad axis value (-1 to 1) |
-
----
-
-## Time Module
-Access via: `crayon.time`
-
-| Function | Description |
-|----------|-------------|
-| `getTime()` | Total elapsed time (seconds) |
-| `getDt()` | Delta time (seconds since last frame) |
-
----
-
-## Physics Module
+## Physics3D Module
 Access via: `crayon.physics3d`
 
 ### Body Creation
 
 | Function | Description |
 |----------|-------------|
-| `createBox(x, y, z, hx, hy, hz [, motion, friction, restitution, density])` | Create box body |
-| `createSphere(x, y, z, radius [, motion, friction, restitution, density])` | Create sphere body |
-| `createCapsule(x, y, z, halfH, radius [, motion, friction, restitution, density])` | Create capsule body |
-| `createCylinder(x, y, z, halfH, radius [, motion, friction, restitution, density])` | Create cylinder body |
-| `createPlane(x, y, z [, nx, ny, nz, halfExtent])` | Create static plane body |
-| `createMeshBody(x, y, z, model, friction, restitution)` | Create static mesh body from `Graphics.Model` |
-| `createMeshBody(model, friction, restitution)` | Same, at origin |
-| `createMeshBody(x, y, z, vertices, indices, friction, restitution)` | From flat vertex/indices tables |
+| `createBox(x, y, z, hx, hy, hz [, motion, friction, restitution, density])` | Box body |
+| `createSphere(x, y, z, radius [, motion, friction, restitution, density])` | Sphere body |
+| `createCapsule(x, y, z, halfH, radius [, motion, friction, restitution, density])` | Capsule body |
+| `createCylinder(x, y, z, halfH, radius [, motion, friction, restitution, density])` | Cylinder body |
+| `createPlane(x, y, z [, nx, ny, nz, halfExtent])` | Static plane |
+| `createMeshBody(x, y, z, model, friction, restitution)` | Mesh from Model |
+| `createMeshBody(model, friction, restitution)` | Mesh at origin |
+| `createMeshBody(x, y, z, vertices, indices, friction, restitution)` | From flat tables |
 | `createMeshBody(meshData, friction, restitution)` | `meshData = {vertices={...}, indices={...}}` |
 
-**Motion Types**: "static", "kinematic", "dynamic" (or 0, 1, 2). Default: "dynamic".
+**Motion Types**: `"static"`, `"kinematic"`, `"dynamic"` (or `0`, `1`, `2`). Default: `"dynamic"`.
 
 ### Body Methods
 
 | Method | Description |
 |--------|-------------|
-| `body:getId()` | Returns body ID |
-| `body:isValid()` | Body still exists? |
-| `body:isActive()` | Body active? |
-| `body:setActive(active)` | Activate/deactivate body |
-| `body:destroy()` | Destroy this body |
-| `body:getPosition()` | Returns x, y, z |
-| `body:setPosition(x, y, z [, activate])` | Set position |
-| `body:getRotation()` | Returns euler x, y, z (radians) |
-| `body:setRotation(rx, ry, rz [, activate])` | Set rotation (radians) |
-| `body:getVelocity()` | Returns vx, vy, vz |
-| `body:setVelocity(vx, vy, vz)` | Set linear velocity |
-| `body:getAngularVelocity()` | Returns wx, wy, wz |
-| `body:setAngularVelocity(wx, wy, wz)` | Set angular velocity |
-| `body:applyForce(fx, fy, fz)` | Apply force |
-| `body:applyImpulse(ix, iy, iz)` | Apply impulse |
-| `body:applyTorque(tx, ty, tz)` | Apply torque |
-| `body:setGravityFactor(factor)` | Set gravity multiplier |
-| `body:setFriction(friction)` | Set friction |
-| `body:setRestitution(restitution)` | Set restitution |
-| `body:setMotionType(type)` | Change motion type |
-| `body:setDamping(linearDamping [, angularDamping])` | Set damping |
-| `body:setSensor(isSensor)` | Make body a sensor (trigger) |
-| `body:isSensor()` | Is body a sensor? |
+| `:getId()` | Returns body ID |
+| `:isValid()` | Body still exists? |
+| `:isActive()` / `:setActive(active)` | Active state |
+| `:destroy()` | Destroy body |
+| `:getPosition()` / `:setPosition(x, y, z [, activate])` | Position |
+| `:getRotation()` / `:setRotation(rx, ry, rz [, activate])` | Euler rotation (radians) |
+| `:getVelocity()` / `:setVelocity(vx, vy, vz)` | Linear velocity |
+| `:getAngularVelocity()` / `:setAngularVelocity(wx, wy, wz)` | Angular velocity |
+| `:applyForce(fx, fy, fz)` | Apply force |
+| `:applyImpulse(ix, iy, iz)` | Apply impulse |
+| `:applyTorque(tx, ty, tz)` | Apply torque |
+| `:setGravityFactor(f)` | Gravity multiplier |
+| `:setFriction(f)` / `:setRestitution(r)` | Physics material |
+| `:setMotionType(type)` | Change motion type |
+| `:setDamping(linear [, angular])` | Set damping |
+| `:setSensor(bool)` / `:isSensor()` | Sensor (trigger) mode |
 
-### World Settings
+### World Operations
 
 | Function | Description |
 |----------|-------------|
-| `step([dt, collisionSteps])` | Manually advance physics simulation (default: 1/60s, 1 step) |
-| `setGravity(gx, gy, gz)` | Set world gravity |
-| `getGravity()` | Returns gx, gy, gz |
+| `step([dt, collisionSteps])` | Advance simulation (default: 1/60s, 1 step) |
+| `setGravity(gx, gy, gz)` / `getGravity()` | World gravity |
 | `destroyAll()` | Destroy all bodies |
-| `getBodyCount()` | Returns total bodies, active bodies |
+| `getBodyCount()` | Returns total, active body count |
+| `getBody(id)` | Returns Body or nil |
+| `raycast(ox, oy, oz, dx, dy, dz [, maxDist])` | Returns `hit, px,py,pz, nx,ny,nz, dist, body` |
+| `overlapSphere(cx, cy, cz, radius)` | Array of bodies in sphere |
+| `drawDebug([opts])` or `drawDebug(r,g,b,a, sr,sg,sb,sa [, flags])` | Debug visualization |
 
-> Note: `crayon.update(dt)` is called every frame by the runtime. Calling `crayon.physics.step(dt)` manually lets you drive the simulation yourself (useful for fixed-timestep or headless contexts).
-
-### Raycast
-
-| Function | Description |
-|----------|-------------|
-| `raycast(ox, oy, oz, dx, dy, dz, maxDist)` | Returns `hit, posX, posY, posZ, normalX, normalY, normalZ, distance, body`. When no hit, only `false` is returned. |
-
-### Queries & Debug
-
-| Function | Description |
-|----------|-------------|
-| `overlapSphere(cx, cy, cz, radius)` | Returns table of body userdata in sphere |
-| `drawDebug([opts])` | Draw physics debug visualization |
-| `drawDebug(r, g, b, a, sr, sg, sb, sa [, flags])` | Draw with explicit active/sleep colors |
-
-**Debug Flags Table** (`opts` or trailing `flags` arg):
+**Debug Flags:**
 ```lua
 {
-    shapes = true,                 -- Draw collision shapes
-    softBodies = true,             -- Draw soft bodies
-    constraints = true,            -- Draw constraints
-    softBodyConstraints = true,    -- Draw soft body constraints
-    softBodyRods = true,           -- Draw soft body rods
-    bounds = false,                -- Draw bounding boxes
-    velocities = false             -- Draw velocity vectors
+    shapes = true, softBodies = true, constraints = true,
+    softBodyConstraints = true, softBodyRods = true,
+    bounds = false, velocities = false
 }
 ```
 
@@ -519,11 +509,11 @@ Access via: `crayon.physics3d`
 
 | Function | Description |
 |----------|-------------|
-| `createPointConstraint(b1, b2, px, py, pz)` | Create point constraint |
-| `createHingeConstraint(b1, b2, px, py, pz, ax, ay, az [, minAngle, maxAngle])` | Create hinge constraint |
-| `createDistanceConstraint(b1, b2, p1x, p1y, p1z, p2x, p2y, p2z [, minD, maxD])` | Create distance constraint |
-| `createFixedConstraint(b1, b2)` | Create fixed constraint |
-| `destroyConstraint(c)` | Destroy constraint (userdata or id) |
+| `createPointConstraint(b1, b2, px, py, pz)` | Point constraint |
+| `createHingeConstraint(b1, b2, px, py, pz, ax, ay, az [, minAngle, maxAngle])` | Hinge |
+| `createDistanceConstraint(b1, b2, p1x, p1y, p1z, p2x, p2y, p2z [, minD, maxD])` | Distance |
+| `createFixedConstraint(b1, b2)` | Fixed |
+| `destroyConstraint(c)` | Destroy (userdata or id) |
 
 **Constraint Methods**: `:destroy()`, `:isValid()`, `:getId()`
 
@@ -531,15 +521,15 @@ Access via: `crayon.physics3d`
 
 | Function | Description |
 |----------|-------------|
-| `createCharacter(opts)` | Create a character controller |
-| `createCharacterVirtual(opts)` | Create a virtual character (kinematic) |
+| `createCharacter(opts)` | Create character controller |
+| `createCharacterVirtual(opts)` | Create kinematic virtual character |
 
-**Character Options Table**:
+**Character Options:**
 ```lua
 {
     pos = {x, y, z},
     radius = 0.4,
-    halfHeight = 0.6,           -- capsule half height
+    halfHeight = 0.6,
     mass = 80.0,
     friction = 0.5,
     gravityFactor = 1.0,
@@ -548,7 +538,7 @@ Access via: `crayon.physics3d`
 }
 ```
 
-**Virtual Character Extra Options**:
+**Virtual Character Extra Options:**
 ```lua
 {
     maxStrength = 100.0,
@@ -568,11 +558,11 @@ Access via: `crayon.physics3d`
 
 | Function | Description |
 |----------|-------------|
-| `createWheeledVehicle(cfg)` | Create a wheeled vehicle |
-| `createTrackedVehicle(cfg)` | Create a tracked vehicle |
-| `createMotorcycle(cfg)` | Create a motorcycle |
+| `createWheeledVehicle(cfg)` | Wheeled vehicle |
+| `createTrackedVehicle(cfg)` | Tracked vehicle |
+| `createMotorcycle(cfg)` | Motorcycle |
 
-**Wheel Config** (each entry in `wheels` / `frontWheel` / `rearWheel` / `leftWheels` / `rightWheels`):
+**Wheel Config:**
 ```lua
 {
     position = {x, y, z},
@@ -590,10 +580,10 @@ Access via: `crayon.physics3d`
 }
 ```
 
-**Wheeled Vehicle Config**:
+**Wheeled Vehicle Config:**
 ```lua
 {
-    chassis = chassisBody,         -- body userdata or id
+    chassis = body,
     wheels = { wheel1, wheel2, ... },
     maxPitchRollAngle = 0.5,
     engineMaxTorque = 500.0,
@@ -602,20 +592,20 @@ Access via: `crayon.physics3d`
 }
 ```
 
-**Tracked Vehicle Config**:
+**Tracked Vehicle Config:**
 ```lua
 {
-    chassis = chassisBody,
-    leftWheels = { wheel1, wheel2, ... },
-    rightWheels = { wheel1, wheel2, ... },
+    chassis = body,
+    leftWheels = { ... },
+    rightWheels = { ... },
     engineMaxTorque = 500.0
 }
 ```
 
-**Motorcycle Config**:
+**Motorcycle Config:**
 ```lua
 {
-    chassis = chassisBody,
+    chassis = body,
     frontWheel = { ... },
     rearWheel = { ... },
     maxLeanAngleRad = 0.7,
@@ -628,28 +618,24 @@ Access via: `crayon.physics3d`
 
 **Vehicle Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:setInputWheeled(forward, steer, brake, handbrake)`, `:setInputTracked(leftRatio, rightRatio, brake)`, `:setInputMotorcycle(forward, steer, brake)`, `:enableLeanController(enabled)`, `:isLeanControllerEnabled()`, `:getLeanAngle()`, `:getSpeedKmh()`, `:getEngineRpm()`, `:getTransmissionGear()`, `:getWheelCount()`, `:getWheelTransform(idx)`
 
-### Skeleton / Ragdoll
+### Skeleton / Pose / Mapper
 
 | Function | Description |
 |----------|-------------|
-| `createSkeleton(joints)` | Create a skeleton |
-| `createSkeletonPose(skel)` | Create a pose for a skeleton |
-| `createSkeletonMapper(skelLow, skelHigh, poseLow, poseHigh)` | Create a mapper |
-| `createRagdoll(cfg)` | Create a ragdoll |
-
-**Skeleton joint entry**:
-```lua
-{ name = "Spine", parentIndex = 0 }
-```
-*(Tip: You can also create a skeleton directly from any skinned glTF model using `local skel = model:createPhysicsSkeleton()`)*
+| `createSkeleton(joints)` | Create skeleton from `{{name, parentIndex}, ...}` or `{{name="X", parentIndex=N}, ...}` |
+| `createSkeletonPose(skel)` | Create pose |
+| `createSkeletonMapper(skelLow, skelHigh, poseLow, poseHigh)` | Create mapper |
+| `createRagdoll(cfg)` | Create ragdoll |
 
 **Skeleton Methods**: `:getId()`, `:isValid()`, `:destroy()`
 
-**SkeletonPose Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:setJoint(idx, tx, ty, tz, rx, ry, rz, rw)`, `:calculateMatrices()`, `:getJointMatrix(idx)`, `:setRootOffset(x,y,z)`, `:getRootOffset()`, `:getJointCount()`
+**SkeletonPose Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:setJoint(idx, tx, ty, tz, rx, ry, rz, rw)`, `:calculateMatrices()`, `:getJointMatrix(idx)` → 16-element array, `:setRootOffset(x,y,z)`, `:getRootOffset()`, `:getJointCount()`
 
 **SkeletonMapper Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:map(poseLow, poseHighLocal, poseHighOutModel)`, `:mapReverse(poseHighModel, poseLowOutModel)`, `:lockAllTranslations(skelHigh, neutralPose)`
 
-**Ragdoll Config**:
+### Ragdoll
+
+**Ragdoll Config:**
 ```lua
 {
     disableParentChildCollisions = false,
@@ -659,8 +645,8 @@ Access via: `crayon.physics3d`
             name = "Head",
             parentJointIndex = 0,
             position = {x, y, z},
-            rotation = {x, y, z, w},
-            shapeType = "capsule",       -- "box", "sphere", "capsule"
+            rotation = {x, y, z, w},        -- quaternion
+            shapeType = "capsule",          -- "box", "sphere", "capsule"
             halfExtent = {hx, hy, hz},
             radius = 0.15,
             halfHeight = 0.1,
@@ -680,43 +666,37 @@ Access via: `crayon.physics3d`
 }
 ```
 
-**Ragdoll Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:setPose(pose)`, `:driveToPoseKinematics(pose, dt)`, `:driveToPoseMotors(pose)`, `:driveToPoseMotorsVelocity(prevPose, pose, dt)`, `:getPose(pose)`, `:setHardKeying(enabled)`, `:activate()`, `:isActive()`, `:getBodyId(partIdx)`, `:getPartCount()`, `:getSkeletonId()`
+**Ragdoll Methods**:
+- Core: `:getId()`, `:isValid()`, `:destroy()`, `:activate()`, `:isActive()`, `:getPartCount()`, `:getSkeletonId()`
+- Pose: `:setPose(pose)`, `:getPose(pose)`, `:setHardKeying(enabled)`
+- Driving: `:driveToPoseKinematics(pose, dt)`, `:driveToPoseMotors(pose)`, `:driveToPoseMotorsVelocity(prevPose, pose, dt)`
+- Velocities: `:setLinearVelocity(x,y,z)`, `:setLinearAndAngularVelocity(lx,ly,lz, ax,ay,az)`, `:addLinearVelocity(x,y,z)`, `:addImpulse(x,y,z)`, `:addImpulseToPart(partIdx, x,y,z)`, `:addImpulseToPartAtPos(partIdx, ix,iy,iz, px,py,pz)`, `:resetWarmStart()`
+- Transforms: `:getRootTransform()` → px,py,pz, qx,qy,qz,qw; `:getGroundOrientation()` → "back"/"belly"/"unknown"; `:getBounds()` → 6 values
+- Parts: `:getBodyId(partIdx)`, `:getPartPosition(i)`, `:getPartRotation(i)`, `:getPartLinearVelocity(i)`, `:getLinearVelocity()`, `:getBody(i)`
+- Motors: `:setMotorsStiffness(k [, c, maxTorque])`, `:setPartMotor(i, k [, c, maxTorque])`, `:setPartMotionType(i, motion)`, `:setPartFriction(i, f)`, `:setPartRestitution(i, r)`
 
 ### Soft Bodies
 
 | Function | Description |
 |----------|-------------|
-| `createSoftBody(config)` | Create a soft body from a full config table (see below) |
-| `createSoftBodyCloth(opts_or_x, y, z, w, h, segX, segY, compliance, bendCompliance, pinCorners, addLra)` | Create a cloth soft body |
-| `createSoftBodyCube(opts_or_x, y, z, size, gridSize, compliance, pressure)` | Create a soft cube |
-| `createSoftBodySphere(opts_or_x, y, z, radius, rings, sectors, compliance, pressure)` | Create a soft sphere |
-| `createSoftBodyRod(opts)` | Create a rod from a `points` array |
-| `destroySoftBody(sb_or_id)` | Destroy a soft body (userdata or id) |
+| `createSoftBody(config)` | Full config soft body |
+| `createSoftBodyCloth(opts_or_x, y, z, w, h, segX, segY, compliance, bendCompliance, pinCorners, addLra)` | Cloth |
+| `createSoftBodyCube(opts_or_x, y, z, size, gridSize, compliance, pressure)` | Soft cube |
+| `createSoftBodySphere(opts_or_x, y, z, radius, rings, sectors, compliance, pressure)` | Soft sphere |
+| `createSoftBodyRod(opts)` | Rod from points |
+| `destroySoftBody(sb_or_id)` | Destroy (userdata or id) |
 
-**Cloth Options Table** (all optional):
+**Cloth Options:**
 ```lua
-{
-    x = 0, y = 0, z = 0,
-    width = 4.0, height = 4.0,
-    segmentsX = 10, segmentsY = 10,
-    compliance = 0.0,
-    bendCompliance = 0.01,
-    pinCorners = true,
-    addLra = true
-}
+{ x=0, y=0, z=0, width=4.0, height=4.0, segmentsX=10, segmentsY=10,
+  compliance=0.0, bendCompliance=0.01, pinCorners=true, addLra=true }
 ```
 
-**Cube Options Table**:
-```lua
-{ x=0, y=0, z=0, size=2.0, gridSize=3, compliance=0.0, pressure=0.0 }
-```
+**Cube Options:** `{ x=0, y=0, z=0, size=2.0, gridSize=3, compliance=0.0, pressure=0.0 }`
 
-**Sphere Options Table**:
-```lua
-{ x=0, y=0, z=0, radius=1.0, rings=8, sectors=12, compliance=0.0, pressure=500.0 }
-```
+**Sphere Options:** `{ x=0, y=0, z=0, radius=1.0, rings=8, sectors=12, compliance=0.0, pressure=500.0 }`
 
-**Rod Options Table**:
+**Rod Options:**
 ```lua
 {
     points = { {x,y,z}, {x,y,z}, ... },   -- required
@@ -726,13 +706,13 @@ Access via: `crayon.physics3d`
 }
 ```
 
-**Full Config (`createSoftBody`)**:
+**Full Config (`createSoftBody`):**
 ```lua
 {
     position = {x, y, z},
     rotation = {x, y, z, w},              -- quaternion
     vertices = { {x, y, z, mass=1.0}, ... },
-    faces = { {v1, v2, v3}, ... },        -- 1-indexed vertex indices
+    faces = { {v1, v2, v3}, ... },        -- 1-indexed
     edges = { {v1, v2, compliance=0.0}, ... },        -- or `edgeConstraints`
     bends = { {v1, v2, v3, v4, compliance}, ... },    -- or `dihedralBendConstraints`
     volumes = { {v1, v2, v3, v4, compliance}, ... },  -- or `volumeConstraints`
@@ -752,44 +732,223 @@ Access via: `crayon.physics3d`
     allowSleeping = true,
     facesDoubleSided = true,
 
-    -- Auto-constraint generation (if `faces` is set and edges omitted):
     autoGenerateConstraints = true,
     compliance = 0.0,
     shearCompliance = 0.0,
     bendCompliance = 0.0,
     lraMultiplier = 1.0,
-    bendType = "dihedral",                -- "dihedral", "distance", "none"
+    bendType = "dihedral",                -- "dihedral", "bend", "none"
     lraType = "euclidean"                 -- "euclidean", "geodesic", "none"
 }
 ```
 
-**SoftBody Methods**:
+**SoftBody Methods:**
 
 | Method | Description |
 |--------|-------------|
-| `:getId()` | Returns soft body ID |
-| `:isValid()` | Soft body still exists? |
-| `:destroy()` | Destroy this soft body |
-| `:getBodyId()` | Returns underlying physics body ID |
-| `:getPosition()` / `:setPosition(x,y,z)` | Get or set body position |
-| `:getRotation()` / `:setRotation(x,y,z,w)` | Get or set body rotation (quaternion) |
-| `:getVertexCount()` | Returns number of vertices |
-| `:getVertex(idx)` | Returns `posX, posY, posZ, velX, velY, velZ, invMass` (1-indexed) |
-| `:setVertex(idx, x, y, z [, vx, vy, vz [, invMass]])` | Set vertex position (and optionally velocity / inverse mass) |
-| `:getVertices()` | Returns array of `{x, y, z}` |
-| `:getVerticesFlat()` | Returns flat `{x,y,z, x,y,z, ...}` |
-| `:getFaces()` | Returns array of `{i, j, k}` (1-indexed) |
-| `:getFacesFlat()` | Returns flat `{i,j,k, i,j,k, ...}` (1-indexed) |
-| `:getPressure()` / `:setPressure(p)` | Get or set pressure |
-| `:getNumIterations()` / `:setNumIterations(n)` | Get or set solver iterations |
-| `:getVolume()` | Returns current volume |
-| `:applyImpulse(ix, iy, iz)` | Apply impulse to all vertices |
-| `:applyImpulse(vertexIdx, ix, iy, iz)` | Apply impulse to one vertex (1-indexed) |
-| `:applyForce(fx, fy, fz)` | Apply force to all vertices |
-| `:applyForce(vertexIdx, fx, fy, fz)` | Apply force to one vertex |
-| `:skinVertices(jointMatrices [, hardSkin])` | Skin vertices to a list of 4x4 matrices (16-element tables) |
-| `:setSkinnedMaxDistanceMultiplier(mult)` | Set skinned max distance multiplier |
-| `:getRodTransform(rodIdx)` | Returns `posX, posY, posZ, rotX, rotY, rotZ, rotW` (1-indexed) |
-| `:activate()` | Wake soft body |
-| `:isActive()` | Is soft body active? |
+| `:getId()` / `:isValid()` / `:destroy()` | Identity & lifetime |
+| `:getBodyId()` | Underlying physics body ID |
+| `:getPosition()` / `:setPosition(x,y,z)` | Body position |
+| `:getRotation()` / `:setRotation(x,y,z,w)` | Body rotation (quaternion) |
+| `:getVertexCount()` | Vertex count |
+| `:getVertex(idx)` | `px, py, pz, vx, vy, vz, invMass` (1-indexed) |
+| `:setVertex(idx, x, y, z [, vx, vy, vz [, invMass]])` | Set vertex data |
+| `:getVertices()` / `:getVerticesFlat()` | Vertex positions |
+| `:getFaces()` / `:getFacesFlat()` | Faces (1-indexed) |
+| `:getPressure()` / `:setPressure(p)` | Pressure |
+| `:getNumIterations()` / `:setNumIterations(n)` | Solver iterations |
+| `:getVolume()` | Current volume |
+| `:applyImpulse(ix, iy, iz)` | Impulse to all vertices |
+| `:applyImpulse(vertexIdx, ix, iy, iz)` | Impulse to one vertex |
+| `:applyForce(fx, fy, fz)` | Force to all vertices |
+| `:applyForce(vertexIdx, fx, fy, fz)` | Force to one vertex |
+| `:skinVertices(jointMatrices [, hardSkin])` | Skin to 16-element matrices |
+| `:setSkinnedMaxDistanceMultiplier(mult)` | Skinned distance multiplier |
+| `:getRodTransform(rodIdx)` | `px, py, pz, qx, qy, qz, qw` |
+| `:activate()` / `:isActive()` | Wake state |
 
+---
+
+## Physics2D Module
+Access via: `crayon.physics2d`
+
+| Function | Description |
+|----------|-------------|
+| `createBody([x, y, mass])` | Create 2D body |
+
+**Body Methods**: `:getPosition()`, `:setPosition(x,y)`, `:getVelocity()`, `:setVelocity(vx,vy)`, `:getAngle()`, `:setAngle(a)`, `:applyForce(fx,fy)`, `:isValid()`, `:destroy()`
+
+---
+
+## Lua Callbacks
+
+The runtime invokes these optional globals or `crayon.*` functions:
+
+| Callback | Args |
+|----------|------|
+| `crayon.init()` | — |
+| `crayon.update(dt)` | dt |
+| `crayon.draw()` | — |
+| `crayon.keydown(key, isRepeat)` or `crayon.keypressed` | key, is_repeat |
+| `crayon.keyup(key)` or `crayon.keyreleased` | key |
+| `crayon.mousedown(x, y, button)` or `crayon.mousepressed` | x, y, btn |
+| `crayon.mouseup(x, y, button)` or `crayon.mousereleased` | x, y, btn |
+| `crayon.mousemoved(x, y, dx, dy)` | x, y, dx, dy |
+| `crayon.wheelmoved(dx, dy)` | dx, dy |
+| `crayon.textinput(text)` | text |
+| `crayon.gamepaddown(btn)` or `crayon.gamepadpressed` | btn |
+| `crayon.gamepadup(btn)` or `crayon.gamepadreleased` | btn |
+| `crayon.gamepadaxis(axis, value)` | axis, value |
+
+---
+
+## Complete Examples
+
+### Example 1: Minimal 2D Game
+
+```lua
+local player = { x = 160, y = 120, speed = 100 }
+
+function crayon.init()
+    crayon.window.setTitle("2D Game")
+    crayon.window.setResolution(320, 240)
+    crayon.window.setScalingMode("integer")
+end
+
+function crayon.update(dt)
+    local dx, dy = 0, 0
+    if crayon.key.isDown("a", "left") then dx = dx - 1 end
+    if crayon.key.isDown("d", "right") then dx = dx + 1 end
+    if crayon.key.isDown("w", "up") then dy = dy - 1 end
+    if crayon.key.isDown("s", "down") then dy = dy + 1 end
+    player.x = player.x + dx * player.speed * dt
+    player.y = player.y + dy * player.speed * dt
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0.1, 0.1, 0.15)
+    crayon.graphics.setColor(1, 0.8, 0.2)
+    crayon.graphics.drawRect("fill", player.x - 8, player.y - 8, 16, 16)
+    crayon.graphics.setColor(1, 1, 1)
+    crayon.graphics.drawText("FPS: " .. math.floor(crayon.window.getFps()), 4, 4, 1)
+end
+```
+
+### Example 2: 3D Scene with Physics
+
+```lua
+local cam = { yaw = 0, pitch = -20, dist = 10 }
+local ground, ball
+
+function crayon.init()
+    crayon.window.setResolution(640, 360)
+    crayon.graphics.setRetroEffects({
+        jitterResolution = {320, 180},
+        fog = { startDist = 10, endDist = 50, color = {0.1, 0.1, 0.15} },
+        crt = { scanlines = 0.2, vignette = 0.15 }
+    })
+
+    ground = crayon.physics3d.createPlane(0, 0, 0)
+    ball = crayon.physics3d.createSphere(0, 5, 0, 0.5)
+end
+
+function crayon.update(dt)
+    crayon.physics3d.step(dt)
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0.1, 0.1, 0.15)
+
+    local px, py, pz = ball:getPosition()
+    crayon.graphics.setCamera3d(0, py + 4, 10, -20, 0, 60)
+    crayon.graphics.setLight(0.5, -1, 0.3)
+
+    crayon.graphics.setColor(0.3, 0.4, 0.5)
+    crayon.graphics.drawPlane(0, 0, 0, 20, 20, 0)
+
+    crayon.graphics.setColor(1, 0.3, 0.3)
+    crayon.graphics.drawSphere(px, py, pz, 0.5, 0)
+end
+```
+
+### Example 3: Raycast Picking
+
+```lua
+function crayon.update(dt)
+    if crayon.mouse.isPressed(1) then
+        local mx, my = crayon.mouse.getPosition()
+        local ray = crayon.graphics.getCameraRay(mx, my)
+        local o, d = ray.origin, ray.direction
+
+        local hit, px, py, pz, nx, ny, nz, dist, body =
+            crayon.physics3d.raycast(o.x, o.y, o.z, d.x, d.y, d.z, 1000)
+
+        if hit then
+            print("Hit at", px, py, pz, "distance:", dist)
+        end
+    end
+end
+```
+
+### Example 4: Skeletal Animation
+
+```lua
+local model, animator, physics_skel, pose
+
+function crayon.init()
+    model = crayon.graphics.loadModel("character.glb")
+    animator = model:createAnimator()
+    animator:play("Idle", true)
+
+    physics_skel = model:createPhysicsSkeleton()
+    pose = crayon.physics3d.createSkeletonPose(physics_skel)
+end
+
+function crayon.update(dt)
+    animator:update(dt)
+    animator:applyToPhysicsPose(pose)
+    pose:calculateMatrices()
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0.1, 0.1, 0.15)
+    crayon.graphics.setCamera3d({ position = {0, 2, 5}, target = {0, 1, 0}, fov = 60 })
+    crayon.graphics.drawModelSkinned(model, animator, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0)
+end
+```
+
+### Example 5: Cloth Simulation
+
+```lua
+local cloth
+
+function crayon.init()
+    crayon.window.setResolution(640, 360)
+    cloth = crayon.physics3d.createSoftBodyCloth({
+        x = 0, y = 5, z = 0,
+        width = 4, height = 4,
+        segmentsX = 12, segmentsY = 12,
+        compliance = 0.0,
+        bendCompliance = 0.01,
+        pinCorners = true
+    })
+end
+
+function crayon.update(dt)
+    crayon.physics3d.step(dt)
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0.1, 0.1, 0.15)
+    crayon.graphics.setCamera3d({ position = {0, 4, 8}, target = {0, 3, 0}, fov = 60 })
+
+    local verts = cloth:getVertices()
+    local faces = cloth:getFaces()
+    crayon.graphics.setColor(0.8, 0.3, 0.4)
+
+    for _, f in ipairs(faces) do
+        local p1, p2, p3 = verts[f[1]], verts[f[2]], verts[f[3]]
+        crayon.graphics.drawTriangle3d(p1, p2, p3)
+    end
+end
+```
