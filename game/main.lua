@@ -89,71 +89,71 @@ function crayon.update(dt)
 
     if in_menu then
         -- Menu Navigation
-        if crayon.input.isPressed("up") or crayon.input.isPressed("w") then
+        if crayon.key.isPressed("up", "w") then
             selected_idx = selected_idx - 1
             if selected_idx < 1 then selected_idx = #demo_list end
         end
-        if crayon.input.isPressed("down") or crayon.input.isPressed("s") then
+        if crayon.key.isPressed("down", "s") then
             selected_idx = selected_idx + 1
             if selected_idx > #demo_list then selected_idx = 1 end
         end
 
         -- Direct Key Shortcuts
         for i = 1, 9 do
-            if crayon.input.isPressed(tostring(i)) then
+            if crayon.key.isPressed(tostring(i)) then
                 launch_demo(i)
                 return
             end
         end
-        if (crayon.input.isPressed("0")) then
+        if (crayon.key.isPressed("0")) then
             launch_demo(10)
             return
         end
-        if (crayon.input.isPressed("x")) then
+        if (crayon.key.isPressed("x")) then
             launch_demo(11)
             return
         end
-        if (crayon.input.isPressed("c")) then
+        if (crayon.key.isPressed("c")) then
             launch_demo(12)
             return
         end
-        if (crayon.input.isPressed("v")) then
+        if (crayon.key.isPressed("v")) then
             launch_demo(13)
             return
         end
-        if (crayon.input.isPressed("b")) then
+        if (crayon.key.isPressed("b")) then
             launch_demo(14)
             return
         end
-        if (crayon.input.isPressed("n")) then
+        if (crayon.key.isPressed("n")) then
             launch_demo(15)
             return
         end
-        if (crayon.input.isPressed("m")) then
+        if (crayon.key.isPressed("m")) then
             launch_demo(16)
             return
         end
-        if (crayon.input.isPressed("g")) then
+        if (crayon.key.isPressed("g")) then
             launch_demo(17)
             return
         end
-        if (crayon.input.isPressed("l")) then
+        if (crayon.key.isPressed("l")) then
             launch_demo(18)
             return
         end
-        if (crayon.input.isPressed("p")) then
+        if (crayon.key.isPressed("p")) then
             launch_demo(19)
             return
         end
 
         -- Launch with Enter or Space
-        if crayon.input.isPressed("return") or crayon.input.isPressed("space") then
+        if crayon.key.isPressed("return", "space") then
             launch_demo(selected_idx)
             return
         end
 
         -- Quit
-        if crayon.input.isPressed("escape") then
+        if crayon.key.isPressed("escape") then
             crayon.window.quit()
         end
     else
@@ -164,14 +164,14 @@ function crayon.update(dt)
         local fwd_x, fwd_z = math.cos(rad_yaw), math.sin(rad_yaw)
         local right_x, right_z = -fwd_z, fwd_x
 
-        if crayon.input.isDown("w") then showcase_cam.x = showcase_cam.x + fwd_x * move_speed; showcase_cam.z = showcase_cam.z + fwd_z * move_speed end
-        if crayon.input.isDown("s") then showcase_cam.x = showcase_cam.x - fwd_x * move_speed; showcase_cam.z = showcase_cam.z - fwd_z * move_speed end
-        if crayon.input.isDown("a") then showcase_cam.x = showcase_cam.x - right_x * move_speed; showcase_cam.z = showcase_cam.z - right_z * move_speed end
-        if crayon.input.isDown("d") then showcase_cam.x = showcase_cam.x + right_x * move_speed; showcase_cam.z = showcase_cam.z + right_z * move_speed end
-        if crayon.input.isDown("left") then showcase_cam.yaw = showcase_cam.yaw - 90.0 * dt end
-        if crayon.input.isDown("right") then showcase_cam.yaw = showcase_cam.yaw + 90.0 * dt end
+        if crayon.key.isDown("w") then showcase_cam.x = showcase_cam.x + fwd_x * move_speed; showcase_cam.z = showcase_cam.z + fwd_z * move_speed end
+        if crayon.key.isDown("s") then showcase_cam.x = showcase_cam.x - fwd_x * move_speed; showcase_cam.z = showcase_cam.z - fwd_z * move_speed end
+        if crayon.key.isDown("a") then showcase_cam.x = showcase_cam.x - right_x * move_speed; showcase_cam.z = showcase_cam.z - right_z * move_speed end
+        if crayon.key.isDown("d") then showcase_cam.x = showcase_cam.x + right_x * move_speed; showcase_cam.z = showcase_cam.z + right_z * move_speed end
+        if crayon.key.isDown("left") then showcase_cam.yaw = showcase_cam.yaw - 90.0 * dt end
+        if crayon.key.isDown("right") then showcase_cam.yaw = showcase_cam.yaw + 90.0 * dt end
 
-        if crayon.input.isPressed("escape") then
+        if crayon.key.isPressed("escape") then
             in_menu = true
             crayon.window.setResolution(320, 240)
             crayon.window.setTitle("Crayon Engine - Demo Launcher Hub")

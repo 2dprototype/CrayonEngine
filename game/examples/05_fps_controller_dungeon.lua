@@ -76,25 +76,25 @@ function crayon.update(dt)
     timer = timer + dt
 
     -- Toggle mouse capture with 'M'
-    if crayon.input.isPressed("m") then
+    if crayon.key.isPressed("m") then
         mouse_captured = not mouse_captured
-        crayon.window.setMouseRelative(mouse_captured)
-        crayon.window.showCursor(not mouse_captured)
+        crayon.mouse.setRelativeMode(mouse_captured)
+        crayon.mouse.setVisible(not mouse_captured)
     end
 
     -- Mouse Look
     if mouse_captured then
-        local mdx, mdy = crayon.input.getMouseDelta()
+        local mdx, mdy = crayon.mouse.getDelta()
         local sensitivity = 0.22
         cam.yaw = cam.yaw + mdx * sensitivity
         cam.pitch = math.max(-85.0, math.min(85.0, cam.pitch - mdy * sensitivity))
     end
 
     -- Arrow keys fallback look
-    if crayon.input.isDown("left") then cam.yaw = cam.yaw - 90.0 * dt end
-    if crayon.input.isDown("right") then cam.yaw = cam.yaw + 90.0 * dt end
-    if crayon.input.isDown("up") then cam.pitch = math.min(85.0, cam.pitch + 70.0 * dt) end
-    if crayon.input.isDown("down") then cam.pitch = math.max(-85.0, cam.pitch - 70.0 * dt) end
+    if crayon.key.isDown("left") then cam.yaw = cam.yaw - 90.0 * dt end
+    if crayon.key.isDown("right") then cam.yaw = cam.yaw + 90.0 * dt end
+    if crayon.key.isDown("up") then cam.pitch = math.min(85.0, cam.pitch + 70.0 * dt) end
+    if crayon.key.isDown("down") then cam.pitch = math.max(-85.0, cam.pitch - 70.0 * dt) end
 
     -- FPS WASD Movement
     local move_spd = 3.5 * dt
@@ -105,19 +105,19 @@ function crayon.update(dt)
     local right_z = math.sin(rad_yaw)
 
     local move_x, move_z = 0, 0
-    if crayon.input.isDown("w") then
+    if crayon.key.isDown("w") then
         move_x = move_x + fwd_x * move_spd
         move_z = move_z + fwd_z * move_spd
     end
-    if crayon.input.isDown("s") then
+    if crayon.key.isDown("s") then
         move_x = move_x - fwd_x * move_spd
         move_z = move_z - fwd_z * move_spd
     end
-    if crayon.input.isDown("a") then
+    if crayon.key.isDown("a") then
         move_x = move_x - right_x * move_spd
         move_z = move_z - right_z * move_spd
     end
-    if crayon.input.isDown("d") then
+    if crayon.key.isDown("d") then
         move_x = move_x + right_x * move_spd
         move_z = move_z + right_z * move_spd
     end
@@ -160,11 +160,11 @@ function crayon.update(dt)
         end
     end
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         if mouse_captured then
             mouse_captured = false
-            crayon.window.setMouseRelative(false)
-            crayon.window.showCursor(true)
+            crayon.mouse.setRelativeMode(false)
+            crayon.mouse.setVisible(true)
         else
             crayon.window.quit()
         end

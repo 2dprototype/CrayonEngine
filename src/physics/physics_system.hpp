@@ -306,7 +306,9 @@ public:
     uint32_t create_skeleton_pose(uint32_t skeleton_id);
     bool destroy_skeleton_pose(uint32_t id);
     void skeleton_pose_set_joint(uint32_t pose_id, int joint_idx, const glm::vec3& translation, const glm::quat& rotation);
+    bool skeleton_pose_get_joint(uint32_t pose_id, int joint_idx, glm::vec3& out_translation, glm::quat& out_rotation) const;
     void skeleton_pose_calculate_matrices(uint32_t pose_id);
+    void skeleton_pose_calculate_joint_states(uint32_t pose_id);
     glm::mat4 skeleton_pose_get_joint_matrix(uint32_t pose_id, int joint_idx) const;
     void skeleton_pose_set_root_offset(uint32_t pose_id, const glm::vec3& offset);
     glm::vec3 skeleton_pose_get_root_offset(uint32_t pose_id) const;
@@ -333,6 +335,31 @@ public:
     uint32_t ragdoll_get_body_id(uint32_t ragdoll_id, int part_idx) const;
     int ragdoll_get_part_count(uint32_t ragdoll_id) const;
     uint32_t ragdoll_get_skeleton_id(uint32_t ragdoll_id) const;
+
+    // Velocity & Impulses
+    void ragdoll_set_linear_velocity(uint32_t ragdoll_id, const glm::vec3& vel);
+    void ragdoll_set_linear_and_angular_velocity(uint32_t ragdoll_id, const glm::vec3& linear, const glm::vec3& angular);
+    void ragdoll_add_linear_velocity(uint32_t ragdoll_id, const glm::vec3& vel);
+    void ragdoll_add_impulse(uint32_t ragdoll_id, const glm::vec3& impulse);
+    void ragdoll_add_impulse_to_part(uint32_t ragdoll_id, int part_idx, const glm::vec3& impulse);
+    void ragdoll_add_impulse_to_part_at_pos(uint32_t ragdoll_id, int part_idx, const glm::vec3& impulse, const glm::vec3& pos);
+    void ragdoll_reset_warm_start(uint32_t ragdoll_id);
+
+    // Root & Spatial Queries
+    bool ragdoll_get_root_transform(uint32_t ragdoll_id, glm::vec3& out_pos, glm::quat& out_rot) const;
+    int ragdoll_get_ground_orientation(uint32_t ragdoll_id) const; // 1 = back/face up, -1 = belly/face down, 0 = unknown/side
+    void ragdoll_get_bounds(uint32_t ragdoll_id, glm::vec3& out_min, glm::vec3& out_max) const;
+    glm::vec3 ragdoll_get_part_position(uint32_t ragdoll_id, int part_idx) const;
+    glm::quat ragdoll_get_part_rotation(uint32_t ragdoll_id, int part_idx) const;
+    glm::vec3 ragdoll_get_part_linear_velocity(uint32_t ragdoll_id, int part_idx) const;
+    glm::vec3 ragdoll_get_linear_velocity(uint32_t ragdoll_id) const;
+
+    // Motor Stiffness & Part Configuration
+    void ragdoll_set_motors_stiffness(uint32_t ragdoll_id, float spring_k, float damping_c, float max_torque);
+    void ragdoll_set_part_motor(uint32_t ragdoll_id, int part_idx, float spring_k, float damping_c, float max_torque);
+    void ragdoll_set_part_motion_type(uint32_t ragdoll_id, int part_idx, MotionType motion);
+    void ragdoll_set_part_friction(uint32_t ragdoll_id, int part_idx, float friction);
+    void ragdoll_set_part_restitution(uint32_t ragdoll_id, int part_idx, float restitution);
 
     // ========================================================================
     // Soft Body Simulation (Cloth, Soft Balls, Volumetric Jellies, Cosserat Rods)

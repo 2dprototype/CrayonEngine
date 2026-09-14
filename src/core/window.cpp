@@ -382,6 +382,20 @@ void Window::window_to_virtual(float win_x, float win_y, float& virt_x, float& v
     virt_y = (win_y - static_cast<float>(m_viewport.y)) / scale_y;
 }
 
+void Window::virtual_to_window(float virt_x, float virt_y, float& win_x, float& win_y) const {
+    if (m_virtual_w <= 0 || m_virtual_h <= 0) {
+        win_x = virt_x;
+        win_y = virt_y;
+        return;
+    }
+
+    float scale_x = static_cast<float>(m_viewport.width) / static_cast<float>(m_virtual_w);
+    float scale_y = static_cast<float>(m_viewport.height) / static_cast<float>(m_virtual_h);
+
+    win_x = virt_x * scale_x + static_cast<float>(m_viewport.x);
+    win_y = virt_y * scale_y + static_cast<float>(m_viewport.y);
+}
+
 void Window::update_viewport() {
     switch (m_scaling_mode) {
         case ScalingMode::Integer: {

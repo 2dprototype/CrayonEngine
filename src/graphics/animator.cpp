@@ -184,6 +184,27 @@ void Animator::cross_fade(const std::string& target_clip, float duration, bool l
     m_target_hints.assign(clip->channels.size(), 0);
 }
 
+void Animator::cross_fade_from_current_pose(const std::string& target_clip, float duration, bool loop) {
+    if (!m_model) return;
+
+    const auto* clip = m_model->find_animation(target_clip);
+    if (!clip) return;
+
+    m_frozen_transforms = m_final_transforms;
+    m_target_clip = clip;
+    m_target_clip_name = target_clip;
+    m_target_time = 0.0f;
+    m_target_loop = loop;
+    m_fade_time = 0.0f;
+    m_fade_duration = (duration > 0.001f) ? duration : 0.001f;
+    m_cross_fading = true;
+    m_fade_from_frozen_pose = true;
+    m_blend_tree_active = false;
+    m_playing = true;
+
+    m_target_hints.assign(clip->channels.size(), 0);
+}
+
 void Animator::blend(const std::string& clip_a, const std::string& clip_b, float factor) {
     if (!m_model) return;
 
@@ -320,6 +341,41 @@ void Animator::update(float dt) {
             m_base_transforms[i].rotation = glm::slerp(m_base_transforms[i].rotation, m_temp_transforms[i].rotation, m_blend_factor);
             m_base_transforms[i].scale = glm::mix(m_base_transforms[i].scale, m_temp_transforms[i].scale, m_blend_factor);
         }
+    } else if (m_fade_from_frozen_pose && m_target_clip) {
+        // Cross-fade starting from a frozen/resting pose (e.g. recovering from ragdoll)
+        m_fade_time += dt;
+        float alpha = std::clamp(m_fade_time / m_fade_duration, 0.0f, 1.0f);
+
+        m_target_time += dt * m_speed;
+        if (m_target_clip->duration > 0.0f) {
+            if (m_target_loop) {
+                m_target_time = std::fmod(m_target_time, m_target_clip->duration);
+                if (m_target_time < 0.0f) m_target_time += m_target_clip->duration;
+            } else if (m_target_time > m_target_clip->duration) {
+                m_target_time = m_target_clip->duration;
+            }
+        }
+
+        m_temp_transforms = m_bind_transforms;
+        sample_clip_to(m_target_clip, m_target_time, m_target_hints, m_temp_transforms);
+
+        for (size_t i = 0; i < m_base_transforms.size(); ++i) {
+            const auto& src = (i < m_frozen_transforms.size()) ? m_frozen_transforms[i] : m_bind_transforms[i];
+            m_base_transforms[i].translation = glm::mix(src.translation, m_temp_transforms[i].translation, alpha);
+            m_base_transforms[i].rotation = glm::slerp(src.rotation, m_temp_transforms[i].rotation, alpha);
+            m_base_transforms[i].scale = glm::mix(src.scale, m_temp_transforms[i].scale, alpha);
+        }
+
+        if (alpha >= 1.0f) {
+            m_cross_fading = false;
+            m_fade_from_frozen_pose = false;
+            m_current_clip = m_target_clip;
+            m_current_clip_name = m_target_clip_name;
+            m_playback_time = m_target_time;
+            m_loop = m_target_loop;
+            m_current_hints = std::move(m_target_hints);
+            m_target_clip = nullptr;
+        }
     } else if (m_current_clip) {
         // Advance current clip
         m_playback_time += dt * m_speed;
@@ -440,7 +496,7 @@ void Animator::evaluate_matrices() {
     }
 }
 
-bool Animator::apply_to_physics_pose(uint32_t pose_id) const {
+bool Animator::apply_to_physics_pose(uint32_t pose_id, const glm::vec3* root_pos, const glm::quat* root_rot) const {
     if (!m_model || pose_id == 0) return false;
     const auto* skin = m_model->get_skin(0);
     if (!skin) return false;
@@ -453,8 +509,17 @@ bool Animator::apply_to_physics_pose(uint32_t pose_id) const {
         int node_idx = skin->joints[j].node_index;
         if (node_idx >= 0 && node_idx < (int)m_final_transforms.size()) {
             const auto& tr = m_final_transforms[node_idx];
-            ps.skeleton_pose_set_joint(pose_id, j, tr.translation, tr.rotation);
+            glm::vec3 t = tr.translation;
+            glm::quat r = tr.rotation;
+            if (j == 0 && root_rot) {
+                r = (*root_rot) * r;
+            }
+            ps.skeleton_pose_set_joint(pose_id, j, t, r);
         }
+    }
+
+    if (root_pos) {
+        ps.skeleton_pose_set_root_offset(pose_id, *root_pos);
     }
 
     ps.skeleton_pose_calculate_matrices(pose_id);
@@ -470,12 +535,18 @@ bool Animator::capture_physics_pose(uint32_t pose_id) {
     int count = ps.skeleton_pose_get_joint_count(pose_id);
     int apply_count = std::min((int)skin->joints.size(), count);
 
+    // Ensure joint states are calculated from joint matrices in the pose
+    ps.skeleton_pose_calculate_joint_states(pose_id);
+
     for (int j = 0; j < apply_count; ++j) {
         int node_idx = skin->joints[j].node_index;
         if (node_idx >= 0 && node_idx < (int)m_base_transforms.size()) {
-            glm::mat4 m = ps.skeleton_pose_get_joint_matrix(pose_id, j);
-            m_base_transforms[node_idx].translation = glm::vec3(m[3]);
-            m_base_transforms[node_idx].rotation = glm::quat_cast(m);
+            glm::vec3 t;
+            glm::quat r;
+            if (ps.skeleton_pose_get_joint(pose_id, j, t, r)) {
+                m_base_transforms[node_idx].translation = t;
+                m_base_transforms[node_idx].rotation = r;
+            }
         }
     }
 

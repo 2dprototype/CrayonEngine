@@ -1737,7 +1737,7 @@ void PhysicsSystem::vehicle_set_input_wheeled(uint32_t id, float forward, float 
 void PhysicsSystem::vehicle_set_input_tracked(uint32_t id, float left_ratio, float right_ratio, float brake) {
     auto it = m_impl->vehicles.find(id);
     if (it != m_impl->vehicles.end() && it->second.constraint) {
-        auto* controller = dynamic_cast<JPH::TrackedVehicleController*>(it->second.constraint->GetController());
+        auto* controller = static_cast<JPH::TrackedVehicleController*>(it->second.constraint->GetController());
         if (controller) {
             controller->SetDriverInput(1.0f, left_ratio, right_ratio, brake);
         }
@@ -1747,7 +1747,7 @@ void PhysicsSystem::vehicle_set_input_tracked(uint32_t id, float left_ratio, flo
 void PhysicsSystem::vehicle_set_input_motorcycle(uint32_t id, float forward, float steer, float brake) {
     auto it = m_impl->vehicles.find(id);
     if (it != m_impl->vehicles.end() && it->second.constraint) {
-        auto* controller = dynamic_cast<JPH::MotorcycleController*>(it->second.constraint->GetController());
+        auto* controller = static_cast<JPH::MotorcycleController*>(it->second.constraint->GetController());
         if (controller) {
             controller->SetDriverInput(forward, steer, brake, 0.0f);
         }
@@ -1757,7 +1757,7 @@ void PhysicsSystem::vehicle_set_input_motorcycle(uint32_t id, float forward, flo
 void PhysicsSystem::vehicle_enable_lean_controller(uint32_t id, bool enable) {
     auto it = m_impl->vehicles.find(id);
     if (it != m_impl->vehicles.end() && it->second.constraint) {
-        auto* controller = dynamic_cast<JPH::MotorcycleController*>(it->second.constraint->GetController());
+        auto* controller = static_cast<JPH::MotorcycleController*>(it->second.constraint->GetController());
         if (controller) {
             controller->EnableLeanController(enable);
         }
@@ -1767,7 +1767,7 @@ void PhysicsSystem::vehicle_enable_lean_controller(uint32_t id, bool enable) {
 bool PhysicsSystem::vehicle_is_lean_controller_enabled(uint32_t id) const {
     auto it = m_impl->vehicles.find(id);
     if (it != m_impl->vehicles.end() && it->second.constraint) {
-        auto* controller = dynamic_cast<const JPH::MotorcycleController*>(it->second.constraint->GetController());
+        auto* controller = static_cast<const JPH::MotorcycleController*>(it->second.constraint->GetController());
         if (controller) {
             return controller->IsLeanControllerEnabled();
         }
@@ -1895,6 +1895,26 @@ void PhysicsSystem::skeleton_pose_calculate_matrices(uint32_t pose_id) {
     if (it != m_impl->skeleton_poses.end() && it->second) {
         it->second->CalculateJointMatrices();
     }
+}
+
+void PhysicsSystem::skeleton_pose_calculate_joint_states(uint32_t pose_id) {
+    auto it = m_impl->skeleton_poses.find(pose_id);
+    if (it != m_impl->skeleton_poses.end() && it->second) {
+        it->second->CalculateJointStates();
+    }
+}
+
+bool PhysicsSystem::skeleton_pose_get_joint(uint32_t pose_id, int joint_idx, glm::vec3& out_translation, glm::quat& out_rotation) const {
+    auto it = m_impl->skeleton_poses.find(pose_id);
+    if (it != m_impl->skeleton_poses.end() && it->second) {
+        if (joint_idx >= 0 && joint_idx < (int)it->second->GetJointCount()) {
+            const auto& j = it->second->GetJoint(joint_idx);
+            out_translation = to_glm_vec3(j.mTranslation);
+            out_rotation = to_glm_quat(j.mRotation);
+            return true;
+        }
+    }
+    return false;
 }
 
 glm::mat4 PhysicsSystem::skeleton_pose_get_joint_matrix(uint32_t pose_id, int joint_idx) const {
@@ -2027,6 +2047,7 @@ uint32_t PhysicsSystem::create_ragdoll(const RagdollConfig& config) {
         part.mMassPropertiesOverride.mMass = pcfg.mass;
         part.mOverrideMassProperties = JPH::EOverrideMassProperties::CalculateInertia;
         part.mFriction = pcfg.friction;
+        part.mAllowDynamicOrKinematic = true;
 
         if (pcfg.parent_joint_index >= 0 && pcfg.parent_joint_index < (int)config.parts.size()) {
             const auto& parent_cfg = config.parts[pcfg.parent_joint_index];
@@ -2183,6 +2204,233 @@ uint32_t PhysicsSystem::ragdoll_get_skeleton_id(uint32_t ragdoll_id) const {
         return it->second.skeleton_id;
     }
     return 0;
+}
+
+void PhysicsSystem::ragdoll_set_linear_velocity(uint32_t ragdoll_id, const glm::vec3& vel) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        it->second.ragdoll->SetLinearVelocity(to_jolt_vec3(vel));
+    }
+}
+
+void PhysicsSystem::ragdoll_set_linear_and_angular_velocity(uint32_t ragdoll_id, const glm::vec3& linear, const glm::vec3& angular) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        it->second.ragdoll->SetLinearAndAngularVelocity(to_jolt_vec3(linear), to_jolt_vec3(angular));
+    }
+}
+
+void PhysicsSystem::ragdoll_add_linear_velocity(uint32_t ragdoll_id, const glm::vec3& vel) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        it->second.ragdoll->AddLinearVelocity(to_jolt_vec3(vel));
+    }
+}
+
+void PhysicsSystem::ragdoll_add_impulse(uint32_t ragdoll_id, const glm::vec3& impulse) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        it->second.ragdoll->AddImpulse(to_jolt_vec3(impulse));
+    }
+}
+
+void PhysicsSystem::ragdoll_add_impulse_to_part(uint32_t ragdoll_id, int part_idx, const glm::vec3& impulse) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        if (part_idx >= 0 && part_idx < (int)it->second.ragdoll->GetBodyCount()) {
+            JPH::BodyID bid = it->second.ragdoll->GetBodyID(part_idx);
+            m_impl->physics_system.GetBodyInterface().AddImpulse(bid, to_jolt_vec3(impulse));
+        }
+    }
+}
+
+void PhysicsSystem::ragdoll_add_impulse_to_part_at_pos(uint32_t ragdoll_id, int part_idx, const glm::vec3& impulse, const glm::vec3& pos) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        if (part_idx >= 0 && part_idx < (int)it->second.ragdoll->GetBodyCount()) {
+            JPH::BodyID bid = it->second.ragdoll->GetBodyID(part_idx);
+            m_impl->physics_system.GetBodyInterface().AddImpulse(bid, to_jolt_vec3(impulse), to_jolt_rvec3(pos));
+        }
+    }
+}
+
+void PhysicsSystem::ragdoll_reset_warm_start(uint32_t ragdoll_id) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        it->second.ragdoll->ResetWarmStart();
+    }
+}
+
+bool PhysicsSystem::ragdoll_get_root_transform(uint32_t ragdoll_id, glm::vec3& out_pos, glm::quat& out_rot) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        JPH::RVec3 p;
+        JPH::Quat q;
+        it->second.ragdoll->GetRootTransform(p, q);
+        out_pos = to_glm_vec3(p);
+        out_rot = to_glm_quat(q);
+        return true;
+    }
+    return false;
+}
+
+int PhysicsSystem::ragdoll_get_ground_orientation(uint32_t ragdoll_id) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it == m_impl->ragdolls.end() || !it->second.ragdoll) return 0;
+    auto* ragdoll = it->second.ragdoll.GetPtr();
+    if (ragdoll->GetBodyCount() == 0) return 0;
+
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    int check_idx = 0;
+    if (ragdoll->GetBodyCount() > 2) {
+        check_idx = 1; // Spine or Chest usually
+    }
+    JPH::BodyID bid = ragdoll->GetBodyID(check_idx);
+    JPH::Quat rot = bi.GetRotation(bid);
+    JPH::Vec3 fwd = rot.RotateAxisZ();
+    if (std::abs(fwd.GetY()) < 0.25f) {
+        JPH::Vec3 up = rot.RotateAxisY();
+        if (up.GetY() > 0.35f) return 1;
+        if (up.GetY() < -0.35f) return -1;
+    }
+    if (fwd.GetY() > 0.3f) return 1;
+    if (fwd.GetY() < -0.3f) return -1;
+    return 0;
+}
+
+void PhysicsSystem::ragdoll_get_bounds(uint32_t ragdoll_id, glm::vec3& out_min, glm::vec3& out_max) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        JPH::AABox box = it->second.ragdoll->GetWorldSpaceBounds();
+        out_min = to_glm_vec3(box.mMin);
+        out_max = to_glm_vec3(box.mMax);
+    } else {
+        out_min = glm::vec3(0.0f);
+        out_max = glm::vec3(0.0f);
+    }
+}
+
+glm::vec3 PhysicsSystem::ragdoll_get_part_position(uint32_t ragdoll_id, int part_idx) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        if (part_idx >= 0 && part_idx < (int)it->second.ragdoll->GetBodyCount()) {
+            JPH::BodyID bid = it->second.ragdoll->GetBodyID(part_idx);
+            return to_glm_vec3(m_impl->physics_system.GetBodyInterface().GetPosition(bid));
+        }
+    }
+    return glm::vec3(0.0f);
+}
+
+glm::quat PhysicsSystem::ragdoll_get_part_rotation(uint32_t ragdoll_id, int part_idx) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        if (part_idx >= 0 && part_idx < (int)it->second.ragdoll->GetBodyCount()) {
+            JPH::BodyID bid = it->second.ragdoll->GetBodyID(part_idx);
+            return to_glm_quat(m_impl->physics_system.GetBodyInterface().GetRotation(bid));
+        }
+    }
+    return glm::quat(1.0f, 0.0f, 0.0f, 0.0f);
+}
+
+glm::vec3 PhysicsSystem::ragdoll_get_part_linear_velocity(uint32_t ragdoll_id, int part_idx) const {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        if (part_idx >= 0 && part_idx < (int)it->second.ragdoll->GetBodyCount()) {
+            JPH::BodyID bid = it->second.ragdoll->GetBodyID(part_idx);
+            return to_glm_vec3(m_impl->physics_system.GetBodyInterface().GetLinearVelocity(bid));
+        }
+    }
+    return glm::vec3(0.0f);
+}
+
+glm::vec3 PhysicsSystem::ragdoll_get_linear_velocity(uint32_t ragdoll_id) const {
+    return ragdoll_get_part_linear_velocity(ragdoll_id, 0);
+}
+
+void PhysicsSystem::ragdoll_set_motors_stiffness(uint32_t ragdoll_id, float spring_k, float damping_c, float max_torque) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it == m_impl->ragdolls.end() || !it->second.ragdoll) return;
+    auto* ragdoll = it->second.ragdoll.GetPtr();
+
+    size_t ccount = ragdoll->GetConstraintCount();
+    for (size_t i = 0; i < ccount; ++i) {
+        auto* c = ragdoll->GetConstraint(static_cast<int>(i));
+        if (c && c->GetSubType() == JPH::EConstraintSubType::SwingTwist) {
+            auto* st = static_cast<JPH::SwingTwistConstraint*>(c);
+            if (spring_k <= 0.001f) {
+                st->SetSwingMotorState(JPH::EMotorState::Off);
+                st->SetTwistMotorState(JPH::EMotorState::Off);
+            } else {
+                st->SetSwingMotorState(JPH::EMotorState::Position);
+                st->SetTwistMotorState(JPH::EMotorState::Position);
+                float freq = std::max(0.5f, std::sqrt(spring_k / 50.0f) / 6.28f);
+                st->GetSwingMotorSettings().mSpringSettings.mFrequency = freq;
+                st->GetTwistMotorSettings().mSpringSettings.mFrequency = freq;
+                st->GetSwingMotorSettings().mSpringSettings.mDamping = damping_c;
+                st->GetTwistMotorSettings().mSpringSettings.mDamping = damping_c;
+                st->GetSwingMotorSettings().mMaxTorqueLimit = max_torque;
+                st->GetTwistMotorSettings().mMaxTorqueLimit = max_torque;
+            }
+        }
+    }
+}
+
+void PhysicsSystem::ragdoll_set_part_motor(uint32_t ragdoll_id, int part_idx, float spring_k, float damping_c, float max_torque) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it == m_impl->ragdolls.end() || !it->second.ragdoll || !it->second.settings) return;
+    auto* ragdoll = it->second.ragdoll.GetPtr();
+
+    int c_idx = it->second.settings->GetConstraintIndexForBodyIndex(part_idx);
+    if (c_idx >= 0 && c_idx < (int)ragdoll->GetConstraintCount()) {
+        auto* c = ragdoll->GetConstraint(c_idx);
+        if (c && c->GetSubType() == JPH::EConstraintSubType::SwingTwist) {
+            auto* st = static_cast<JPH::SwingTwistConstraint*>(c);
+            if (spring_k <= 0.001f) {
+                st->SetSwingMotorState(JPH::EMotorState::Off);
+                st->SetTwistMotorState(JPH::EMotorState::Off);
+            } else {
+                st->SetSwingMotorState(JPH::EMotorState::Position);
+                st->SetTwistMotorState(JPH::EMotorState::Position);
+                float freq = std::max(0.5f, std::sqrt(spring_k / 50.0f) / 6.28f);
+                st->GetSwingMotorSettings().mSpringSettings.mFrequency = freq;
+                st->GetTwistMotorSettings().mSpringSettings.mFrequency = freq;
+                st->GetSwingMotorSettings().mSpringSettings.mDamping = damping_c;
+                st->GetTwistMotorSettings().mSpringSettings.mDamping = damping_c;
+                st->GetSwingMotorSettings().mMaxTorqueLimit = max_torque;
+                st->GetTwistMotorSettings().mMaxTorqueLimit = max_torque;
+            }
+        }
+    }
+}
+
+void PhysicsSystem::ragdoll_set_part_motion_type(uint32_t ragdoll_id, int part_idx, MotionType motion) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        if (part_idx >= 0 && part_idx < (int)it->second.ragdoll->GetBodyCount()) {
+            JPH::BodyID bid = it->second.ragdoll->GetBodyID(part_idx);
+            m_impl->physics_system.GetBodyInterface().SetMotionType(bid, to_jolt_motion(motion), JPH::EActivation::Activate);
+        }
+    }
+}
+
+void PhysicsSystem::ragdoll_set_part_friction(uint32_t ragdoll_id, int part_idx, float friction) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        if (part_idx >= 0 && part_idx < (int)it->second.ragdoll->GetBodyCount()) {
+            JPH::BodyID bid = it->second.ragdoll->GetBodyID(part_idx);
+            m_impl->physics_system.GetBodyInterface().SetFriction(bid, friction);
+        }
+    }
+}
+
+void PhysicsSystem::ragdoll_set_part_restitution(uint32_t ragdoll_id, int part_idx, float restitution) {
+    auto it = m_impl->ragdolls.find(ragdoll_id);
+    if (it != m_impl->ragdolls.end() && it->second.ragdoll) {
+        if (part_idx >= 0 && part_idx < (int)it->second.ragdoll->GetBodyCount()) {
+            JPH::BodyID bid = it->second.ragdoll->GetBodyID(part_idx);
+            m_impl->physics_system.GetBodyInterface().SetRestitution(bid, restitution);
+        }
+    }
 }
 
 // ============================================================================

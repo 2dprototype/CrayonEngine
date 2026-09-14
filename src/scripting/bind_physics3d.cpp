@@ -1403,6 +1403,211 @@ static int l_ragdoll_get_skeleton_id(lua_State* L) {
     return 1;
 }
 
+static int l_ragdoll_set_linear_velocity(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float z = static_cast<float>(luaL_checknumber(L, 4));
+    r->physics->ragdoll_set_linear_velocity(r->id, glm::vec3(x, y, z));
+    return 0;
+}
+
+static int l_ragdoll_set_linear_and_angular_velocity(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    float lx = static_cast<float>(luaL_checknumber(L, 2));
+    float ly = static_cast<float>(luaL_checknumber(L, 3));
+    float lz = static_cast<float>(luaL_checknumber(L, 4));
+    float ax = static_cast<float>(luaL_checknumber(L, 5));
+    float ay = static_cast<float>(luaL_checknumber(L, 6));
+    float az = static_cast<float>(luaL_checknumber(L, 7));
+    r->physics->ragdoll_set_linear_and_angular_velocity(r->id, glm::vec3(lx, ly, lz), glm::vec3(ax, ay, az));
+    return 0;
+}
+
+static int l_ragdoll_add_linear_velocity(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float z = static_cast<float>(luaL_checknumber(L, 4));
+    r->physics->ragdoll_add_linear_velocity(r->id, glm::vec3(x, y, z));
+    return 0;
+}
+
+static int l_ragdoll_add_impulse(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float z = static_cast<float>(luaL_checknumber(L, 4));
+    r->physics->ragdoll_add_impulse(r->id, glm::vec3(x, y, z));
+    return 0;
+}
+
+static int l_ragdoll_add_impulse_to_part(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    float x = static_cast<float>(luaL_checknumber(L, 3));
+    float y = static_cast<float>(luaL_checknumber(L, 4));
+    float z = static_cast<float>(luaL_checknumber(L, 5));
+    r->physics->ragdoll_add_impulse_to_part(r->id, part_idx, glm::vec3(x, y, z));
+    return 0;
+}
+
+static int l_ragdoll_add_impulse_to_part_at_pos(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    float ix = static_cast<float>(luaL_checknumber(L, 3));
+    float iy = static_cast<float>(luaL_checknumber(L, 4));
+    float iz = static_cast<float>(luaL_checknumber(L, 5));
+    float px = static_cast<float>(luaL_checknumber(L, 6));
+    float py = static_cast<float>(luaL_checknumber(L, 7));
+    float pz = static_cast<float>(luaL_checknumber(L, 8));
+    r->physics->ragdoll_add_impulse_to_part_at_pos(r->id, part_idx, glm::vec3(ix, iy, iz), glm::vec3(px, py, pz));
+    return 0;
+}
+
+static int l_ragdoll_reset_warm_start(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    r->physics->ragdoll_reset_warm_start(r->id);
+    return 0;
+}
+
+static int l_ragdoll_get_root_transform(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    glm::vec3 pos(0.0f);
+    glm::quat rot(1.0f, 0.0f, 0.0f, 0.0f);
+    bool ok = r->physics->ragdoll_get_root_transform(r->id, pos, rot);
+    if (!ok) return 0;
+    lua_pushnumber(L, pos.x);
+    lua_pushnumber(L, pos.y);
+    lua_pushnumber(L, pos.z);
+    lua_pushnumber(L, rot.x);
+    lua_pushnumber(L, rot.y);
+    lua_pushnumber(L, rot.z);
+    lua_pushnumber(L, rot.w);
+    return 7;
+}
+
+static int l_ragdoll_get_ground_orientation(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int ori = r->physics->ragdoll_get_ground_orientation(r->id);
+    if (ori > 0) {
+        lua_pushstring(L, "back");
+    } else if (ori < 0) {
+        lua_pushstring(L, "belly");
+    } else {
+        lua_pushstring(L, "unknown");
+    }
+    return 1;
+}
+
+static int l_ragdoll_get_bounds(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    glm::vec3 min_b(0.0f), max_b(0.0f);
+    r->physics->ragdoll_get_bounds(r->id, min_b, max_b);
+    lua_pushnumber(L, min_b.x);
+    lua_pushnumber(L, min_b.y);
+    lua_pushnumber(L, min_b.z);
+    lua_pushnumber(L, max_b.x);
+    lua_pushnumber(L, max_b.y);
+    lua_pushnumber(L, max_b.z);
+    return 6;
+}
+
+static int l_ragdoll_get_part_position(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    glm::vec3 p = r->physics->ragdoll_get_part_position(r->id, part_idx);
+    lua_pushnumber(L, p.x);
+    lua_pushnumber(L, p.y);
+    lua_pushnumber(L, p.z);
+    return 3;
+}
+
+static int l_ragdoll_get_part_rotation(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    glm::quat q = r->physics->ragdoll_get_part_rotation(r->id, part_idx);
+    lua_pushnumber(L, q.x);
+    lua_pushnumber(L, q.y);
+    lua_pushnumber(L, q.z);
+    lua_pushnumber(L, q.w);
+    return 4;
+}
+
+static int l_ragdoll_get_part_linear_velocity(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    glm::vec3 v = r->physics->ragdoll_get_part_linear_velocity(r->id, part_idx);
+    lua_pushnumber(L, v.x);
+    lua_pushnumber(L, v.y);
+    lua_pushnumber(L, v.z);
+    return 3;
+}
+
+static int l_ragdoll_get_linear_velocity(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    glm::vec3 v = r->physics->ragdoll_get_linear_velocity(r->id);
+    lua_pushnumber(L, v.x);
+    lua_pushnumber(L, v.y);
+    lua_pushnumber(L, v.z);
+    return 3;
+}
+
+static int l_ragdoll_set_motors_stiffness(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    float k = static_cast<float>(luaL_checknumber(L, 2));
+    float c = static_cast<float>(luaL_optnumber(L, 3, std::sqrt(std::max(0.0f, k)) * 2.0f));
+    float max_torque = static_cast<float>(luaL_optnumber(L, 4, 500.0f));
+    r->physics->ragdoll_set_motors_stiffness(r->id, k, c, max_torque);
+    return 0;
+}
+
+static int l_ragdoll_set_part_motor(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    float k = static_cast<float>(luaL_checknumber(L, 3));
+    float c = static_cast<float>(luaL_optnumber(L, 4, std::sqrt(std::max(0.0f, k)) * 2.0f));
+    float max_torque = static_cast<float>(luaL_optnumber(L, 5, 500.0f));
+    r->physics->ragdoll_set_part_motor(r->id, part_idx, k, c, max_torque);
+    return 0;
+}
+
+static int l_ragdoll_set_part_motion_type(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    MotionType motion = parse_motion_type(L, 3);
+    r->physics->ragdoll_set_part_motion_type(r->id, part_idx, motion);
+    return 0;
+}
+
+static int l_ragdoll_set_part_friction(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    float friction = static_cast<float>(luaL_checknumber(L, 3));
+    r->physics->ragdoll_set_part_friction(r->id, part_idx, friction);
+    return 0;
+}
+
+static int l_ragdoll_set_part_restitution(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    float restitution = static_cast<float>(luaL_checknumber(L, 3));
+    r->physics->ragdoll_set_part_restitution(r->id, part_idx, restitution);
+    return 0;
+}
+
+static int l_ragdoll_get_body(lua_State* L) {
+    auto* r = check_ragdoll(L, 1);
+    int part_idx = static_cast<int>(luaL_checkinteger(L, 2));
+    uint32_t bid = r->physics->ragdoll_get_body_id(r->id, part_idx);
+    if (!bid || !r->physics->is_body_valid(bid)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    push_body_userdata(L, bid, r->physics);
+    return 1;
+}
+
 static int l_ragdoll_tostring(lua_State* L) {
     auto* r = static_cast<LuaPhysics3DRagdoll*>(luaL_checkudata(L, 1, "Physics3D.Ragdoll"));
     char buf[80];
@@ -1798,6 +2003,17 @@ static int l_physics_get_body_count(lua_State* L) {
     lua_pushinteger(L, Engine::get().get_physics().get_num_bodies());
     lua_pushinteger(L, Engine::get().get_physics().get_num_active_bodies());
     return 2;
+}
+
+static int l_physics_get_body(lua_State* L) {
+    uint32_t bid = static_cast<uint32_t>(luaL_checkinteger(L, 1));
+    auto& ps = Engine::get().get_physics();
+    if (!ps.is_body_valid(bid)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    push_body_userdata(L, bid, &ps);
+    return 1;
 }
 
 static int l_physics_overlap_sphere(lua_State* L) {
@@ -2625,6 +2841,29 @@ static void register_ragdoll_metatable(lua_State* L) {
     lua_pushcfunction(L, l_ragdoll_get_body_id); lua_setfield(L, -2, "getBodyId");
     lua_pushcfunction(L, l_ragdoll_get_part_count); lua_setfield(L, -2, "getPartCount");
     lua_pushcfunction(L, l_ragdoll_get_skeleton_id); lua_setfield(L, -2, "getSkeletonId");
+
+    lua_pushcfunction(L, l_ragdoll_set_linear_velocity); lua_setfield(L, -2, "setLinearVelocity");
+    lua_pushcfunction(L, l_ragdoll_set_linear_and_angular_velocity); lua_setfield(L, -2, "setLinearAndAngularVelocity");
+    lua_pushcfunction(L, l_ragdoll_add_linear_velocity); lua_setfield(L, -2, "addLinearVelocity");
+    lua_pushcfunction(L, l_ragdoll_add_impulse); lua_setfield(L, -2, "addImpulse");
+    lua_pushcfunction(L, l_ragdoll_add_impulse_to_part); lua_setfield(L, -2, "addImpulseToPart");
+    lua_pushcfunction(L, l_ragdoll_add_impulse_to_part_at_pos); lua_setfield(L, -2, "addImpulseToPartAtPos");
+    lua_pushcfunction(L, l_ragdoll_reset_warm_start); lua_setfield(L, -2, "resetWarmStart");
+
+    lua_pushcfunction(L, l_ragdoll_get_root_transform); lua_setfield(L, -2, "getRootTransform");
+    lua_pushcfunction(L, l_ragdoll_get_ground_orientation); lua_setfield(L, -2, "getGroundOrientation");
+    lua_pushcfunction(L, l_ragdoll_get_bounds); lua_setfield(L, -2, "getBounds");
+    lua_pushcfunction(L, l_ragdoll_get_part_position); lua_setfield(L, -2, "getPartPosition");
+    lua_pushcfunction(L, l_ragdoll_get_part_rotation); lua_setfield(L, -2, "getPartRotation");
+    lua_pushcfunction(L, l_ragdoll_get_part_linear_velocity); lua_setfield(L, -2, "getPartLinearVelocity");
+    lua_pushcfunction(L, l_ragdoll_get_linear_velocity); lua_setfield(L, -2, "getLinearVelocity");
+
+    lua_pushcfunction(L, l_ragdoll_set_motors_stiffness); lua_setfield(L, -2, "setMotorsStiffness");
+    lua_pushcfunction(L, l_ragdoll_set_part_motor); lua_setfield(L, -2, "setPartMotor");
+    lua_pushcfunction(L, l_ragdoll_set_part_motion_type); lua_setfield(L, -2, "setPartMotionType");
+    lua_pushcfunction(L, l_ragdoll_set_part_friction); lua_setfield(L, -2, "setPartFriction");
+    lua_pushcfunction(L, l_ragdoll_set_part_restitution); lua_setfield(L, -2, "setPartRestitution");
+    lua_pushcfunction(L, l_ragdoll_get_body); lua_setfield(L, -2, "getBody");
 
     lua_pushcfunction(L, l_ragdoll_tostring); lua_setfield(L, -2, "__tostring");
     lua_pushcfunction(L, l_ragdoll_gc); lua_setfield(L, -2, "__gc");
@@ -3546,6 +3785,9 @@ void register_physics3d_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_physics_get_body_count);
     lua_setfield(L, -2, "getBodyCount");
+
+    lua_pushcfunction(L, l_physics_get_body);
+    lua_setfield(L, -2, "getBody");
 
     lua_pushcfunction(L, l_physics_overlap_sphere);
     lua_setfield(L, -2, "overlapSphere");

@@ -37,6 +37,7 @@ public:
 
     // Smooth transition / Crossfade
     void cross_fade(const std::string& target_clip, float duration, bool loop = true);
+    void cross_fade_from_current_pose(const std::string& target_clip, float duration, bool loop = true);
 
     // 1D Locomotion Blend Tree (walk / run phase synchronized)
     void blend(const std::string& clip_a, const std::string& clip_b, float factor);
@@ -56,7 +57,7 @@ public:
     std::shared_ptr<Model3D> get_model() const { return m_model; }
 
     // Physics Bridge
-    bool apply_to_physics_pose(uint32_t pose_id) const;
+    bool apply_to_physics_pose(uint32_t pose_id, const glm::vec3* root_pos = nullptr, const glm::quat* root_rot = nullptr) const;
     bool capture_physics_pose(uint32_t pose_id);
 
 private:
@@ -77,6 +78,8 @@ private:
 
     // Cross-fade State
     bool m_cross_fading = false;
+    bool m_fade_from_frozen_pose = false;
+    std::vector<NodeTransform> m_frozen_transforms;
     float m_fade_time = 0.0f;
     float m_fade_duration = 0.2f;
     float m_target_time = 0.0f;

@@ -669,9 +669,39 @@ static int l_animator_apply_to_physics_pose(lua_State* L) {
         luaL_error(L, "invalid SkeletonPose passed to applyToPhysicsPose");
         return 0;
     }
-    bool ok = anim->apply_to_physics_pose(pose->id);
+
+    glm::vec3 root_pos(0.0f);
+    const glm::vec3* p_root_pos = nullptr;
+    if (lua_isnumber(L, 3) && lua_isnumber(L, 4) && lua_isnumber(L, 5)) {
+        root_pos.x = static_cast<float>(lua_tonumber(L, 3));
+        root_pos.y = static_cast<float>(lua_tonumber(L, 4));
+        root_pos.z = static_cast<float>(lua_tonumber(L, 5));
+        p_root_pos = &root_pos;
+    }
+
+    glm::quat root_rot(1.0f, 0.0f, 0.0f, 0.0f);
+    const glm::quat* p_root_rot = nullptr;
+    if (lua_isnumber(L, 6) && lua_isnumber(L, 7) && lua_isnumber(L, 8) && lua_isnumber(L, 9)) {
+        root_rot.x = static_cast<float>(lua_tonumber(L, 6));
+        root_rot.y = static_cast<float>(lua_tonumber(L, 7));
+        root_rot.z = static_cast<float>(lua_tonumber(L, 8));
+        root_rot.w = static_cast<float>(lua_tonumber(L, 9));
+        p_root_rot = &root_rot;
+    }
+
+    bool ok = anim->apply_to_physics_pose(pose->id, p_root_pos, p_root_rot);
     lua_pushboolean(L, ok);
     return 1;
+}
+
+static int l_animator_cross_fade_from_current_pose(lua_State* L) {
+    auto anim = check_animator(L, 1);
+    if (!anim) return 0;
+    std::string target_clip = luaL_checkstring(L, 2);
+    float duration = static_cast<float>(luaL_optnumber(L, 3, 0.2));
+    bool loop = lua_isnoneornil(L, 4) ? true : lua_toboolean(L, 4);
+    anim->cross_fade_from_current_pose(target_clip, duration, loop);
+    return 0;
 }
 
 static int l_animator_capture_physics_pose(lua_State* L) {
@@ -752,6 +782,9 @@ static void register_animator_metatable(lua_State* L) {
 
     lua_pushcfunction(L, l_animator_cross_fade);
     lua_setfield(L, -2, "crossFade");
+
+    lua_pushcfunction(L, l_animator_cross_fade_from_current_pose);
+    lua_setfield(L, -2, "crossFadeFromCurrentPose");
 
     lua_pushcfunction(L, l_animator_blend);
     lua_setfield(L, -2, "blend");

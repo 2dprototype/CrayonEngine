@@ -298,6 +298,72 @@ void Engine::run() {
             m_window.handle_event(event);
             m_input.handle_event(event, m_window);
 
+            if (m_lua_runtime && !m_game_script_path.empty()) {
+                if (event.type == SDL_EVENT_KEY_DOWN) {
+                    const char* name = SDL_GetKeyName(event.key.key);
+                    if (name && name[0] != '\0') {
+                        std::string k = m_input.normalize_key(name);
+                        m_lua_runtime->call_key_down(k, event.key.repeat != 0);
+                    }
+                } else if (event.type == SDL_EVENT_KEY_UP) {
+                    const char* name = SDL_GetKeyName(event.key.key);
+                    if (name && name[0] != '\0') {
+                        std::string k = m_input.normalize_key(name);
+                        m_lua_runtime->call_key_up(k);
+                    }
+                } else if (event.type == SDL_EVENT_MOUSE_BUTTON_DOWN) {
+                    float vx = 0.0f, vy = 0.0f;
+                    m_window.window_to_virtual(event.button.x, event.button.y, vx, vy);
+                    int btn = 1;
+                    if (event.button.button == SDL_BUTTON_LEFT) btn = 1;
+                    else if (event.button.button == SDL_BUTTON_RIGHT) btn = 2;
+                    else if (event.button.button == SDL_BUTTON_MIDDLE) btn = 3;
+                    else if (event.button.button == SDL_BUTTON_X1) btn = 4;
+                    else if (event.button.button == SDL_BUTTON_X2) btn = 5;
+                    m_lua_runtime->call_mouse_down(vx, vy, btn);
+                } else if (event.type == SDL_EVENT_MOUSE_BUTTON_UP) {
+                    float vx = 0.0f, vy = 0.0f;
+                    m_window.window_to_virtual(event.button.x, event.button.y, vx, vy);
+                    int btn = 1;
+                    if (event.button.button == SDL_BUTTON_LEFT) btn = 1;
+                    else if (event.button.button == SDL_BUTTON_RIGHT) btn = 2;
+                    else if (event.button.button == SDL_BUTTON_MIDDLE) btn = 3;
+                    else if (event.button.button == SDL_BUTTON_X1) btn = 4;
+                    else if (event.button.button == SDL_BUTTON_X2) btn = 5;
+                    m_lua_runtime->call_mouse_up(vx, vy, btn);
+                } else if (event.type == SDL_EVENT_MOUSE_MOTION) {
+                    float vx = 0.0f, vy = 0.0f;
+                    m_window.window_to_virtual(event.motion.x, event.motion.y, vx, vy);
+                    ViewportInfo vp = m_window.get_viewport_info();
+                    float scale_x = (vp.width > 0 && m_window.get_virtual_width() > 0) ?
+                        static_cast<float>(vp.width) / static_cast<float>(m_window.get_virtual_width()) : 1.0f;
+                    float scale_y = (vp.height > 0 && m_window.get_virtual_height() > 0) ?
+                        static_cast<float>(vp.height) / static_cast<float>(m_window.get_virtual_height()) : 1.0f;
+                    float vdx = (scale_x > 0.0f) ? (event.motion.xrel / scale_x) : event.motion.xrel;
+                    float vdy = (scale_y > 0.0f) ? (event.motion.yrel / scale_y) : event.motion.yrel;
+                    m_lua_runtime->call_mouse_moved(vx, vy, vdx, vdy);
+                } else if (event.type == SDL_EVENT_MOUSE_WHEEL) {
+                    float wx = event.wheel.x;
+                    float wy = event.wheel.y;
+                    if (event.wheel.direction == SDL_MOUSEWHEEL_FLIPPED) {
+                        wx = -wx;
+                        wy = -wy;
+                    }
+                    m_lua_runtime->call_wheel_moved(wx, wy);
+                } else if (event.type == SDL_EVENT_TEXT_INPUT) {
+                    if (event.text.text) {
+                        m_lua_runtime->call_text_input(event.text.text);
+                    }
+                } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
+                    m_lua_runtime->call_gamepad_down(event.gbutton.button);
+                } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_UP) {
+                    m_lua_runtime->call_gamepad_up(event.gbutton.button);
+                } else if (event.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
+                    float val = static_cast<float>(event.gaxis.value) / 32767.0f;
+                    m_lua_runtime->call_gamepad_axis(event.gaxis.axis, val);
+                }
+            }
+
             if (event.type == SDL_EVENT_KEY_DOWN && event.key.key == SDLK_F5) {
                 request_hot_reload();
             }

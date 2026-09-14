@@ -53,7 +53,7 @@ function crayon.init()
     crayon.window.setAlwaysOnTop(always_on_top)
 
     -- Start accepting text input
-    crayon.input.startTextInput()
+    crayon.key.setTextInput(true)
     text_active = true
 
     -- Load procedural 3D model for floating projection tag
@@ -64,11 +64,11 @@ function crayon.update(dt)
     cursor_timer = cursor_timer + dt
     rot_3d = rot_3d + dt * 60.0
 
-    local virt_mouse_x, virt_mouse_y = crayon.input.getMousePos()
-    local win_mouse_x, win_mouse_y = crayon.input.getMouseWindowPos()
+    local virt_mouse_x, virt_mouse_y = crayon.mouse.getPosition()
+    local win_mouse_x, win_mouse_y = crayon.mouse.getWindowPosition()
 
     -- 1. Window Dragging with Mouse (Hold Left Click in top header bar or on pet to drag entire window!)
-    if crayon.input.isMousePressed("left") then
+    if crayon.mouse.isPressed("left") then
         local in_drag_zone = (virt_mouse_y < 24) or
                              (math.abs(virt_mouse_x - pet.x) < 32 and math.abs(virt_mouse_y - pet.y) < 30)
         if in_drag_zone then
@@ -79,7 +79,7 @@ function crayon.update(dt)
     end
 
     if dragging_window then
-        if crayon.input.isMouseDown("left") then
+        if crayon.mouse.isDown("left") then
             local dx = win_mouse_x - drag_anchor_mouse_x
             local dy = win_mouse_y - drag_anchor_mouse_y
             if dx ~= 0 or dy ~= 0 then
@@ -93,40 +93,40 @@ function crayon.update(dt)
 
     -- 2. Window Controls via Keyboard
     -- [O] Decrease opacity, [P] Increase opacity
-    if crayon.input.isDown("o") then
+    if crayon.key.isDown("o") then
         window_opacity = math.max(0.2, window_opacity - dt * 0.8)
         crayon.window.setOpacity(window_opacity)
     end
-    if crayon.input.isDown("p") then
+    if crayon.key.isDown("p") then
         window_opacity = math.min(1.0, window_opacity + dt * 0.8)
         crayon.window.setOpacity(window_opacity)
     end
 
     -- [T] Toggle Always-on-top
-    if crayon.input.isPressed("t") then
+    if crayon.key.isPressed("t") then
         always_on_top = not always_on_top
         crayon.window.setAlwaysOnTop(always_on_top)
     end
 
     -- [B] Toggle Window Border
-    if crayon.input.isPressed("b") then
+    if crayon.key.isPressed("b") then
         is_bordered = not is_bordered
         crayon.window.setBordered(is_bordered)
     end
 
     -- [SPACE] Toggle Transparent Desktop vs Solid Canvas
-    if crayon.input.isPressed("space") then
+    if crayon.key.isPressed("space") then
         is_transparent_mode = not is_transparent_mode
         crayon.window.setTransparent(is_transparent_mode)
     end
 
     -- [ESCAPE] Return to Menu
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.setTransparent(false)
         crayon.window.setOpacity(1.0)
         crayon.window.setAlwaysOnTop(false)
         crayon.window.setBordered(true)
-        crayon.input.stopTextInput()
+        crayon.key.setTextInput(false)
         in_menu = true
         crayon.window.setResolution(320, 240)
         crayon.window.setTitle("Crayon Engine - Demo Launcher Hub")
@@ -145,7 +145,7 @@ function crayon.update(dt)
 
     -- Petting interaction
     local dist_to_mouse = math.sqrt((virt_mouse_x - pet.x)^2 + (virt_mouse_y - pet.y)^2)
-    if dist_to_mouse < 35 and crayon.input.isMousePressed("right") then
+    if dist_to_mouse < 35 and crayon.mouse.isPressed("right") then
         -- Spawn heart particle
         table.insert(pet.hearts, { x = pet.x, y = pet.y - 20, vy = -40, life = 1.0 })
         pet.happiness = math.min(1.0, pet.happiness + 0.15)
@@ -179,7 +179,7 @@ function crayon.update(dt)
     pet.happiness = math.max(0.1, pet.happiness - dt * 0.02)
 
     -- 4. Text Input Handling
-    local chars = crayon.input.getTextInput()
+    local chars = crayon.key.getTextInput()
     if #chars > 0 then
         if text_buffer == "Type here... [Ctrl+V to Paste]" then
             text_buffer = ""
@@ -188,13 +188,13 @@ function crayon.update(dt)
     end
 
     -- Backspace deletes character
-    if crayon.input.isPressed("backspace") and #text_buffer > 0 then
+    if crayon.key.isPressed("backspace") and #text_buffer > 0 then
         text_buffer = string.sub(text_buffer, 1, -2)
     end
 
     -- Ctrl+V Paste from system clipboard
-    if crayon.input.isCtrlDown() and crayon.input.isPressed("v") then
-        local clip = crayon.input.getClipboard()
+    if crayon.key.isCtrlDown() and crayon.key.isPressed("v") then
+        local clip = crayon.key.getClipboard()
         if clip and #clip > 0 then
             if text_buffer == "Type here... [Ctrl+V to Paste]" then
                 text_buffer = ""

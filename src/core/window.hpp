@@ -110,6 +110,7 @@ public:
 
     ViewportInfo get_viewport_info() const;
     void window_to_virtual(float win_x, float win_y, float& virt_x, float& virt_y) const;
+    void virtual_to_window(float virt_x, float virt_y, float& win_x, float& win_y) const;
 
     SDL_Window* get_sdl_window() const { return m_window; }
     SDL_GLContext get_gl_context() const { return m_gl_context; }
