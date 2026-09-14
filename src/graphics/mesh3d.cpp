@@ -1369,18 +1369,54 @@ void MeshRenderer3D::draw_lines_3d(const std::vector<glm::vec3>& points, const g
 
 void MeshRenderer3D::draw_grid_3d(float size, int divisions, float y_level, const glm::vec4& color) {
     if (divisions < 1) divisions = 10;
-    std::vector<Vertex3D> lines;
-    lines.reserve((divisions + 1) * 4);
+    
+    // Static cached grid buffers to prevent reallocating vectors and reuploading VBOs every frame
+    static GLuint s_grid_vao = 0;
+    static GLuint s_grid_vbo = 0;
+    static size_t s_cached_count = 0;
+    static float s_cached_size = -1.0f;
+    static int s_cached_divs = -1;
+    static float s_cached_y = 99999.0f;
 
-    float half_size = size * 0.5f;
-    float step = size / divisions;
+    if (s_grid_vao == 0) {
+        glGenVertexArrays(1, &s_grid_vao);
+        glGenBuffers(1, &s_grid_vbo);
+    }
 
-    for (int i = 0; i <= divisions; ++i) {
-        float c = -half_size + i * step;
-        lines.push_back({ {c, y_level, -half_size}, {0, 1, 0}, {0, 0}, color });
-        lines.push_back({ {c, y_level,  half_size}, {0, 1, 0}, {0, 0}, color });
-        lines.push_back({ {-half_size, y_level, c}, {0, 1, 0}, {0, 0}, color });
-        lines.push_back({ { half_size, y_level, c}, {0, 1, 0}, {0, 0}, color });
+    if (s_cached_size != size || s_cached_divs != divisions || s_cached_y != y_level) {
+        std::vector<Vertex3D> lines;
+        lines.reserve((divisions + 1) * 4);
+
+        float half_size = size * 0.5f;
+        float step = size / divisions;
+
+        for (int i = 0; i <= divisions; ++i) {
+            float c = -half_size + i * step;
+            lines.push_back({ {c, y_level, -half_size}, {0, 1, 0}, {0, 0}, color });
+            lines.push_back({ {c, y_level,  half_size}, {0, 1, 0}, {0, 0}, color });
+            lines.push_back({ {-half_size, y_level, c}, {0, 1, 0}, {0, 0}, color });
+            lines.push_back({ { half_size, y_level, c}, {0, 1, 0}, {0, 0}, color });
+        }
+
+        glBindVertexArray(s_grid_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, s_grid_vbo);
+        glBufferData(GL_ARRAY_BUFFER, lines.size() * sizeof(Vertex3D), lines.data(), GL_STATIC_DRAW);
+
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, position));
+        glEnableVertexAttribArray(1);
+        glVertexAttribPointer(1, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, normal));
+        glEnableVertexAttribArray(2);
+        glVertexAttribPointer(2, 2, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, uv));
+        glEnableVertexAttribArray(3);
+        glVertexAttribPointer(3, 4, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), (void*)offsetof(Vertex3D, color));
+
+        glBindVertexArray(0);
+
+        s_cached_count = lines.size();
+        s_cached_size = size;
+        s_cached_divs = divisions;
+        s_cached_y = y_level;
     }
 
     m_shader->bind();
@@ -1400,13 +1436,8 @@ void MeshRenderer3D::draw_grid_3d(float size, int divisions, float y_level, cons
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_white_texture->get_id());
 
-    glBindVertexArray(m_dyn_vao);
-    glBindBuffer(GL_ARRAY_BUFFER, m_dyn_vbo);
-    for (size_t offset = 0; offset < lines.size(); offset += 4096) {
-        size_t count = std::min(size_t(4096), lines.size() - offset);
-        glBufferSubData(GL_ARRAY_BUFFER, 0, count * sizeof(Vertex3D), lines.data() + offset);
-        glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(count));
-    }
+    glBindVertexArray(s_grid_vao);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(s_cached_count));
     glBindVertexArray(0);
 
     m_shader->unbind();

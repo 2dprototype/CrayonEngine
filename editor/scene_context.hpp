@@ -11,6 +11,7 @@
 #include <lua.hpp>
 #include "../../src/scripting/lua_runtime.hpp"
 #include "../../src/graphics/mesh3d.hpp"
+#include "../../src/graphics/model3d.hpp"
 #include "../../src/core/engine.hpp"
 #include "../../src/core/log.hpp"
 
@@ -31,6 +32,10 @@ struct SceneEntity {
     std::string collider_type = "box"; // "box", "sphere", "plane"
     std::string collider_motion = "static"; // "static", "dynamic"
     bool visible = true;
+
+    // Cache model pointer for instant rendering without lookups
+    std::shared_ptr<crayon::Model3D> cached_model;
+    std::string last_loaded_path;
 };
 
 class SceneContext {
@@ -272,7 +277,7 @@ public:
     }
 
     void render_scene_3d(crayon::MeshRenderer3D& renderer, crayon::Engine& engine) {
-        for (const auto& e : m_entities) {
+        for (auto& e : m_entities) {
             if (!e.visible) continue;
 
             glm::vec3 rot_rad = glm::radians(e.rotation);
@@ -287,15 +292,19 @@ public:
             } else if (e.type == "cylinder") {
                 renderer.draw_cylinder(e.position, e.scale.x * 0.5f, e.scale.y, 0, rot_rad);
             } else if (e.type == "model" && !e.asset_path.empty()) {
-                auto model = engine.load_model3d(e.asset_path);
-                if (model) {
+                if (!e.cached_model || e.last_loaded_path != e.asset_path) {
+                    e.cached_model = engine.load_model3d(e.asset_path);
+                    e.last_loaded_path = e.asset_path;
+                }
+
+                if (e.cached_model) {
                     glm::mat4 t{1.0f};
                     t = glm::translate(t, e.position);
                     if (e.rotation.x != 0.0f) t = glm::rotate(t, rot_rad.x, glm::vec3(1, 0, 0));
                     if (e.rotation.y != 0.0f) t = glm::rotate(t, rot_rad.y, glm::vec3(0, 1, 0));
                     if (e.rotation.z != 0.0f) t = glm::rotate(t, rot_rad.z, glm::vec3(0, 0, 1));
                     t = glm::scale(t, e.scale);
-                    renderer.draw_model(*model, t);
+                    renderer.draw_model(*e.cached_model, t);
                 } else {
                     renderer.draw_cube(e.position, e.scale, 0, rot_rad);
                 }

@@ -21,11 +21,24 @@ EditorApp::~EditorApp() {
 
 bool EditorApp::init(int width, int height, const std::string& title) {
     // 1. Initialize Engine subsystems with starting resolution (630x450, resizable)
-    // We intentionally DO NOT load main.lua for the scene editor!
+    // Low virtual resolution (480x360) ensures high fill-rate performance on low-end GPUs
     if (!m_engine.init(width, height, 480, 360, title)) {
         CRAYON_LOG_ERROR("EditorApp failed to initialize Engine");
         return false;
     }
+
+    // Enable VSync by default to avoid burning 100% CPU on low-end systems
+    m_engine.get_window().set_vsync(true);
+
+    // Optimize 3D mesh renderer for low-end hardware editor performance:
+    // Turn off expensive jitter and fog calculations in the scene view
+    auto& renderer = m_engine.get_mesh_renderer();
+    crayon::RetroEffects editor_retro;
+    editor_retro.jitter_enabled = false;
+    editor_retro.affine_blend = 0.0f;
+    editor_retro.dither_enabled = false;
+    editor_retro.fog_enabled = false;
+    renderer.set_retro_effects(editor_retro);
 
     // 2. Setup Dear ImGui context
     IMGUI_CHECKVERSION();
@@ -168,30 +181,26 @@ void EditorApp::render_scene_fbo() {
     fbo.bind();
     glViewport(0, 0, virt_w, virt_h);
 
-    glClearColor(0.10f, 0.11f, 0.14f, 1.0f);
-    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT | GL_STENCIL_BUFFER_BIT);
+    glClearColor(0.12f, 0.13f, 0.16f, 1.0f);
+    glClear(GL_COLOR_BUFFER_BIT | GL_DEPTH_BUFFER_BIT);
 
     float aspect = static_cast<float>(virt_w) / static_cast<float>(virt_h);
 
     crayon::Camera cam = m_camera.to_crayon_camera();
     auto& renderer = m_engine.get_mesh_renderer();
-    auto& batch2d = m_engine.get_batch2d();
 
     renderer.begin(cam, aspect);
-    batch2d.begin(virt_w, virt_h);
 
     // 1. Draw 3D floor grid & axes
     if (m_viewport_panel->is_grid_enabled()) {
-        renderer.draw_grid_3d(40.0f, 40, 0.0f, glm::vec4(0.35f, 0.35f, 0.45f, 0.6f));
-        renderer.draw_axes_3d(glm::vec3(0.0f, 0.01f, 0.0f), 2.0f);
+        renderer.draw_grid_3d(24.0f, 24, 0.0f, glm::vec4(0.35f, 0.35f, 0.45f, 0.6f));
+        renderer.draw_axes_3d(glm::vec3(0.0f, 0.01f, 0.0f), 1.5f);
     }
 
     // 2. Render all 3D scene objects and selection wireframes
     SceneContext::get().render_scene_3d(renderer, m_engine);
 
-    batch2d.end();
     renderer.end();
-
     fbo.unbind();
 }
 
@@ -256,6 +265,8 @@ void EditorApp::run() {
     using clock = std::chrono::high_resolution_clock;
     auto prev_time = clock::now();
 
+    const double target_frame_time = 1.0 / 60.0; // Target smooth 60 FPS
+
     while (m_running && !m_engine.get_window().should_close()) {
         auto current_time = clock::now();
         std::chrono::duration<double> elapsed = current_time - prev_time;
@@ -296,6 +307,14 @@ void EditorApp::run() {
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
 
         m_engine.get_window().swap_buffers();
+
+        // Yield CPU to prevent high power/lag on low-end machines when exceeding 60 FPS
+        auto frame_end = clock::now();
+        std::chrono::duration<double> work_duration = frame_end - current_time;
+        if (work_duration.count() < target_frame_time) {
+            double sleep_sec = target_frame_time - work_duration.count();
+            SDL_Delay(static_cast<Uint32>(sleep_sec * 1000.0));
+        }
     }
 }
 
