@@ -5,6 +5,10 @@ set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
+# Build options to separate crayon and editor builds
+option(BUILD_CRAYON "Build the Crayon Engine Player (crayon.exe)" ON)
+option(BUILD_EDITOR "Build the Crayon Game Editor (editor.exe)" ON)
+
 # Compiler optimization and warnings
 if(MSVC)
     add_compile_options(/W4 /O2 /permissive-)
@@ -22,6 +26,7 @@ add_compile_definitions(
 # Include directories
 include_directories(
     src
+    editor
     vendor/glad/include
     vendor/glm
     vendor/sdl3/include
@@ -30,10 +35,12 @@ include_directories(
     vendor/tinyobj/include
     vendor/tinygltf/include
     vendor/JoltPhysics
+    vendor/imgui
+    vendor/imgui/backends
 )
 
-# Source files
-set(SOURCES
+# Core Engine source files (shared between engine player and editor)
+set(ENGINE_SOURCES
     vendor/glad/src/glad.c
     vendor/tinygltf/src/tiny_gltf_v3.c
     src/core/window.cpp
@@ -55,7 +62,6 @@ set(SOURCES
     src/scripting/bind_time.cpp
     src/scripting/bind_physics3d.cpp
     src/scripting/bind_physics2d.cpp
-    src/main.cpp
 )
 
 set_source_files_properties(vendor/tinygltf/src/tiny_gltf_v3.c PROPERTIES
@@ -67,28 +73,88 @@ if(NOT MSVC)
     )
 endif()
 
-add_executable(crayon_engine ${SOURCES})
-
-set_target_properties(crayon_engine PROPERTIES
-    CXX_STANDARD 20
-    CXX_STANDARD_REQUIRED ON
-    CXX_EXTENSIONS OFF
+# Dear ImGui sources
+set(IMGUI_SOURCES
+    vendor/imgui/imgui.cpp
+    vendor/imgui/imgui_demo.cpp
+    vendor/imgui/imgui_draw.cpp
+    vendor/imgui/imgui_tables.cpp
+    vendor/imgui/imgui_widgets.cpp
+    vendor/imgui/backends/imgui_impl_sdl3.cpp
+    vendor/imgui/backends/imgui_impl_opengl3.cpp
+    vendor/imgui/misc/cpp/imgui_stdlib.cpp
 )
 
-# Link libraries
-target_link_libraries(crayon_engine PRIVATE
-    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/JoltPhysics/lib/libJolt.a
-    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/lib/libSDL3.dll.a
-    ${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/lib/libluajit-5.1.dll.a
-    opengl32
+# Editor sources
+set(EDITOR_SOURCES
+    editor/editor_theme.cpp
+    editor/editor_app.cpp
+    editor/panels/viewport_panel.cpp
+    editor/panels/scene_panel.cpp
+    editor/panels/inspector_panel.cpp
+    editor/panels/asset_browser_panel.cpp
+    editor/panels/retro_fx_panel.cpp
+    editor/panels/console_panel.cpp
+    editor/panels/stats_panel.cpp
+    editor/main.cpp
 )
 
-# Post-build: copy required DLLs to binary directory
-add_custom_command(TARGET crayon_engine POST_BUILD
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/bin/SDL3.dll"
-        "$<TARGET_FILE_DIR:crayon_engine>"
-    COMMAND ${CMAKE_COMMAND} -E copy_if_different
-        "${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/bin/lua51.dll"
-        "$<TARGET_FILE_DIR:crayon_engine>"
-)
+# -------------------------------------------------------------
+# Target 1: crayon -> crayon.exe (Standalone Runtime Player)
+# -------------------------------------------------------------
+if(BUILD_CRAYON)
+    add_executable(crayon ${ENGINE_SOURCES} src/main.cpp)
+
+    set_target_properties(crayon PROPERTIES
+        OUTPUT_NAME "crayon"
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    target_link_libraries(crayon PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/JoltPhysics/lib/libJolt.a
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/lib/libSDL3.dll.a
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/lib/libluajit-5.1.dll.a
+        opengl32
+    )
+
+    add_custom_command(TARGET crayon POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/bin/SDL3.dll"
+            "$<TARGET_FILE_DIR:crayon>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/bin/lua51.dll"
+            "$<TARGET_FILE_DIR:crayon>"
+    )
+endif()
+
+# -------------------------------------------------------------
+# Target 2: editor -> editor.exe (Visual Game Editor IDE)
+# -------------------------------------------------------------
+if(BUILD_EDITOR)
+    add_executable(editor ${ENGINE_SOURCES} ${IMGUI_SOURCES} ${EDITOR_SOURCES})
+
+    set_target_properties(editor PROPERTIES
+        OUTPUT_NAME "editor"
+        CXX_STANDARD 20
+        CXX_STANDARD_REQUIRED ON
+        CXX_EXTENSIONS OFF
+    )
+
+    target_link_libraries(editor PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/JoltPhysics/lib/libJolt.a
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/lib/libSDL3.dll.a
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/lib/libluajit-5.1.dll.a
+        opengl32
+    )
+
+    add_custom_command(TARGET editor POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/bin/SDL3.dll"
+            "$<TARGET_FILE_DIR:editor>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different
+            "${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/bin/lua51.dll"
+            "$<TARGET_FILE_DIR:editor>"
+    )
+endif()

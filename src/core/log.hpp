@@ -4,6 +4,8 @@
 #include <string>
 #include <format>
 #include <chrono>
+#include <functional>
+#include <mutex>
 
 #ifdef _WIN32
 #include <windows.h>
@@ -38,7 +40,23 @@ enum class LogLevel {
     Error
 };
 
+using LogSinkFn = std::function<void(LogLevel, const std::string&)>;
+inline LogSinkFn s_log_sink = nullptr;
+inline std::mutex s_log_mutex;
+
+inline void set_log_sink(LogSinkFn sink) {
+    std::lock_guard<std::mutex> lock(s_log_mutex);
+    s_log_sink = sink;
+}
+
 inline void log_message(LogLevel level, const std::string& message) {
+    {
+        std::lock_guard<std::mutex> lock(s_log_mutex);
+        if (s_log_sink) {
+            s_log_sink(level, message);
+        }
+    }
+
 #ifdef _WIN32
     enable_windows_ansi();
 #endif

@@ -65,6 +65,13 @@ public:
     const std::string& get_game_script_path() const { return m_game_script_path; }
     void set_game_script_path(const std::string& path) { m_game_script_path = path; }
 
+    void render_to_fbo();
+    void step_simulation(float dt);
+    bool is_paused() const { return m_paused; }
+    void set_paused(bool p) { m_paused = p; }
+    bool is_running() const { return m_running; }
+    void set_running(bool r) { m_running = r; }
+
 private:
     void render_frame();
 
@@ -98,6 +105,7 @@ private:
 
     bool m_hot_reload_requested = false;
     bool m_running = false;
+    bool m_paused = false;
 };
 
 } // namespace crayon

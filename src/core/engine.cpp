@@ -196,7 +196,7 @@ bool Engine::check_hot_reload() {
     return false;
 }
 
-void Engine::render_frame() {
+void Engine::render_to_fbo() {
     // If virtual resolution was changed in Window, resize FBO
     int virt_w = m_window.get_virtual_width();
     int virt_h = m_window.get_virtual_height();
@@ -241,6 +241,26 @@ void Engine::render_frame() {
     m_mesh_renderer.end();
 
     m_fbo.unbind();
+}
+
+void Engine::step_simulation(float dt) {
+    if (m_physics) {
+        const float fixed_dt = 1.0f / 60.0f;
+        m_physics_accumulator += dt;
+        if (m_physics_accumulator > 0.2f) m_physics_accumulator = 0.2f;
+        while (m_physics_accumulator >= fixed_dt) {
+            m_physics->update(fixed_dt);
+            m_physics_accumulator -= fixed_dt;
+        }
+    }
+
+    if (!m_game_script_path.empty()) {
+        m_lua_runtime->call_update(dt);
+    }
+}
+
+void Engine::render_frame() {
+    render_to_fbo();
 
     // 2. Post-Process and Blit to Window
     int win_w = 960, win_h = 720;
@@ -373,21 +393,11 @@ void Engine::run() {
             break;
         }
 
-        // Fixed-timestep physics simulation (60 Hz)
-        if (m_physics) {
-            const float fixed_dt = 1.0f / 60.0f;
-            m_physics_accumulator += m_delta_time;
-            if (m_physics_accumulator > 0.2f) m_physics_accumulator = 0.2f; // clamp spiral
-            while (m_physics_accumulator >= fixed_dt) {
-                m_physics->update(fixed_dt);
-                m_physics_accumulator -= fixed_dt;
-            }
+        // Simulation update
+        if (!m_paused) {
+            step_simulation(m_delta_time);
         }
-
-        // Game Update
-        if (!m_game_script_path.empty()) {
-            m_lua_runtime->call_update(m_delta_time);
-        } else {
+        if (m_game_script_path.empty()) {
             if (m_input.is_key_pressed("escape")) {
                 m_running = false;
             }

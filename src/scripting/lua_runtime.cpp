@@ -102,6 +102,29 @@ bool LuaRuntime::reload_script(const std::string& filepath) {
     return load_script(filepath);
 }
 
+bool LuaRuntime::execute_string(const std::string& code) {
+    if (!m_L) return false;
+
+    int err_func = push_error_handler();
+
+    if (luaL_loadstring(m_L, code.c_str()) != 0) {
+        const char* err = lua_tostring(m_L, -1);
+        CRAYON_LOG_ERROR("Lua compilation error:\n{}", err ? err : "unknown");
+        lua_pop(m_L, 2);
+        return false;
+    }
+
+    if (lua_pcall(m_L, 0, 0, err_func) != 0) {
+        const char* err = lua_tostring(m_L, -1);
+        CRAYON_LOG_ERROR("Lua runtime error:\n{}", err ? err : "unknown");
+        lua_pop(m_L, 2);
+        return false;
+    }
+
+    lua_pop(m_L, 1);
+    return true;
+}
+
 void LuaRuntime::call_init() {
     if (!m_L) return;
 

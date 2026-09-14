@@ -22,6 +22,7 @@ public:
 
     bool load_script(const std::string& filepath);
     bool reload_script(const std::string& filepath);
+    bool execute_string(const std::string& code);
 
     void call_init();
     void call_update(float dt);
