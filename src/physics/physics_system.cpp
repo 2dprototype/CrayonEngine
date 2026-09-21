@@ -32,6 +32,7 @@
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
 #include <Jolt/Physics/Body/BodyActivationListener.h>
 #include <Jolt/Physics/Collision/CollisionCollectorImpl.h>
+#include <Jolt/Physics/Collision/ContactListener.h>
 #include <Jolt/Physics/Constraints/PointConstraint.h>
 #include <Jolt/Physics/Constraints/HingeConstraint.h>
 #include <Jolt/Physics/Constraints/DistanceConstraint.h>
@@ -247,6 +248,47 @@ struct PhysicsSystem::Impl {
     };
     SoftBodyContactListenerImpl soft_body_listener;
 
+    std::mutex event_mutex;
+    std::vector<PhysicsCollisionEvent> collision_events;
+
+    class ContactListenerImpl : public JPH::ContactListener {
+    public:
+        Impl* parent = nullptr;
+
+        virtual JPH::ValidateResult OnContactValidate(const JPH::Body&, const JPH::Body&, JPH::RVec3Arg, const JPH::CollideShapeResult&) override {
+            return JPH::ValidateResult::AcceptAllContactsForThisBodyPair;
+        }
+
+        virtual void OnContactAdded(const JPH::Body& inBody1, const JPH::Body& inBody2, const JPH::ContactManifold& inManifold, JPH::ContactSettings&) override {
+            if (!parent) return;
+            PhysicsCollisionEvent evt;
+            evt.body_a = inBody1.GetID().GetIndexAndSequenceNumber();
+            evt.body_b = inBody2.GetID().GetIndexAndSequenceNumber();
+            if (inBody1.IsSensor() || inBody2.IsSensor()) {
+                evt.type = PhysicsEventType::TriggerEnter;
+            } else {
+                evt.type = PhysicsEventType::CollisionEnter;
+                auto pt = inManifold.GetWorldSpaceContactPointOn1(0);
+                evt.position = glm::vec3(pt.GetX(), pt.GetY(), pt.GetZ());
+                auto norm = inManifold.mWorldSpaceNormal;
+                evt.normal = glm::vec3(norm.GetX(), norm.GetY(), norm.GetZ());
+            }
+            std::lock_guard<std::mutex> lock(parent->event_mutex);
+            parent->collision_events.push_back(evt);
+        }
+
+        virtual void OnContactRemoved(const JPH::SubShapeIDPair& inSubShapePair) override {
+            if (!parent) return;
+            PhysicsCollisionEvent evt;
+            evt.body_a = inSubShapePair.GetBody1ID().GetIndexAndSequenceNumber();
+            evt.body_b = inSubShapePair.GetBody2ID().GetIndexAndSequenceNumber();
+            evt.type = PhysicsEventType::CollisionExit;
+            std::lock_guard<std::mutex> lock(parent->event_mutex);
+            parent->collision_events.push_back(evt);
+        }
+    };
+    ContactListenerImpl contact_listener;
+
     bool initialized = false;
     float last_dt = 0.0f;
 };
@@ -282,6 +324,8 @@ bool PhysicsSystem::init(const PhysicsConfig& config) {
     );
 
     m_impl->physics_system.SetGravity(JPH::Vec3(config.gravity.x, config.gravity.y, config.gravity.z));
+    m_impl->contact_listener.parent = m_impl.get();
+    m_impl->physics_system.SetContactListener(&m_impl->contact_listener);
     m_impl->physics_system.SetSoftBodyContactListener(&m_impl->soft_body_listener);
     m_impl->initialized = true;
 
@@ -1185,6 +1229,44 @@ bool PhysicsSystem::is_sensor(uint32_t body_id) const {
     if (!m_impl->initialized) return false;
     JPH::BodyID id(body_id);
     return m_impl->physics_system.GetBodyInterface().IsSensor(id);
+}
+
+void PhysicsSystem::set_motion_quality(uint32_t body_id, bool linear_cast) {
+    if (!m_impl || !m_impl->initialized) return;
+    JPH::BodyID id(body_id);
+    m_impl->physics_system.GetBodyInterface().SetMotionQuality(id, linear_cast ? JPH::EMotionQuality::LinearCast : JPH::EMotionQuality::Discrete);
+}
+
+void PhysicsSystem::set_planar_lock(uint32_t body_id, const std::string& plane) {
+    if (!m_impl || !m_impl->initialized) return;
+    JPH::BodyID id(body_id);
+    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), id);
+    if (!lock.Succeeded()) return;
+
+    JPH::Body& body = lock.GetBody();
+    if (body.IsStatic()) return;
+
+    JPH::MotionProperties* mp = body.GetMotionProperties();
+    if (!mp) return;
+
+    JPH::EAllowedDOFs dofs = JPH::EAllowedDOFs::All;
+    if (plane == "xy" || plane == "XY") {
+        dofs = JPH::EAllowedDOFs::Plane2D;
+    } else if (plane == "xz" || plane == "XZ") {
+        dofs = JPH::EAllowedDOFs::TranslationX | JPH::EAllowedDOFs::TranslationZ | JPH::EAllowedDOFs::RotationY;
+    }
+
+    if (body.GetShape()) {
+        mp->SetMassProperties(dofs, body.GetShape()->GetMassProperties());
+    }
+}
+
+std::vector<PhysicsCollisionEvent> PhysicsSystem::get_and_clear_collision_events() {
+    if (!m_impl) return {};
+    std::lock_guard<std::mutex> lock(m_impl->event_mutex);
+    std::vector<PhysicsCollisionEvent> events = std::move(m_impl->collision_events);
+    m_impl->collision_events.clear();
+    return events;
 }
 
 void PhysicsSystem::set_damping(uint32_t body_id, float linear_damping, float angular_damping) {

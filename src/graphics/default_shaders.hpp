@@ -131,6 +131,19 @@ struct PointLight {
 uniform int u_num_point_lights;
 uniform PointLight u_point_lights[4];
 
+// Spot Lights (up to 2)
+struct SpotLight {
+    vec3 pos;
+    vec3 dir;
+    vec3 color;
+    float radius;
+    float intensity;
+    float inner_cutoff; // cos(angle)
+    float outer_cutoff; // cos(angle)
+};
+uniform int u_num_spot_lights;
+uniform SpotLight u_spot_lights[2];
+
 // Distance Fog
 uniform int u_fog_enabled;
 uniform float u_fog_start;
@@ -169,6 +182,24 @@ void main() {
                 float atten = clamp(1.0 - (dist / u_point_lights[i].radius), 0.0, 1.0);
                 atten = atten * atten * u_point_lights[i].intensity;
                 lighting += u_point_lights[i].color * (pDiff * atten);
+            }
+        }
+
+        // Add Spot Lights
+        for (int i = 0; i < u_num_spot_lights && i < 2; ++i) {
+            vec3 light_dir = u_spot_lights[i].pos - v_world_pos;
+            float dist = length(light_dir);
+            if (dist < u_spot_lights[i].radius && dist > 0.0001) {
+                vec3 sL = light_dir / dist;
+                float theta = dot(sL, normalize(-u_spot_lights[i].dir));
+                float epsilon = u_spot_lights[i].inner_cutoff - u_spot_lights[i].outer_cutoff;
+                float spot_intensity = clamp((theta - u_spot_lights[i].outer_cutoff) / max(epsilon, 0.0001), 0.0, 1.0);
+                if (spot_intensity > 0.0) {
+                    float sDiff = max(dot(N, sL), 0.0);
+                    float atten = clamp(1.0 - (dist / u_spot_lights[i].radius), 0.0, 1.0);
+                    atten = atten * atten * u_spot_lights[i].intensity * spot_intensity;
+                    lighting += u_spot_lights[i].color * (sDiff * atten);
+                }
             }
         }
     }

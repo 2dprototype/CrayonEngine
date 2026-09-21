@@ -7,6 +7,7 @@
 #include <filesystem>
 #include "window.hpp"
 #include "input.hpp"
+#include "audio_system.hpp"
 #include "../graphics/fbo.hpp"
 #include "../graphics/shader.hpp"
 #include "../graphics/texture.hpp"
@@ -43,6 +44,7 @@ public:
     Batch2D& get_batch2d() { return m_batch2d; }
     MeshRenderer3D& get_mesh_renderer() { return m_mesh_renderer; }
     Camera& get_camera() { return m_camera; }
+    AudioSystem& get_audio() { return m_audio; }
     LuaRuntime& get_lua_runtime() { return *m_lua_runtime; }
     PhysicsSystem& get_physics() { return *m_physics; }
 
@@ -81,6 +83,7 @@ private:
     Batch2D m_batch2d;
     MeshRenderer3D m_mesh_renderer;
     Camera m_camera;
+    AudioSystem m_audio;
     std::unique_ptr<Shader> m_post_shader;
     std::unique_ptr<LuaRuntime> m_lua_runtime;
     std::unique_ptr<PhysicsSystem> m_physics;

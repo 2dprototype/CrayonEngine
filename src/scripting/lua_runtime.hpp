@@ -40,6 +40,17 @@ public:
     void call_gamepad_up(int button);
     void call_gamepad_axis(int axis, float value);
 
+    // Window Callbacks
+    void call_window_resized(int w, int h);
+    void call_focus_changed(bool focused);
+    void call_quit();
+
+    // Physics Callbacks
+    void call_collision_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float nz, float impulse);
+    void call_collision_exit(uint32_t body_a, uint32_t body_b);
+    void call_trigger_enter(uint32_t sensor_id, uint32_t other_body_id);
+    void call_trigger_exit(uint32_t sensor_id, uint32_t other_body_id);
+
     lua_State* get_state() const { return m_L; }
 
 private:
@@ -54,7 +65,10 @@ void register_window_bindings(lua_State* L);
 void register_graphics_bindings(lua_State* L);
 void register_input_bindings(lua_State* L);
 void register_time_bindings(lua_State* L);
+void register_audio_bindings(lua_State* L);
 void register_physics3d_bindings(lua_State* L);
-void register_physics2d_bindings(lua_State* L);
+void register_particle_bindings(lua_State* L);
+void register_math_bindings(lua_State* L);
+void register_fs_bindings(lua_State* L);
 
 } // namespace crayon

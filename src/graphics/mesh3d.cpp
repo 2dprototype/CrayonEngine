@@ -917,6 +917,25 @@ void MeshRenderer3D::set_point_light_enabled(int index, bool enabled) {
     }
 }
 
+void MeshRenderer3D::set_spot_light(int index, const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& color, float radius, float intensity, float inner_angle_deg, float outer_angle_deg) {
+    if (index >= 0 && index < 2) {
+        m_spot_lights[index].pos = pos;
+        m_spot_lights[index].dir = glm::normalize(dir);
+        m_spot_lights[index].color = color;
+        m_spot_lights[index].radius = radius;
+        m_spot_lights[index].intensity = intensity;
+        m_spot_lights[index].inner_cutoff_cos = std::cos(glm::radians(inner_angle_deg));
+        m_spot_lights[index].outer_cutoff_cos = std::cos(glm::radians(outer_angle_deg));
+        m_spot_lights[index].enabled = true;
+    }
+}
+
+void MeshRenderer3D::set_spot_light_enabled(int index, bool enabled) {
+    if (index >= 0 && index < 2) {
+        m_spot_lights[index].enabled = enabled;
+    }
+}
+
 void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id) {
     glm::mat4 final_model = m_current_matrix * model;
 
@@ -952,6 +971,23 @@ void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuin
         }
     }
     m_shader->set_int("u_num_point_lights", num_lights);
+
+    // Spot lights
+    int num_spot_lights = 0;
+    for (int i = 0; i < 2; ++i) {
+        if (m_spot_lights[i].enabled) {
+            std::string prefix = "u_spot_lights[" + std::to_string(num_spot_lights) + "].";
+            m_shader->set_vec3(prefix + "pos", m_spot_lights[i].pos);
+            m_shader->set_vec3(prefix + "dir", m_spot_lights[i].dir);
+            m_shader->set_vec3(prefix + "color", m_spot_lights[i].color);
+            m_shader->set_float(prefix + "radius", m_spot_lights[i].radius);
+            m_shader->set_float(prefix + "intensity", m_spot_lights[i].intensity);
+            m_shader->set_float(prefix + "inner_cutoff", m_spot_lights[i].inner_cutoff_cos);
+            m_shader->set_float(prefix + "outer_cutoff", m_spot_lights[i].outer_cutoff_cos);
+            num_spot_lights++;
+        }
+    }
+    m_shader->set_int("u_num_spot_lights", num_spot_lights);
 
     // Distance Fog
     m_shader->set_int("u_fog_enabled", m_retro.fog_enabled ? 1 : 0);
@@ -1007,6 +1043,23 @@ void MeshRenderer3D::draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& mode
         }
     }
     m_shader->set_int("u_num_point_lights", num_lights);
+
+    // Spot lights
+    int num_spot_lights = 0;
+    for (int i = 0; i < 2; ++i) {
+        if (m_spot_lights[i].enabled) {
+            std::string prefix = "u_spot_lights[" + std::to_string(num_spot_lights) + "].";
+            m_shader->set_vec3(prefix + "pos", m_spot_lights[i].pos);
+            m_shader->set_vec3(prefix + "dir", m_spot_lights[i].dir);
+            m_shader->set_vec3(prefix + "color", m_spot_lights[i].color);
+            m_shader->set_float(prefix + "radius", m_spot_lights[i].radius);
+            m_shader->set_float(prefix + "intensity", m_spot_lights[i].intensity);
+            m_shader->set_float(prefix + "inner_cutoff", m_spot_lights[i].inner_cutoff_cos);
+            m_shader->set_float(prefix + "outer_cutoff", m_spot_lights[i].outer_cutoff_cos);
+            num_spot_lights++;
+        }
+    }
+    m_shader->set_int("u_num_spot_lights", num_spot_lights);
 
     // Distance Fog
     m_shader->set_int("u_fog_enabled", m_retro.fog_enabled ? 1 : 0);

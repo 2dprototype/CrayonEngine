@@ -514,6 +514,46 @@ void register_input_bindings(lua_State* L) {
     lua_setfield(L, -2, "getCount");
     lua_setfield(L, -2, "gamepad");
 
+    // 4. crayon.input (unified camelCase alias for input functions)
+    lua_newtable(L);
+    lua_pushcfunction(L, l_key_is_down);
+    lua_setfield(L, -2, "isKeyDown");
+    lua_pushcfunction(L, l_key_is_pressed);
+    lua_setfield(L, -2, "isKeyPressed");
+    lua_pushcfunction(L, l_key_is_released);
+    lua_setfield(L, -2, "isKeyReleased");
+    lua_pushcfunction(L, l_mouse_is_down);
+    lua_setfield(L, -2, "isMouseDown");
+    lua_pushcfunction(L, l_mouse_is_pressed);
+    lua_setfield(L, -2, "isMousePressed");
+    lua_pushcfunction(L, l_mouse_is_released);
+    lua_setfield(L, -2, "isMouseReleased");
+    lua_pushcfunction(L, l_mouse_get_position);
+    lua_setfield(L, -2, "getMousePosition");
+    lua_pushcfunction(L, l_mouse_get_x);
+    lua_setfield(L, -2, "getMouseX");
+    lua_pushcfunction(L, l_mouse_get_y);
+    lua_setfield(L, -2, "getMouseY");
+    lua_pushcfunction(L, l_mouse_get_delta);
+    lua_setfield(L, -2, "getMouseDelta");
+    lua_pushcfunction(L, l_mouse_get_wheel);
+    lua_setfield(L, -2, "getMouseWheel");
+    lua_pushcfunction(L, l_mouse_set_visible);
+    lua_setfield(L, -2, "setMouseVisible");
+    lua_pushcfunction(L, l_mouse_set_grabbed);
+    lua_setfield(L, -2, "setMouseGrabbed");
+    lua_pushcfunction(L, l_mouse_set_relative_mode);
+    lua_setfield(L, -2, "setMouseRelative");
+    lua_pushcfunction(L, l_gamepad_is_down);
+    lua_setfield(L, -2, "isGamepadDown");
+    lua_pushcfunction(L, l_gamepad_is_pressed);
+    lua_setfield(L, -2, "isGamepadPressed");
+    lua_pushcfunction(L, l_gamepad_get_axis);
+    lua_setfield(L, -2, "getGamepadAxis");
+    lua_pushcfunction(L, l_gamepad_is_connected);
+    lua_setfield(L, -2, "isGamepadConnected");
+    lua_setfield(L, -2, "input");
+
     lua_pop(L, 1); // pop crayon
 }
 

@@ -11,6 +11,8 @@
 
 namespace crayon {
 
+class Font;
+
 struct Vertex2D {
     glm::vec2 position;
     glm::vec2 uv;
@@ -102,7 +104,10 @@ public:
     void pop_scissor();
 
     // Text & Font
+    void set_font(std::shared_ptr<Font> font);
+    std::shared_ptr<Font> get_font() const;
     void draw_text(const std::string& text, float x, float y, float scale, const glm::vec4& color);
+    void draw_text_ex(const std::string& text, float x, float y, float scale, const glm::vec4& color, float wrap_width = -1.0f, int align = 0);
     float get_text_width(const std::string& text, float scale = 1.0f) const;
     float get_text_height(const std::string& text, float scale = 1.0f) const;
 
@@ -119,6 +124,7 @@ private:
     std::unique_ptr<Shader> m_shader;
     std::shared_ptr<Texture> m_white_texture;
     std::shared_ptr<Texture> m_font_texture;
+    std::shared_ptr<Font> m_current_font;
 
     std::vector<Vertex2D> m_vertices;
     GLuint m_current_texture = 0;

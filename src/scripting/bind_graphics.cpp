@@ -1,13 +1,21 @@
 #include "lua_runtime.hpp"
 #include "../core/engine.hpp"
+#include "../core/log.hpp"
 #include "../graphics/model3d.hpp"
 #include "../graphics/animator.hpp"
+#include "../graphics/font.hpp"
+#include "../graphics/canvas.hpp"
+#include "../graphics/shader.hpp"
+#include "../graphics/default_shaders.hpp"
 #include "../physics/physics_system.hpp"
 #include <vector>
 #include <unordered_map>
 #include <glm/gtc/matrix_transform.hpp>
 
 #include <cstdio>
+#include <cstring>
+#include <fstream>
+#include <sstream>
 #include <new>
 
 namespace crayon {
@@ -16,6 +24,18 @@ struct LuaTexture {
     GLuint id = 0;
     int width = 0;
     int height = 0;
+};
+
+struct LuaFont {
+    std::shared_ptr<Font> font;
+};
+
+struct LuaCanvas {
+    std::shared_ptr<Canvas> canvas;
+};
+
+struct LuaShader {
+    std::shared_ptr<Shader> shader;
 };
 
 struct LuaAnimator {
@@ -54,6 +74,54 @@ static void push_texture_userdata(lua_State* L, GLuint id, int width, int height
     lua_setmetatable(L, -2);
 }
 
+static void push_font_userdata(lua_State* L, std::shared_ptr<Font> font) {
+    void* mem = lua_newuserdata(L, sizeof(LuaFont));
+    new (mem) LuaFont{ std::move(font) };
+    luaL_getmetatable(L, "Graphics.Font");
+    lua_setmetatable(L, -2);
+}
+
+static std::shared_ptr<Font> check_font(lua_State* L, int idx) {
+    auto* f = static_cast<LuaFont*>(luaL_checkudata(L, idx, "Graphics.Font"));
+    if (!f || !f->font) {
+        luaL_error(L, "attempt to use invalid Graphics.Font");
+        return nullptr;
+    }
+    return f->font;
+}
+
+static void push_canvas_userdata(lua_State* L, std::shared_ptr<Canvas> canvas) {
+    void* mem = lua_newuserdata(L, sizeof(LuaCanvas));
+    new (mem) LuaCanvas{ std::move(canvas) };
+    luaL_getmetatable(L, "Graphics.Canvas");
+    lua_setmetatable(L, -2);
+}
+
+static std::shared_ptr<Canvas> check_canvas(lua_State* L, int idx) {
+    auto* c = static_cast<LuaCanvas*>(luaL_checkudata(L, idx, "Graphics.Canvas"));
+    if (!c || !c->canvas) {
+        luaL_error(L, "attempt to use invalid Graphics.Canvas");
+        return nullptr;
+    }
+    return c->canvas;
+}
+
+static void push_shader_userdata(lua_State* L, std::shared_ptr<Shader> shader) {
+    void* mem = lua_newuserdata(L, sizeof(LuaShader));
+    new (mem) LuaShader{ std::move(shader) };
+    luaL_getmetatable(L, "Graphics.Shader");
+    lua_setmetatable(L, -2);
+}
+
+static std::shared_ptr<Shader> check_shader(lua_State* L, int idx) {
+    auto* s = static_cast<LuaShader*>(luaL_checkudata(L, idx, "Graphics.Shader"));
+    if (!s || !s->shader) {
+        luaL_error(L, "attempt to use invalid Graphics.Shader");
+        return nullptr;
+    }
+    return s->shader;
+}
+
 static void push_model_userdata(lua_State* L, std::shared_ptr<Model3D> model) {
     void* mem = lua_newuserdata(L, sizeof(LuaModel));
     new (mem) LuaModel{ std::move(model) };
@@ -79,6 +147,9 @@ static std::shared_ptr<Animator> check_animator(lua_State* L, int idx) {
 
 static GLuint check_texture(lua_State* L, int idx) {
     if (lua_isuserdata(L, idx)) {
+        if (auto* c = static_cast<LuaCanvas*>(test_udata(L, idx, "Graphics.Canvas"))) {
+            return (c && c->canvas) ? c->canvas->get_texture_id() : 0;
+        }
         auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, idx, "Graphics.Texture"));
         return tex ? tex->id : 0;
     }
@@ -88,6 +159,9 @@ static GLuint check_texture(lua_State* L, int idx) {
 static GLuint opt_texture(lua_State* L, int idx, GLuint fallback = 0) {
     if (lua_isnoneornil(L, idx)) return fallback;
     if (lua_isuserdata(L, idx)) {
+        if (auto* c = static_cast<LuaCanvas*>(test_udata(L, idx, "Graphics.Canvas"))) {
+            return (c && c->canvas) ? c->canvas->get_texture_id() : fallback;
+        }
         auto* tex = static_cast<LuaTexture*>(luaL_checkudata(L, idx, "Graphics.Texture"));
         return tex ? tex->id : fallback;
     }
@@ -171,6 +245,275 @@ static void register_texture_metatable(lua_State* L) {
     lua_pushcfunction(L, l_texture_tostring);
     lua_setfield(L, -2, "__tostring");
     lua_pushcfunction(L, l_texture_gc);
+    lua_setfield(L, -2, "__gc");
+
+    lua_pop(L, 1);
+}
+
+// ---------------- Font Metatable ----------------
+
+static int l_font_get_size(lua_State* L) {
+    auto font = check_font(L, 1);
+    lua_pushnumber(L, font->get_pixel_height());
+    return 1;
+}
+
+static int l_font_get_line_height(lua_State* L) {
+    auto font = check_font(L, 1);
+    lua_pushnumber(L, font->get_line_height());
+    return 1;
+}
+
+static int l_font_get_ascent(lua_State* L) {
+    auto font = check_font(L, 1);
+    lua_pushnumber(L, font->get_ascent());
+    return 1;
+}
+
+static int l_font_get_descent(lua_State* L) {
+    auto font = check_font(L, 1);
+    lua_pushnumber(L, font->get_descent());
+    return 1;
+}
+
+static int l_font_measure(lua_State* L) {
+    auto font = check_font(L, 1);
+    const char* text = luaL_checkstring(L, 2);
+    float scale = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+    glm::vec2 size = font->measure_text(text, scale);
+    lua_pushnumber(L, size.x);
+    lua_pushnumber(L, size.y);
+    return 2;
+}
+
+static int l_font_get_width(lua_State* L) {
+    auto font = check_font(L, 1);
+    const char* text = luaL_checkstring(L, 2);
+    float scale = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+    glm::vec2 size = font->measure_text(text, scale);
+    lua_pushnumber(L, size.x);
+    return 1;
+}
+
+static int l_font_get_height(lua_State* L) {
+    auto font = check_font(L, 1);
+    const char* text = luaL_checkstring(L, 2);
+    float scale = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+    glm::vec2 size = font->measure_text(text, scale);
+    lua_pushnumber(L, size.y);
+    return 1;
+}
+
+static int l_font_gc(lua_State* L) {
+    auto* f = static_cast<LuaFont*>(luaL_checkudata(L, 1, "Graphics.Font"));
+    if (f) {
+        f->~LuaFont();
+    }
+    return 0;
+}
+
+static void register_font_metatable(lua_State* L) {
+    luaL_newmetatable(L, "Graphics.Font");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+
+    lua_pushcfunction(L, l_font_get_size);
+    lua_setfield(L, -2, "getSize");
+    lua_pushcfunction(L, l_font_get_line_height);
+    lua_setfield(L, -2, "getLineHeight");
+    lua_pushcfunction(L, l_font_get_ascent);
+    lua_setfield(L, -2, "getAscent");
+    lua_pushcfunction(L, l_font_get_descent);
+    lua_setfield(L, -2, "getDescent");
+    lua_pushcfunction(L, l_font_measure);
+    lua_setfield(L, -2, "measure");
+    lua_pushcfunction(L, l_font_get_width);
+    lua_setfield(L, -2, "getWidth");
+    lua_pushcfunction(L, l_font_get_height);
+    lua_setfield(L, -2, "getHeight");
+
+    lua_pushcfunction(L, l_font_gc);
+    lua_setfield(L, -2, "__gc");
+
+    lua_pop(L, 1);
+}
+
+// ---------------- Canvas Metatable ----------------
+
+static int l_canvas_get_size(lua_State* L) {
+    auto c = check_canvas(L, 1);
+    lua_pushinteger(L, c->get_width());
+    lua_pushinteger(L, c->get_height());
+    return 2;
+}
+
+static int l_canvas_get_width(lua_State* L) {
+    auto c = check_canvas(L, 1);
+    lua_pushinteger(L, c->get_width());
+    return 1;
+}
+
+static int l_canvas_get_height(lua_State* L) {
+    auto c = check_canvas(L, 1);
+    lua_pushinteger(L, c->get_height());
+    return 1;
+}
+
+static int l_canvas_clear(lua_State* L) {
+    auto c = check_canvas(L, 1);
+    float r = static_cast<float>(luaL_optnumber(L, 2, 0.0));
+    float g = static_cast<float>(luaL_optnumber(L, 3, 0.0));
+    float b = static_cast<float>(luaL_optnumber(L, 4, 0.0));
+    float a = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    c->clear(r, g, b, a);
+    return 0;
+}
+
+static int l_canvas_render_to(lua_State* L) {
+    auto c = check_canvas(L, 1);
+    if (!lua_isfunction(L, 2)) {
+        luaL_error(L, "canvas:renderTo requires a function callback");
+        return 0;
+    }
+
+    // Flush batch, bind canvas FBO, run callback, flush batch, restore virtual screen
+    Engine::get().get_batch2d().flush();
+    c->bind();
+    glViewport(0, 0, c->get_width(), c->get_height());
+
+    lua_pushvalue(L, 2);
+    if (lua_pcall(L, 0, 0, 0) != 0) {
+        const char* err = lua_tostring(L, -1);
+        CRAYON_LOG_ERROR("Error in canvas:renderTo callback: {}", err ? err : "unknown");
+        lua_pop(L, 1);
+    }
+
+    Engine::get().get_batch2d().flush();
+    c->unbind();
+
+    int vw = Engine::get().get_window().get_virtual_width();
+    int vh = Engine::get().get_window().get_virtual_height();
+    glViewport(0, 0, vw, vh);
+
+    return 0;
+}
+
+static int l_canvas_get_texture(lua_State* L) {
+    auto c = check_canvas(L, 1);
+    push_texture_userdata(L, c->get_texture_id(), c->get_width(), c->get_height());
+    return 1;
+}
+
+static int l_canvas_gc(lua_State* L) {
+    auto* c = static_cast<LuaCanvas*>(luaL_checkudata(L, 1, "Graphics.Canvas"));
+    if (c) {
+        c->~LuaCanvas();
+    }
+    return 0;
+}
+
+static void register_canvas_metatable(lua_State* L) {
+    luaL_newmetatable(L, "Graphics.Canvas");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+
+    lua_pushcfunction(L, l_canvas_get_size);
+    lua_setfield(L, -2, "getSize");
+    lua_pushcfunction(L, l_canvas_get_width);
+    lua_setfield(L, -2, "getWidth");
+    lua_pushcfunction(L, l_canvas_get_height);
+    lua_setfield(L, -2, "getHeight");
+    lua_pushcfunction(L, l_canvas_clear);
+    lua_setfield(L, -2, "clear");
+    lua_pushcfunction(L, l_canvas_render_to);
+    lua_setfield(L, -2, "renderTo");
+    lua_pushcfunction(L, l_canvas_get_texture);
+    lua_setfield(L, -2, "getTexture");
+
+    lua_pushcfunction(L, l_canvas_gc);
+    lua_setfield(L, -2, "__gc");
+
+    lua_pop(L, 1);
+}
+
+// ---------------- Shader Metatable ----------------
+
+static int l_shader_send_float(lua_State* L) {
+    auto s = check_shader(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    float val = static_cast<float>(luaL_checknumber(L, 3));
+    s->bind();
+    s->set_float(name, val);
+    return 0;
+}
+
+static int l_shader_send_int(lua_State* L) {
+    auto s = check_shader(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    int val = static_cast<int>(luaL_checkinteger(L, 3));
+    s->bind();
+    s->set_int(name, val);
+    return 0;
+}
+
+static int l_shader_send_vec2(lua_State* L) {
+    auto s = check_shader(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    float x = static_cast<float>(luaL_checknumber(L, 3));
+    float y = static_cast<float>(luaL_checknumber(L, 4));
+    s->bind();
+    s->set_vec2(name, glm::vec2(x, y));
+    return 0;
+}
+
+static int l_shader_send_vec3(lua_State* L) {
+    auto s = check_shader(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    float x = static_cast<float>(luaL_checknumber(L, 3));
+    float y = static_cast<float>(luaL_checknumber(L, 4));
+    float z = static_cast<float>(luaL_checknumber(L, 5));
+    s->bind();
+    s->set_vec3(name, glm::vec3(x, y, z));
+    return 0;
+}
+
+static int l_shader_send_vec4(lua_State* L) {
+    auto s = check_shader(L, 1);
+    const char* name = luaL_checkstring(L, 2);
+    float x = static_cast<float>(luaL_checknumber(L, 3));
+    float y = static_cast<float>(luaL_checknumber(L, 4));
+    float z = static_cast<float>(luaL_checknumber(L, 5));
+    float w = static_cast<float>(luaL_checknumber(L, 6));
+    s->bind();
+    s->set_vec4(name, glm::vec4(x, y, z, w));
+    return 0;
+}
+
+static int l_shader_gc(lua_State* L) {
+    auto* s = static_cast<LuaShader*>(luaL_checkudata(L, 1, "Graphics.Shader"));
+    if (s) {
+        s->~LuaShader();
+    }
+    return 0;
+}
+
+static void register_shader_metatable(lua_State* L) {
+    luaL_newmetatable(L, "Graphics.Shader");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+
+    lua_pushcfunction(L, l_shader_send_float);
+    lua_setfield(L, -2, "sendFloat");
+    lua_pushcfunction(L, l_shader_send_int);
+    lua_setfield(L, -2, "sendInt");
+    lua_pushcfunction(L, l_shader_send_vec2);
+    lua_setfield(L, -2, "sendVec2");
+    lua_pushcfunction(L, l_shader_send_vec3);
+    lua_setfield(L, -2, "sendVec3");
+    lua_pushcfunction(L, l_shader_send_vec4);
+    lua_setfield(L, -2, "sendVec4");
+
+    lua_pushcfunction(L, l_shader_gc);
     lua_setfield(L, -2, "__gc");
 
     lua_pop(L, 1);
@@ -1677,14 +2020,14 @@ static int l_graphics_draw_quad_3d(lua_State* L) {
 }
 
 static int l_graphics_set_shading_mode(lua_State* L) {
-    const char* mode_str = luaL_checkstring(L, 1);
-    std::string m(mode_str);
-    if (m == "flat") {
-        Engine::get().get_mesh_renderer().set_shading_mode(ShadingMode::Flat);
-    } else if (m == "unlit") {
-        Engine::get().get_mesh_renderer().set_shading_mode(ShadingMode::Unlit);
-    } else {
-        Engine::get().get_mesh_renderer().set_shading_mode(ShadingMode::Gouraud);
+    if (lua_isnumber(L, 1)) {
+        int m = static_cast<int>(lua_tointeger(L, 1));
+        Engine::get().get_mesh_renderer().set_shading_mode(static_cast<ShadingMode>(m));
+    } else if (lua_isstring(L, 1)) {
+        std::string mode = lua_tostring(L, 1);
+        if (mode == "flat") Engine::get().get_mesh_renderer().set_shading_mode(ShadingMode::Flat);
+        else if (mode == "unlit") Engine::get().get_mesh_renderer().set_shading_mode(ShadingMode::Unlit);
+        else Engine::get().get_mesh_renderer().set_shading_mode(ShadingMode::Gouraud);
     }
     return 0;
 }
@@ -1970,14 +2313,85 @@ static int l_graphics_draw_ring(lua_State* L) {
     return 0;
 }
 
+static int l_graphics_load_font(lua_State* L) {
+    const char* path = luaL_checkstring(L, 1);
+    float size = static_cast<float>(luaL_optnumber(L, 2, 16.0));
+    bool nearest = lua_isnoneornil(L, 3) ? true : lua_toboolean(L, 3);
+    auto font = std::make_shared<Font>();
+    if (font->load_from_file(path, size, nearest)) {
+        push_font_userdata(L, font);
+        return 1;
+    }
+    return 0;
+}
+
+static int l_graphics_set_font(lua_State* L) {
+    if (lua_isnoneornil(L, 1)) {
+        Engine::get().get_batch2d().set_font(nullptr);
+        return 0;
+    }
+    auto font = check_font(L, 1);
+    Engine::get().get_batch2d().set_font(font);
+    return 0;
+}
+
+static int l_graphics_get_font(lua_State* L) {
+    auto font = Engine::get().get_batch2d().get_font();
+    if (font) {
+        push_font_userdata(L, font);
+        return 1;
+    }
+    return 0;
+}
+
 static int l_graphics_draw_text(lua_State* L) {
     const char* text = luaL_checkstring(L, 1);
     float x = static_cast<float>(luaL_checknumber(L, 2));
     float y = static_cast<float>(luaL_checknumber(L, 3));
-    float scale = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+    float scale = 1.0f;
+    float wrap_width = -1.0f;
+    int align = 0; // 0 = Left, 1 = Center, 2 = Right
+
+    if (lua_istable(L, 4)) {
+        lua_getfield(L, 4, "scale");
+        if (lua_isnumber(L, -1)) scale = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, 4, "wrap");
+        if (lua_isnumber(L, -1)) wrap_width = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, 4, "align");
+        if (lua_isstring(L, -1)) {
+            std::string al = lua_tostring(L, -1);
+            if (al == "center") align = 1;
+            else if (al == "right") align = 2;
+            else align = 0;
+        } else if (lua_isnumber(L, -1)) {
+            align = static_cast<int>(lua_tointeger(L, -1));
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 4, "font");
+        if (lua_isuserdata(L, -1)) {
+            auto* f = static_cast<LuaFont*>(test_udata(L, -1, "Graphics.Font"));
+            if (f && f->font) {
+                Engine::get().get_batch2d().set_font(f->font);
+            }
+        }
+        lua_pop(L, 1);
+    } else {
+        scale = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+        wrap_width = static_cast<float>(luaL_optnumber(L, 5, -1.0));
+        align = static_cast<int>(luaL_optinteger(L, 6, 0));
+    }
 
     const glm::vec4& col = Engine::get().get_active_color();
-    Engine::get().get_batch2d().draw_text(text, x, y, scale, col);
+    if (wrap_width > 0.0f || align != 0) {
+        Engine::get().get_batch2d().draw_text_ex(text, x, y, scale, col, wrap_width, align);
+    } else {
+        Engine::get().get_batch2d().draw_text(text, x, y, scale, col);
+    }
     return 0;
 }
 
@@ -1995,6 +2409,105 @@ static int l_graphics_get_text_height(lua_State* L) {
     float h = Engine::get().get_batch2d().get_text_height(text, scale);
     lua_pushnumber(L, h);
     return 1;
+}
+
+static int l_graphics_create_canvas(lua_State* L) {
+    int w = static_cast<int>(luaL_optinteger(L, 1, 0));
+    int h = static_cast<int>(luaL_optinteger(L, 2, 0));
+    if (w <= 0) w = Engine::get().get_window().get_virtual_width();
+    if (h <= 0) h = Engine::get().get_window().get_virtual_height();
+    auto canvas = Canvas::create(w, h);
+    if (!canvas) {
+        luaL_error(L, "failed to create canvas of size %dx%d", w, h);
+        return 0;
+    }
+    push_canvas_userdata(L, canvas);
+    return 1;
+}
+
+static int l_graphics_set_canvas(lua_State* L) {
+    Engine::get().get_batch2d().flush();
+    if (lua_isnoneornil(L, 1)) {
+        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        int vw = Engine::get().get_window().get_virtual_width();
+        int vh = Engine::get().get_window().get_virtual_height();
+        glViewport(0, 0, vw, vh);
+        return 0;
+    }
+    auto canvas = check_canvas(L, 1);
+    canvas->bind();
+    return 0;
+}
+
+static bool looks_like_shader_source(const char* s) {
+    if (!s || !*s) return false;
+    // Heuristic: GLSL source always contains a newline or starts with #version/void main.
+    // A file path on Windows/Linux never contains a newline.
+    for (const char* p = s; *p; ++p) {
+        if (*p == '\n') return true;
+    }
+    if (std::strstr(s, "#version") != nullptr) return true;
+    if (std::strstr(s, "void main") != nullptr) return true;
+    return false;
+}
+
+static int l_graphics_load_shader(lua_State* L) {
+    const char* vert = nullptr;
+    const char* frag = nullptr;
+
+    if (lua_gettop(L) >= 2) {
+        if (!lua_isnil(L, 1)) {
+            vert = luaL_checkstring(L, 1);
+        }
+        frag = luaL_checkstring(L, 2);
+    } else {
+        frag = luaL_checkstring(L, 1);
+    }
+
+    std::string vert_src = (vert && *vert) ? vert : SHADER_2D_VS;
+    std::string frag_src = (frag && *frag) ? frag : "";
+
+    auto shader = std::make_shared<Shader>();
+    bool ok = false;
+
+    if (looks_like_shader_source(vert) || looks_like_shader_source(frag)) {
+        // At least one argument is inline source — treat both as memory source
+        ok = shader->load_from_memory(vert_src, frag_src);
+    } else if (vert && *vert) {
+        // Both look like file paths — try file first, fall back to memory
+        ok = shader->load_from_file(vert, frag);
+        if (!ok) {
+            ok = shader->load_from_memory(vert_src, frag_src);
+        }
+    } else {
+        // Fragment file path with default 2D vertex shader
+        std::ifstream f_file(frag);
+        if (f_file.is_open()) {
+            std::stringstream f_stream;
+            f_stream << f_file.rdbuf();
+            ok = shader->load_from_memory(SHADER_2D_VS, f_stream.str());
+        } else {
+            ok = shader->load_from_memory(SHADER_2D_VS, frag_src);
+        }
+    }
+
+    if (!ok) {
+        return luaL_error(L, "failed to load shader");
+    }
+
+    push_shader_userdata(L, shader);
+    return 1;
+}
+
+static int l_graphics_set_shader(lua_State* L) {
+    Engine::get().get_batch2d().flush();
+    if (lua_isnoneornil(L, 1)) {
+        glUseProgram(0);
+        return 0;
+    }
+    auto shader = check_shader(L, 1);
+    shader->bind();
+    return 0;
 }
 
 static int l_graphics_set_blend_mode(lua_State* L) {
@@ -2106,6 +2619,99 @@ static int l_graphics_set_light(lua_State* L) {
         glm::vec3(lr, lg, lb),
         glm::vec3(ar, ag, ab)
     );
+    return 0;
+}
+
+static int l_graphics_set_spot_light(lua_State* L) {
+    int raw_idx = static_cast<int>(luaL_checkinteger(L, 1));
+    int idx = (raw_idx >= 1) ? (raw_idx - 1) : raw_idx;
+    float px = static_cast<float>(luaL_checknumber(L, 2));
+    float py = static_cast<float>(luaL_checknumber(L, 3));
+    float pz = static_cast<float>(luaL_checknumber(L, 4));
+    float dx = static_cast<float>(luaL_checknumber(L, 5));
+    float dy = static_cast<float>(luaL_checknumber(L, 6));
+    float dz = static_cast<float>(luaL_checknumber(L, 7));
+    float radius = static_cast<float>(luaL_optnumber(L, 8, 15.0));
+    float r = static_cast<float>(luaL_optnumber(L, 9, 1.0));
+    float g = static_cast<float>(luaL_optnumber(L, 10, 1.0));
+    float b = static_cast<float>(luaL_optnumber(L, 11, 1.0));
+    float intensity = static_cast<float>(luaL_optnumber(L, 12, 1.0));
+    float inner_angle = static_cast<float>(luaL_optnumber(L, 13, 15.0));
+    float outer_angle = static_cast<float>(luaL_optnumber(L, 14, 25.0));
+
+    Engine::get().get_mesh_renderer().set_spot_light(
+        idx,
+        glm::vec3(px, py, pz),
+        glm::vec3(dx, dy, dz),
+        glm::vec3(r, g, b),
+        radius,
+        intensity,
+        inner_angle,
+        outer_angle
+    );
+    return 0;
+}
+
+static int l_graphics_set_spot_light_enabled(lua_State* L) {
+    int raw_idx = static_cast<int>(luaL_checkinteger(L, 1));
+    int idx = (raw_idx >= 1) ? (raw_idx - 1) : raw_idx;
+    bool enabled = lua_toboolean(L, 2);
+    Engine::get().get_mesh_renderer().set_spot_light_enabled(idx, enabled);
+    return 0;
+}
+
+static int l_graphics_set_depth_test(lua_State* L) {
+    bool enable = lua_isnoneornil(L, 1) ? true : lua_toboolean(L, 1);
+    if (enable) {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+    } else {
+        glDisable(GL_DEPTH_TEST);
+    }
+    return 0;
+}
+
+static int l_graphics_set_depth_write(lua_State* L) {
+    bool enable = lua_isnoneornil(L, 1) ? true : lua_toboolean(L, 1);
+    glDepthMask(enable ? GL_TRUE : GL_FALSE);
+    return 0;
+}
+
+static int l_graphics_set_cull_face(lua_State* L) {
+    if (lua_isnoneornil(L, 1) || !lua_toboolean(L, 1)) {
+        glDisable(GL_CULL_FACE);
+    } else {
+        glEnable(GL_CULL_FACE);
+        if (lua_isstring(L, 1)) {
+            std::string mode = lua_tostring(L, 1);
+            if (mode == "front") glCullFace(GL_FRONT);
+            else glCullFace(GL_BACK);
+        } else {
+            glCullFace(GL_BACK);
+        }
+    }
+    return 0;
+}
+
+static int l_graphics_draw_sky_gradient(lua_State* L) {
+    // Draws a full-screen vertical background gradient
+    glm::vec4 top_col(0.1f, 0.2f, 0.4f, 1.0f);
+    glm::vec4 bot_col(0.6f, 0.7f, 0.9f, 1.0f);
+
+    if (lua_istable(L, 1)) {
+        lua_rawgeti(L, 1, 1); if (lua_isnumber(L, -1)) top_col.r = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, 1, 2); if (lua_isnumber(L, -1)) top_col.g = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, 1, 3); if (lua_isnumber(L, -1)) top_col.b = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    }
+    if (lua_istable(L, 2)) {
+        lua_rawgeti(L, 2, 1); if (lua_isnumber(L, -1)) bot_col.r = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, 2, 2); if (lua_isnumber(L, -1)) bot_col.g = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+        lua_rawgeti(L, 2, 3); if (lua_isnumber(L, -1)) bot_col.b = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+    }
+
+    int vw = Engine::get().get_window().get_virtual_width();
+    int vh = Engine::get().get_window().get_virtual_height();
+    Engine::get().get_batch2d().draw_gradient_v(0.0f, 0.0f, static_cast<float>(vw), static_cast<float>(vh), top_col, bot_col);
     return 0;
 }
 
@@ -2563,6 +3169,9 @@ static int l_graphics_get_white_texture(lua_State* L) {
 
 void register_graphics_bindings(lua_State* L) {
     register_texture_metatable(L);
+    register_font_metatable(L);
+    register_canvas_metatable(L);
+    register_shader_metatable(L);
     register_model_metatable(L);
     register_animator_metatable(L);
 
@@ -2572,6 +3181,27 @@ void register_graphics_bindings(lua_State* L) {
     // Color & Canvas
     lua_pushcfunction(L, l_graphics_clear);
     lua_setfield(L, -2, "clear");
+
+    lua_pushcfunction(L, l_graphics_create_canvas);
+    lua_setfield(L, -2, "createCanvas");
+
+    lua_pushcfunction(L, l_graphics_set_canvas);
+    lua_setfield(L, -2, "setCanvas");
+
+    lua_pushcfunction(L, l_graphics_load_shader);
+    lua_setfield(L, -2, "loadShader");
+
+    lua_pushcfunction(L, l_graphics_set_shader);
+    lua_setfield(L, -2, "setShader");
+
+    lua_pushcfunction(L, l_graphics_load_font);
+    lua_setfield(L, -2, "loadFont");
+
+    lua_pushcfunction(L, l_graphics_set_font);
+    lua_setfield(L, -2, "setFont");
+
+    lua_pushcfunction(L, l_graphics_get_font);
+    lua_setfield(L, -2, "getFont");
 
     lua_pushcfunction(L, l_graphics_set_color);
     lua_setfield(L, -2, "setColor");
@@ -2595,8 +3225,28 @@ void register_graphics_bindings(lua_State* L) {
     lua_pushcfunction(L, l_graphics_set_point_light_enabled);
     lua_setfield(L, -2, "setPointLightEnabled");
 
+    lua_pushcfunction(L, l_graphics_set_spot_light);
+    lua_setfield(L, -2, "setSpotLight");
+
+    lua_pushcfunction(L, l_graphics_set_spot_light_enabled);
+    lua_setfield(L, -2, "setSpotLightEnabled");
+
     lua_pushcfunction(L, l_graphics_set_shading_mode);
     lua_setfield(L, -2, "setShadingMode");
+
+    lua_pushcfunction(L, l_graphics_set_depth_test);
+    lua_setfield(L, -2, "setDepthTest");
+
+    lua_pushcfunction(L, l_graphics_set_depth_write);
+    lua_setfield(L, -2, "setDepthWrite");
+
+    lua_pushcfunction(L, l_graphics_set_cull_face);
+    lua_setfield(L, -2, "setCullFace");
+
+    lua_pushcfunction(L, l_graphics_draw_sky_gradient);
+    lua_setfield(L, -2, "setSkyGradient");
+    lua_pushcfunction(L, l_graphics_draw_sky_gradient);
+    lua_setfield(L, -2, "drawSkyGradient");
 
     // Textures & Models
     lua_pushcfunction(L, l_graphics_load_texture);
@@ -2672,6 +3322,8 @@ void register_graphics_bindings(lua_State* L) {
     // 2D Rendering
     lua_pushcfunction(L, l_graphics_draw_sprite);
     lua_setfield(L, -2, "drawSprite");
+    lua_pushcfunction(L, l_graphics_draw_sprite);
+    lua_setfield(L, -2, "drawTexture");
 
     lua_pushcfunction(L, l_graphics_draw_sprite_part);
     lua_setfield(L, -2, "drawSpritePart");

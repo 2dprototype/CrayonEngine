@@ -58,6 +58,10 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
         return false;
     }
 
+    if (!m_audio.init()) {
+        CRAYON_LOG_WARN("Engine failed to initialize AudioSystem (continuing without audio)");
+    }
+
     m_lua_runtime = std::make_unique<LuaRuntime>();
     if (!m_lua_runtime->init()) {
         CRAYON_LOG_ERROR("Engine failed to initialize LuaRuntime");
@@ -92,6 +96,7 @@ void Engine::shutdown() {
         m_physics->shutdown();
         m_physics.reset();
     }
+    m_audio.shutdown();
     m_mesh_renderer.shutdown();
     m_batch2d.shutdown();
     m_fbo.shutdown();
@@ -252,7 +257,29 @@ void Engine::step_simulation(float dt) {
             m_physics->update(fixed_dt);
             m_physics_accumulator -= fixed_dt;
         }
+
+        if (m_lua_runtime && !m_game_script_path.empty()) {
+            auto events = m_physics->get_and_clear_collision_events();
+            for (const auto& evt : events) {
+                switch (evt.type) {
+                    case PhysicsEventType::CollisionEnter:
+                        m_lua_runtime->call_collision_enter(evt.body_a, evt.body_b, evt.normal.x, evt.normal.y, evt.normal.z, evt.impulse);
+                        break;
+                    case PhysicsEventType::CollisionExit:
+                        m_lua_runtime->call_collision_exit(evt.body_a, evt.body_b);
+                        break;
+                    case PhysicsEventType::TriggerEnter:
+                        m_lua_runtime->call_trigger_enter(evt.body_a, evt.body_b);
+                        break;
+                    case PhysicsEventType::TriggerExit:
+                        m_lua_runtime->call_trigger_exit(evt.body_a, evt.body_b);
+                        break;
+                }
+            }
+        }
     }
+
+    m_audio.update(dt);
 
     if (!m_game_script_path.empty()) {
         m_lua_runtime->call_update(dt);
@@ -381,6 +408,14 @@ void Engine::run() {
                 } else if (event.type == SDL_EVENT_GAMEPAD_AXIS_MOTION) {
                     float val = static_cast<float>(event.gaxis.value) / 32767.0f;
                     m_lua_runtime->call_gamepad_axis(event.gaxis.axis, val);
+                } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
+                    m_lua_runtime->call_window_resized(event.window.data1, event.window.data2);
+                } else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
+                    m_lua_runtime->call_focus_changed(true);
+                } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+                    m_lua_runtime->call_focus_changed(false);
+                } else if (event.type == SDL_EVENT_QUIT) {
+                    m_lua_runtime->call_quit();
                 }
             }
 

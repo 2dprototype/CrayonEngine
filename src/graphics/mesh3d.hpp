@@ -51,6 +51,17 @@ struct PointLight {
     bool enabled = false;
 };
 
+struct SpotLight {
+    glm::vec3 pos{0.0f};
+    glm::vec3 dir{0.0f, -1.0f, 0.0f};
+    glm::vec3 color{1.0f};
+    float radius = 15.0f;
+    float intensity = 1.0f;
+    float inner_cutoff_cos = 0.95f; // cos(~18 deg)
+    float outer_cutoff_cos = 0.90f; // cos(~25 deg)
+    bool enabled = false;
+};
+
 enum class ShadingMode {
     Gouraud = 0,
     Flat = 1,
@@ -212,6 +223,9 @@ public:
     void set_point_light(int index, const glm::vec3& pos, const glm::vec3& color, float radius, float intensity);
     void set_point_light_enabled(int index, bool enabled);
 
+    void set_spot_light(int index, const glm::vec3& pos, const glm::vec3& dir, const glm::vec3& color, float radius, float intensity, float inner_angle_deg = 15.0f, float outer_angle_deg = 25.0f);
+    void set_spot_light_enabled(int index, bool enabled);
+
     void set_shading_mode(ShadingMode mode) { m_shading_mode = mode; }
     ShadingMode get_shading_mode() const { return m_shading_mode; }
 
@@ -234,6 +248,7 @@ private:
     glm::vec3 m_ambient_color{0.25f, 0.25f, 0.3f};
 
     PointLight m_point_lights[4];
+    SpotLight m_spot_lights[2];
     ShadingMode m_shading_mode = ShadingMode::Gouraud;
     RetroEffects m_retro;
 

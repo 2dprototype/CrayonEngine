@@ -16,6 +16,22 @@ enum class MotionType {
     Dynamic = 2
 };
 
+enum class PhysicsEventType {
+    CollisionEnter,
+    CollisionExit,
+    TriggerEnter,
+    TriggerExit
+};
+
+struct PhysicsCollisionEvent {
+    PhysicsEventType type = PhysicsEventType::CollisionEnter;
+    uint32_t body_a = 0;
+    uint32_t body_b = 0;
+    glm::vec3 position{0.0f};
+    glm::vec3 normal{0.0f};
+    float impulse = 0.0f;
+};
+
 struct RaycastHit {
     bool hit = false;
     glm::vec3 position{0.0f};
@@ -119,6 +135,13 @@ public:
     // Sensor / Trigger
     void set_is_sensor(uint32_t body_id, bool is_sensor);
     bool is_sensor(uint32_t body_id) const;
+
+    // Continuous Collision Detection & Planar Constraints
+    void set_motion_quality(uint32_t body_id, bool linear_cast);
+    void set_planar_lock(uint32_t body_id, const std::string& plane);
+
+    // Collision Events
+    std::vector<PhysicsCollisionEvent> get_and_clear_collision_events();
 
     // Damping
     void set_damping(uint32_t body_id, float linear_damping, float angular_damping);

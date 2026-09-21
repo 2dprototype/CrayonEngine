@@ -13,6 +13,11 @@ static int l_time_get_dt(lua_State* L) {
     return 1;
 }
 
+static int l_time_get_fps(lua_State* L) {
+    lua_pushnumber(L, Engine::get().get_fps());
+    return 1;
+}
+
 void register_time_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
@@ -22,6 +27,9 @@ void register_time_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_time_get_dt);
     lua_setfield(L, -2, "getDt");
+
+    lua_pushcfunction(L, l_time_get_fps);
+    lua_setfield(L, -2, "getFps");
 
     lua_setfield(L, -2, "time");
     lua_pop(L, 1);

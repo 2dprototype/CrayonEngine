@@ -81,7 +81,7 @@ bool Shader::load_from_memory(const std::string& vertex_source, const std::strin
 bool Shader::load_from_file(const std::string& vertex_path, const std::string& fragment_path) {
     std::ifstream v_file(vertex_path);
     if (!v_file.is_open()) {
-        CRAYON_LOG_ERROR("Failed to open vertex shader file: {}", vertex_path);
+        CRAYON_LOG_DEBUG("Failed to open vertex shader file: {}", vertex_path);
         return false;
     }
     std::stringstream v_stream;
@@ -89,7 +89,7 @@ bool Shader::load_from_file(const std::string& vertex_path, const std::string& f
 
     std::ifstream f_file(fragment_path);
     if (!f_file.is_open()) {
-        CRAYON_LOG_ERROR("Failed to open fragment shader file: {}", fragment_path);
+        CRAYON_LOG_DEBUG("Failed to open fragment shader file: {}", fragment_path);
         return false;
     }
     std::stringstream f_stream;

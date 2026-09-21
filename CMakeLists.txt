@@ -45,10 +45,14 @@ set(ENGINE_SOURCES
     vendor/tinygltf/src/tiny_gltf_v3.c
     src/core/window.cpp
     src/core/input.cpp
+    src/core/audio_system.cpp
     src/core/engine.cpp
     src/graphics/fbo.cpp
     src/graphics/shader.cpp
     src/graphics/texture.cpp
+    src/graphics/font.cpp
+    src/graphics/canvas.cpp
+    src/graphics/particles.cpp
     src/graphics/camera.cpp
     src/graphics/batch2d.cpp
     src/graphics/mesh3d.cpp
@@ -60,8 +64,11 @@ set(ENGINE_SOURCES
     src/scripting/bind_graphics.cpp
     src/scripting/bind_input.cpp
     src/scripting/bind_time.cpp
+    src/scripting/bind_audio.cpp
     src/scripting/bind_physics3d.cpp
-    src/scripting/bind_physics2d.cpp
+    src/scripting/bind_particles.cpp
+    src/scripting/bind_math.cpp
+    src/scripting/bind_fs.cpp
 )
 
 set_source_files_properties(vendor/tinygltf/src/tiny_gltf_v3.c PROPERTIES

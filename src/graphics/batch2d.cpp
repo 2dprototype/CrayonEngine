@@ -1,4 +1,5 @@
 #include "batch2d.hpp"
+#include "font.hpp"
 #include "default_shaders.hpp"
 #include "../core/log.hpp"
 #include <glm/gtc/matrix_transform.hpp>
@@ -694,7 +695,20 @@ void Batch2D::draw_ring(float cx, float cy, float inner_radius, float outer_radi
     }
 }
 
+void Batch2D::set_font(std::shared_ptr<Font> font) {
+    m_current_font = font;
+}
+
+std::shared_ptr<Font> Batch2D::get_font() const {
+    return m_current_font;
+}
+
 void Batch2D::draw_text(const std::string& text, float x, float y, float scale, const glm::vec4& color) {
+    if (m_current_font) {
+        m_current_font->draw(*this, text, x, y, scale, color, -1.0f, TextAlign::Left);
+        return;
+    }
+
     if (!m_font_texture) return;
     GLuint font_id = m_font_texture->get_id();
 
@@ -730,7 +744,22 @@ void Batch2D::draw_text(const std::string& text, float x, float y, float scale, 
     }
 }
 
+void Batch2D::draw_text_ex(const std::string& text, float x, float y, float scale, const glm::vec4& color, float wrap_width, int align) {
+    if (m_current_font) {
+        TextAlign ta = TextAlign::Left;
+        if (align == 1) ta = TextAlign::Center;
+        else if (align == 2) ta = TextAlign::Right;
+        m_current_font->draw(*this, text, x, y, scale, color, wrap_width, ta);
+        return;
+    }
+    draw_text(text, x, y, scale, color);
+}
+
 float Batch2D::get_text_width(const std::string& text, float scale) const {
+    if (m_current_font) {
+        return m_current_font->measure_text(text, scale).x;
+    }
+
     float max_len = 0.0f;
     float cur_len = 0.0f;
     for (char c : text) {
@@ -746,6 +775,10 @@ float Batch2D::get_text_width(const std::string& text, float scale) const {
 }
 
 float Batch2D::get_text_height(const std::string& text, float scale) const {
+    if (m_current_font) {
+        return m_current_font->measure_text(text, scale).y;
+    }
+
     if (text.empty()) return 0.0f;
     float lines = 1.0f;
     for (char c : text) {

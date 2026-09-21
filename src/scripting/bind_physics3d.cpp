@@ -456,6 +456,26 @@ static int l_body_set_active(lua_State* L) {
     return 0;
 }
 
+static int l_body_set_motion_quality(lua_State* L) {
+    auto* b = check_body(L, 1);
+    bool linear_cast = true;
+    if (lua_isboolean(L, 2)) {
+        linear_cast = lua_toboolean(L, 2) != 0;
+    } else if (lua_isstring(L, 2)) {
+        std::string mode = lua_tostring(L, 2);
+        linear_cast = (mode == "linearCast" || mode == "linear_cast" || mode == "ccd");
+    }
+    b->physics->set_motion_quality(b->id, linear_cast);
+    return 0;
+}
+
+static int l_body_set_planar_lock(lua_State* L) {
+    auto* b = check_body(L, 1);
+    const char* plane = luaL_optstring(L, 2, "xy");
+    b->physics->set_planar_lock(b->id, plane);
+    return 0;
+}
+
 static int l_body_destroy(lua_State* L) {
     auto* b = static_cast<LuaPhysics3DBody*>(luaL_checkudata(L, 1, "Physics3D.Body"));
     if (!b || !b->valid) {
@@ -2645,6 +2665,10 @@ static void register_body_metatable(lua_State* L) {
     lua_setfield(L, -2, "setRestitution");
     lua_pushcfunction(L, l_body_set_motion_type);
     lua_setfield(L, -2, "setMotionType");
+    lua_pushcfunction(L, l_body_set_motion_quality);
+    lua_setfield(L, -2, "setMotionQuality");
+    lua_pushcfunction(L, l_body_set_planar_lock);
+    lua_setfield(L, -2, "setPlanarLock");
     lua_pushcfunction(L, l_body_set_sensor);
     lua_setfield(L, -2, "setSensor");
     lua_pushcfunction(L, l_body_is_sensor);
@@ -3825,7 +3849,16 @@ void register_physics3d_bindings(lua_State* L) {
     lua_pushcfunction(L, l_physics_destroy_soft_body);
     lua_setfield(L, -2, "destroySoftBody");
 
-    lua_setfield(L, -2, "physics3d");
+    lua_pushcfunction(L, l_body_set_motion_quality);
+    lua_setfield(L, -2, "setMotionQuality");
+
+    lua_pushcfunction(L, l_body_set_planar_lock);
+    lua_setfield(L, -2, "setPlanarLock");
+
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -3, "physics"); // Primary unified namespace: crayon.physics
+
+    lua_setfield(L, -2, "physics3d"); // Backward-compatible alias
     lua_pop(L, 1);
 }
 
