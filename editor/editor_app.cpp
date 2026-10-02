@@ -1,6 +1,5 @@
 #include "editor_app.hpp"
 #include "editor_theme.hpp"
-#include "../src/core/log.hpp"
 
 #include <imgui.h>
 #include <misc/cpp/imgui_stdlib.h>
@@ -11,6 +10,7 @@
 
 #include <algorithm>
 #include <chrono>
+#include <cstdio>
 #include <fstream>
 #include <mutex>
 #include <sstream>
@@ -82,13 +82,36 @@ EditorApp::EditorApp() = default;
 EditorApp::~EditorApp() { shutdown(); }
 
 bool EditorApp::init(int width, int height, const std::string& title) {
-    if (!m_engine.init(width, height, 480, 360, title)) {
-        CRAYON_LOG_ERROR("EditorApp failed to initialize Engine");
+    if (!SDL_Init(SDL_INIT_VIDEO)) {
+        std::fprintf(stderr, "[editor] SDL_Init failed: %s\n", SDL_GetError());
         return false;
     }
-    auto& win = m_engine.get_window();
-    win.set_vsync(true);
-    win.set_window_min_size(420, 320);
+
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+    SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
+
+    m_window = SDL_CreateWindow(title.c_str(), width, height,
+        SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY);
+    if (!m_window) {
+        std::fprintf(stderr, "[editor] SDL_CreateWindow failed: %s\n", SDL_GetError());
+        return false;
+    }
+
+    m_gl = SDL_GL_CreateContext(m_window);
+    if (!m_gl) {
+        std::fprintf(stderr, "[editor] SDL_GL_CreateContext failed: %s\n", SDL_GetError());
+        return false;
+    }
+    SDL_GL_MakeCurrent(m_window, m_gl);
+    SDL_GL_SetSwapInterval(1);                          // vsync
+    SDL_SetWindowMinimumSize(m_window, 420, 320);
+
+    if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress)) {
+        std::fprintf(stderr, "[editor] gladLoadGLLoader failed\n");
+        return false;
+    }
 
     IMGUI_CHECKVERSION();
     ImGui::CreateContext();
@@ -98,11 +121,10 @@ bool EditorApp::init(int width, int height, const std::string& title) {
 
     apply_modern_dark_theme();
 
-    SDL_Window* sdl_win = win.get_sdl_window();
-    float scale = SDL_GetWindowDisplayScale(sdl_win);
+    float scale = SDL_GetWindowDisplayScale(m_window);
     if (scale > 1.05f) { io.FontGlobalScale = scale; ImGui::GetStyle().ScaleAllSizes(scale); }
 
-    if (!ImGui_ImplSDL3_InitForOpenGL(sdl_win, win.get_gl_context())) return false;
+    if (!ImGui_ImplSDL3_InitForOpenGL(m_window, m_gl)) return false;
     if (!ImGui_ImplOpenGL3_Init("#version 330")) return false;
 
     m_store.load();
@@ -139,7 +161,7 @@ void EditorApp::select_project(const std::string& dir) {
 }
 
 void EditorApp::request_dialog(DialogKind kind) {
-    SDL_Window* w = m_engine.get_window().get_sdl_window();
+    SDL_Window* w = m_window;
     void* ud = reinterpret_cast<void*>(static_cast<intptr_t>(kind));
     if (kind == DialogKind::CrayonExe) SDL_ShowOpenFileDialog(dialog_cb, ud, w, nullptr, 0, nullptr, false);
     else SDL_ShowOpenFolderDialog(dialog_cb, ud, w, nullptr, false);
@@ -818,14 +840,15 @@ void EditorApp::run() {
     using clock = std::chrono::high_resolution_clock;
     const double target_frame_time = 1.0 / 60.0;
 
-    while (m_running && !m_engine.get_window().should_close()) {
+    while (m_running && !m_should_close) {
         auto frame_start = clock::now();
-
-        m_engine.get_input().begin_frame();
+        
         SDL_Event event;
         while (SDL_PollEvent(&event)) {
             ImGui_ImplSDL3_ProcessEvent(&event);
-            m_engine.get_window().handle_event(event);
+            if (event.type == SDL_EVENT_QUIT) m_should_close = true;
+            if (event.type == SDL_EVENT_WINDOW_CLOSE_REQUESTED &&
+                event.window.windowID == SDL_GetWindowID(m_window)) m_should_close = true;
         }
         poll_dialog();
 
@@ -840,12 +863,12 @@ void EditorApp::run() {
 
         ImGui::Render();
         int w = 0, h = 0;
-        m_engine.get_window().get_window_size(w, h);
+        SDL_GetWindowSizeInPixels(m_window, &w, &h);
         glViewport(0, 0, w, h);
         glClearColor(0.10f, 0.10f, 0.12f, 1.0f);
         glClear(GL_COLOR_BUFFER_BIT);
         ImGui_ImplOpenGL3_RenderDrawData(ImGui::GetDrawData());
-        m_engine.get_window().swap_buffers();
+        SDL_GL_SwapWindow(m_window);
 
         std::chrono::duration<double> work = clock::now() - frame_start;
         if (work.count() < target_frame_time)
@@ -864,7 +887,9 @@ void EditorApp::shutdown() {
         ImGui_ImplSDL3_Shutdown();
         ImGui::DestroyContext();
     }
-    m_engine.shutdown();
+    if (m_gl)     { SDL_GL_DestroyContext(m_gl); m_gl = nullptr; }
+    if (m_window) { SDL_DestroyWindow(m_window); m_window = nullptr; }
+    SDL_Quit();
 }
 
 } // namespace crayon::editor

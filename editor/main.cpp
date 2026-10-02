@@ -1,5 +1,7 @@
 #include "editor_app.hpp"
-#include "../src/core/log.hpp"
+
+#include <cstdio>
+#include <string>
 
 int main(int argc, char* argv[]) {
     int start_w = 630;
@@ -17,16 +19,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    CRAYON_LOG_INFO("Starting Crayon Project Manager ({}x{})...", start_w, start_h);
+    std::printf("Starting Crayon Project Manager (%dx%d)...\n", start_w, start_h);
 
     crayon::editor::EditorApp app;
     if (!app.init(start_w, start_h, "Crayon Project Manager")) {
-        CRAYON_LOG_ERROR("Failed to initialize Crayon Project Manager");
+        std::fprintf(stderr, "Failed to initialize Crayon Project Manager\n");
         return 1;
     }
 
     app.run();
 
-    CRAYON_LOG_INFO("Crayon Project Manager exited cleanly.");
+    std::printf("Crayon Project Manager exited cleanly.\n");
     return 0;
 }

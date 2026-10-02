@@ -2,7 +2,7 @@
 
 #include <string>
 #include <vector>
-#include "../src/core/engine.hpp"
+#include <SDL3/SDL.h> 
 #include "project_store.hpp"
 #include "process_runner.hpp"
 
@@ -56,7 +56,10 @@ private:
     void toast(const std::string& msg, bool error = false);
     void handle_shortcuts();
 
-    crayon::Engine m_engine;
+    SDL_Window*   m_window       = nullptr;
+    SDL_GLContext m_gl           = nullptr;
+    bool          m_should_close = false;
+
     ProjectStore m_store;
     ProcessRunner m_runner;
 

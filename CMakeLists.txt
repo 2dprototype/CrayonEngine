@@ -24,6 +24,8 @@ add_compile_definitions(
 )
 
 # Include directories
+# NOTE: `src` is kept here for the crayon player target only.
+# The editor target below overrides its own includes and does not rely on this.
 include_directories(
     src
     editor
@@ -104,7 +106,7 @@ set(IMGUI_SOURCES
     vendor/imgui/misc/cpp/imgui_stdlib.cpp
 )
 
-# Editor sources
+# Editor sources (standalone project manager - no engine dependency)
 set(EDITOR_SOURCES
     editor/editor_theme.cpp
     editor/project_store.cpp
@@ -149,10 +151,21 @@ if(BUILD_CRAYON)
 endif()
 
 # -------------------------------------------------------------
-# Target 2: editor -> editor.exe (Project Manager)
+# Target 2: editor -> editor.exe (Standalone Project Manager)
 # -------------------------------------------------------------
+#
+# The editor is a pure ImGui + SDL3 application. It launches crayon.exe
+# as a child process and edits project files on disk. It does NOT link
+# against the engine, Lua, or physics libraries, and it does NOT include
+# anything from src/. GLAD is only needed to load GL function pointers
+# for the ImGui OpenGL3 backend.
+#
 if(BUILD_EDITOR)
-    add_executable(editor ${ENGINE_SOURCES} ${IMGUI_SOURCES} ${EDITOR_SOURCES})
+    add_executable(editor
+        vendor/glad/src/glad.c
+        ${IMGUI_SOURCES}
+        ${EDITOR_SOURCES}
+    )
 
     set_target_properties(editor PROPERTIES
         OUTPUT_NAME "editor"
@@ -161,19 +174,25 @@ if(BUILD_EDITOR)
         CXX_EXTENSIONS OFF
     )
 
+    # Explicit includes for the editor only. Do NOT include `src` here:
+    # if the editor ever tries to `#include "../src/..."` again, this
+    # will fail at compile time instead of silently pulling in the engine.
+    target_include_directories(editor PRIVATE
+        ${CMAKE_CURRENT_SOURCE_DIR}/editor
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad/include
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/imgui/backends
+        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/include
+    )
+
     target_link_libraries(editor PRIVATE
-        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/JoltPhysics/lib/libJolt.a
         ${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/lib/libSDL3.dll.a
-        ${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/lib/libluajit-5.1.dll.a
         opengl32
     )
 
     add_custom_command(TARGET editor POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
             "${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/bin/SDL3.dll"
-            "$<TARGET_FILE_DIR:editor>"
-        COMMAND ${CMAKE_COMMAND} -E copy_if_different
-            "${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/bin/lua51.dll"
             "$<TARGET_FILE_DIR:editor>"
     )
 endif()

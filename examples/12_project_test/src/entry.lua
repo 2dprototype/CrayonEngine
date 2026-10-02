@@ -18,7 +18,7 @@ function crayon.config(t)
     t.modules.audio = false
     t.modules.mesh3D = false
 
-    t.graphics.clearColor = {0.14, 0.08, 0.22, 1.0}
+    t.graphics.clearColor = {0.1, 0.08, 0.22, 1.0}
     t.fpsLimit = 60
 end
 
