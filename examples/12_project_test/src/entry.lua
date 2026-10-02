@@ -7,8 +7,8 @@
 
 function crayon.config(t)
     t.window.title = "Crayon Project Manifest Test (.crayonproj)"
-    t.window.width = 720
-    t.window.height = 540
+    t.window.width = 320
+    t.window.height = 270
     t.window.virtualWidth = 360
     t.window.virtualHeight = 270
     t.window.scaling = "aspect"

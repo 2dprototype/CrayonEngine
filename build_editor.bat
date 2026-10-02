@@ -7,7 +7,7 @@ if not exist "build\build.ninja" (
     if %errorlevel% neq 0 exit /b %errorlevel%
 )
 
-echo [*] Building Crayon Game Editor (editor.exe)...
+echo [*] Building Crayon Project Manager (editor.exe)...
 cmake --build build --target editor -j4
 
 if %errorlevel% equ 0 (

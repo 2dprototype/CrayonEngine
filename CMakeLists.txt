@@ -7,7 +7,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 
 # Build options to separate crayon and editor builds
 option(BUILD_CRAYON "Build the Crayon Engine Player (crayon.exe)" ON)
-option(BUILD_EDITOR "Build the Crayon Game Editor (editor.exe)" ON)
+option(BUILD_EDITOR "Build the Crayon Project Manager (editor.exe)" ON)
 
 # Compiler optimization and warnings
 if(MSVC)
@@ -107,11 +107,9 @@ set(IMGUI_SOURCES
 # Editor sources
 set(EDITOR_SOURCES
     editor/editor_theme.cpp
+    editor/project_store.cpp
+    editor/process_runner.cpp
     editor/editor_app.cpp
-    editor/panels/viewport_panel.cpp
-    editor/panels/scene_panel.cpp
-    editor/panels/inspector_panel.cpp
-    editor/panels/asset_browser_panel.cpp
     editor/main.cpp
 )
 
@@ -151,7 +149,7 @@ if(BUILD_CRAYON)
 endif()
 
 # -------------------------------------------------------------
-# Target 2: editor -> editor.exe (Visual Game Editor IDE)
+# Target 2: editor -> editor.exe (Project Manager)
 # -------------------------------------------------------------
 if(BUILD_EDITOR)
     add_executable(editor ${ENGINE_SOURCES} ${IMGUI_SOURCES} ${EDITOR_SOURCES})

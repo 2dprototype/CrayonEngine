@@ -17,16 +17,16 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    CRAYON_LOG_INFO("Starting Crayon Game Editor ({}x{})...", start_w, start_h);
+    CRAYON_LOG_INFO("Starting Crayon Project Manager ({}x{})...", start_w, start_h);
 
     crayon::editor::EditorApp app;
-    if (!app.init(start_w, start_h, "Crayon Game Editor")) {
-        CRAYON_LOG_ERROR("Failed to initialize Crayon Game Editor");
+    if (!app.init(start_w, start_h, "Crayon Project Manager")) {
+        CRAYON_LOG_ERROR("Failed to initialize Crayon Project Manager");
         return 1;
     }
 
     app.run();
 
-    CRAYON_LOG_INFO("Crayon Game Editor exited cleanly.");
+    CRAYON_LOG_INFO("Crayon Project Manager exited cleanly.");
     return 0;
 }
