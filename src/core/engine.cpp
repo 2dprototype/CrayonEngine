@@ -75,6 +75,11 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
         return false;
     }
 
+    if (!m_post_process_chain.init(m_config.window.virtual_width, m_config.window.virtual_height)) {
+        CRAYON_LOG_ERROR("Engine failed to initialize PostProcessChain");
+        return false;
+    }
+
     if (!m_batch2d.init()) {
         CRAYON_LOG_ERROR("Engine failed to initialize Batch2D");
         return false;
@@ -165,6 +170,7 @@ void Engine::shutdown() {
     if (m_config.modules.mesh3d) {
         m_mesh_renderer.shutdown();
     }
+    m_post_process_chain.shutdown();
     m_batch2d.shutdown();
     m_fbo.shutdown();
     m_window.shutdown();
@@ -383,7 +389,17 @@ void Engine::render_frame() {
     }
     opts.transparent = m_window.is_transparent();
 
-    m_fbo.blit_to_screen(m_window.get_viewport_info(), win_w, win_h, *m_post_shader, opts);
+    GLuint final_texture = m_fbo.get_color_texture();
+    if (m_post_process_chain.hasActiveEffects()) {
+        final_texture = m_post_process_chain.process(
+            final_texture,
+            m_config.window.virtual_width,
+            m_config.window.virtual_height,
+            static_cast<float>(m_total_time)
+        );
+    }
+
+    m_fbo.blit_to_screen(m_window.get_viewport_info(), win_w, win_h, *m_post_shader, opts, final_texture);
 
     // 3. Swap SDL Buffers
     m_window.swap_buffers();

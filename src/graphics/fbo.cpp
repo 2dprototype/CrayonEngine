@@ -113,7 +113,7 @@ void FBO::create_fullscreen_quad() {
     glBindVertexArray(0);
 }
 
-void FBO::blit_to_screen(const ViewportInfo& vp, int window_w, int window_h, Shader& post_shader, const PostProcessOptions& opts) {
+void FBO::blit_to_screen(const ViewportInfo& vp, int window_w, int window_h, Shader& post_shader, const PostProcessOptions& opts, GLuint override_texture) {
     glBindFramebuffer(GL_FRAMEBUFFER, 0);
 
     // Clear whole window (including pillarbox/letterbox areas)
@@ -149,7 +149,8 @@ void FBO::blit_to_screen(const ViewportInfo& vp, int window_w, int window_h, Sha
     post_shader.set_float("u_vignette_strength", opts.vignette_strength);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_color_texture);
+    GLuint tex_to_bind = (override_texture != 0) ? override_texture : m_color_texture;
+    glBindTexture(GL_TEXTURE_2D, tex_to_bind);
 
     glBindVertexArray(m_quad_vao);
     glDrawArrays(GL_TRIANGLES, 0, 6);

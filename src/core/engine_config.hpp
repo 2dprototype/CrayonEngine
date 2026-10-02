@@ -7,8 +7,8 @@ namespace crayon {
 
 struct WindowConfig {
     std::string title = "Crayon Engine";
-    int width = 960;
-    int height = 720;
+    int width = 320*2;
+    int height = 240*2;
     int virtual_width = 320;
     int virtual_height = 240;
     int min_width = 1;

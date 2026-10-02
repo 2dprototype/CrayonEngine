@@ -9,7 +9,7 @@ struct LuaParticleEmitter {
     std::shared_ptr<ParticleEmitter> emitter;
 };
 
-static void* test_particle_udata(lua_State* L, int idx, const char* tname) {
+[[maybe_unused]] static void* test_particle_udata(lua_State* L, int idx, const char* tname) {
     if (!lua_isuserdata(L, idx)) return nullptr;
     if (lua_getmetatable(L, idx)) {
         luaL_getmetatable(L, tname);

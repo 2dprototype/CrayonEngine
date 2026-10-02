@@ -58,6 +58,9 @@ set(ENGINE_SOURCES
     src/graphics/mesh3d.cpp
     src/graphics/model3d.cpp
     src/graphics/animator.cpp
+    src/graphics/camera2d.cpp
+    src/graphics/post_process_chain.cpp
+    src/graphics/rich_text.cpp
     src/physics/physics_system.cpp
     src/scripting/lua_runtime.cpp
     src/scripting/bind_window.cpp

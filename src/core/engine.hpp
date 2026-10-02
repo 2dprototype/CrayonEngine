@@ -15,6 +15,7 @@
 #include "../graphics/camera.hpp"
 #include "../graphics/batch2d.hpp"
 #include "../graphics/mesh3d.hpp"
+#include "../graphics/post_process_chain.hpp"
 
 namespace crayon {
 
@@ -49,6 +50,7 @@ public:
     LuaRuntime& get_lua_runtime() { return *m_lua_runtime; }
     bool has_physics() const { return m_physics != nullptr; }
     PhysicsSystem& get_physics() { return *m_physics; }
+    PostProcessChain& get_post_process_chain() { return m_post_process_chain; }
     const EngineConfig& get_config() const { return m_config; }
     EngineConfig& get_config() { return m_config; }
 
@@ -89,6 +91,7 @@ private:
     MeshRenderer3D m_mesh_renderer;
     Camera m_camera;
     AudioSystem m_audio;
+    PostProcessChain m_post_process_chain;
     std::unique_ptr<Shader> m_post_shader;
     std::unique_ptr<LuaRuntime> m_lua_runtime;
     std::unique_ptr<PhysicsSystem> m_physics;

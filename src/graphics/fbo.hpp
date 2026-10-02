@@ -30,7 +30,7 @@ public:
     void bind();
     void unbind();
 
-    void blit_to_screen(const ViewportInfo& vp, int window_w, int window_h, Shader& post_shader, const PostProcessOptions& opts);
+    void blit_to_screen(const ViewportInfo& vp, int window_w, int window_h, Shader& post_shader, const PostProcessOptions& opts, GLuint override_texture = 0);
 
     GLuint get_color_texture() const { return m_color_texture; }
     int get_width() const { return m_width; }

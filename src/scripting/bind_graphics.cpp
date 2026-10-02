@@ -7,6 +7,9 @@
 #include "../graphics/canvas.hpp"
 #include "../graphics/shader.hpp"
 #include "../graphics/default_shaders.hpp"
+#include "../graphics/camera2d.hpp"
+#include "../graphics/post_process_chain.hpp"
+#include "../graphics/rich_text.hpp"
 #include "../physics/physics_system.hpp"
 #include <vector>
 #include <unordered_map>
@@ -1244,6 +1247,306 @@ static void register_model_metatable(lua_State* L) {
     lua_pushcfunction(L, l_model_tostring);
     lua_setfield(L, -2, "__tostring");
     lua_pushcfunction(L, l_model_gc);
+    lua_setfield(L, -2, "__gc");
+
+    lua_pop(L, 1);
+}
+
+// ---------------- Camera2D Metatable ----------------
+
+struct LuaCamera2D {
+    Camera2D camera;
+};
+
+static void push_camera2d_userdata(lua_State* L, const Camera2D& cam) {
+    void* mem = lua_newuserdata(L, sizeof(LuaCamera2D));
+    new (mem) LuaCamera2D{ cam };
+    luaL_getmetatable(L, "Graphics.Camera2D");
+    lua_setmetatable(L, -2);
+}
+
+static LuaCamera2D* check_camera2d(lua_State* L, int idx) {
+    auto* c = static_cast<LuaCamera2D*>(luaL_checkudata(L, idx, "Graphics.Camera2D"));
+    if (!c) {
+        luaL_error(L, "attempt to use invalid Graphics.Camera2D");
+        return nullptr;
+    }
+    return c;
+}
+
+static int l_camera2d_set_target(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    if (lua_istable(L, 2)) {
+        lua_getfield(L, 2, "x");
+        float x = static_cast<float>(lua_tonumber(L, -1));
+        lua_getfield(L, 2, "y");
+        float y = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 2);
+        cam->camera.setTarget(x, y);
+    } else {
+        float x = static_cast<float>(luaL_checknumber(L, 2));
+        float y = static_cast<float>(luaL_checknumber(L, 3));
+        cam->camera.setTarget(x, y);
+    }
+    return 0;
+}
+
+static int l_camera2d_clear_target(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    cam->camera.clearTarget();
+    return 0;
+}
+
+static int l_camera2d_set_bounds(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    float w = static_cast<float>(luaL_checknumber(L, 4));
+    float h = static_cast<float>(luaL_checknumber(L, 5));
+    cam->camera.setBounds(x, y, w, h);
+    return 0;
+}
+
+static int l_camera2d_clear_bounds(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    cam->camera.clearBounds();
+    return 0;
+}
+
+static int l_camera2d_set_deadzone(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float w = static_cast<float>(luaL_checknumber(L, 2));
+    float h = static_cast<float>(luaL_checknumber(L, 3));
+    cam->camera.setDeadzone(w, h);
+    return 0;
+}
+
+static int l_camera2d_set_lookahead(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float dx = static_cast<float>(luaL_checknumber(L, 2));
+    float dy = static_cast<float>(luaL_checknumber(L, 3));
+    cam->camera.setLookahead(dx, dy);
+    return 0;
+}
+
+static int l_camera2d_set_follow_lerp(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float speed = static_cast<float>(luaL_checknumber(L, 2));
+    cam->camera.setFollowLerp(speed);
+    return 0;
+}
+
+static int l_camera2d_shake(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float intensity = static_cast<float>(luaL_checknumber(L, 2));
+    float duration = static_cast<float>(luaL_checknumber(L, 3));
+    float frequency = static_cast<float>(luaL_optnumber(L, 4, 30.0f));
+    cam->camera.shake(intensity, duration, frequency);
+    return 0;
+}
+
+static int l_camera2d_move_to(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float tx = static_cast<float>(luaL_checknumber(L, 2));
+    float ty = static_cast<float>(luaL_checknumber(L, 3));
+    float duration = static_cast<float>(luaL_checknumber(L, 4));
+    std::string ease_str = luaL_optstring(L, 5, "linear");
+    CameraEase ease = CameraEase::Linear;
+    if (ease_str == "easeIn") ease = CameraEase::EaseIn;
+    else if (ease_str == "easeOut") ease = CameraEase::EaseOut;
+    else if (ease_str == "easeInOut") ease = CameraEase::EaseInOut;
+    cam->camera.moveTo(tx, ty, duration, ease);
+    return 0;
+}
+
+static int l_camera2d_update(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float dt = static_cast<float>(luaL_checknumber(L, 2));
+    cam->camera.update(dt);
+    return 0;
+}
+
+static int l_camera2d_apply(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    cam->camera.apply();
+    return 0;
+}
+
+static int l_camera2d_get_visible_rect(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float vx = 0.0f, vy = 0.0f, vw = 0.0f, vh = 0.0f;
+    cam->camera.getVisibleRect(vx, vy, vw, vh);
+    lua_pushnumber(L, vx);
+    lua_pushnumber(L, vy);
+    lua_pushnumber(L, vw);
+    lua_pushnumber(L, vh);
+    return 4;
+}
+
+static int l_camera2d_set_position(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+    cam->camera.setPosition(x, y);
+    return 0;
+}
+
+static int l_camera2d_get_position(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    const auto& pos = cam->camera.getPosition();
+    lua_pushnumber(L, pos.x);
+    lua_pushnumber(L, pos.y);
+    return 2;
+}
+
+static int l_camera2d_set_zoom(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float zoom = static_cast<float>(luaL_checknumber(L, 2));
+    cam->camera.setZoom(zoom);
+    return 0;
+}
+
+static int l_camera2d_get_zoom(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    lua_pushnumber(L, cam->camera.getZoom());
+    return 1;
+}
+
+static int l_camera2d_set_rotation(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float rot = static_cast<float>(luaL_checknumber(L, 2));
+    cam->camera.setRotation(rot);
+    return 0;
+}
+
+static int l_camera2d_get_rotation(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    lua_pushnumber(L, cam->camera.getRotation());
+    return 1;
+}
+
+static int l_camera2d_set_offset(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float ox = static_cast<float>(luaL_checknumber(L, 2));
+    float oy = static_cast<float>(luaL_checknumber(L, 3));
+    cam->camera.setOffset(ox, oy);
+    return 0;
+}
+
+static int l_camera2d_get_offset(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    const auto& off = cam->camera.getOffset();
+    lua_pushnumber(L, off.x);
+    lua_pushnumber(L, off.y);
+    return 2;
+}
+
+static int l_camera2d_screen_to_world(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float sx = static_cast<float>(luaL_checknumber(L, 2));
+    float sy = static_cast<float>(luaL_checknumber(L, 3));
+    glm::vec2 world = cam->camera.screenToWorld(sx, sy);
+    lua_pushnumber(L, world.x);
+    lua_pushnumber(L, world.y);
+    return 2;
+}
+
+static int l_camera2d_world_to_screen(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    float wx = static_cast<float>(luaL_checknumber(L, 2));
+    float wy = static_cast<float>(luaL_checknumber(L, 3));
+    glm::vec2 screen = cam->camera.worldToScreen(wx, wy);
+    lua_pushnumber(L, screen.x);
+    lua_pushnumber(L, screen.y);
+    return 2;
+}
+
+static int l_camera2d_is_moving(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    lua_pushboolean(L, cam->camera.isMoving());
+    return 1;
+}
+
+static int l_camera2d_is_shaking(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    lua_pushboolean(L, cam->camera.isShaking());
+    return 1;
+}
+
+static int l_camera2d_tostring(lua_State* L) {
+    auto* cam = check_camera2d(L, 1);
+    const auto& pos = cam->camera.getPosition();
+    char buf[128];
+    std::snprintf(buf, sizeof(buf), "Graphics.Camera2D(Pos: %.1f, %.1f, Zoom: %.2f)", pos.x, pos.y, cam->camera.getZoom());
+    lua_pushstring(L, buf);
+    return 1;
+}
+
+static int l_camera2d_gc(lua_State* L) {
+    auto* cam = static_cast<LuaCamera2D*>(luaL_checkudata(L, 1, "Graphics.Camera2D"));
+    if (cam) {
+        cam->~LuaCamera2D();
+    }
+    return 0;
+}
+
+static void register_camera2d_metatable(lua_State* L) {
+    luaL_newmetatable(L, "Graphics.Camera2D");
+    lua_pushvalue(L, -1);
+    lua_setfield(L, -2, "__index");
+
+    lua_pushcfunction(L, l_camera2d_set_target);
+    lua_setfield(L, -2, "setTarget");
+    lua_pushcfunction(L, l_camera2d_clear_target);
+    lua_setfield(L, -2, "clearTarget");
+    lua_pushcfunction(L, l_camera2d_set_bounds);
+    lua_setfield(L, -2, "setBounds");
+    lua_pushcfunction(L, l_camera2d_clear_bounds);
+    lua_setfield(L, -2, "clearBounds");
+    lua_pushcfunction(L, l_camera2d_set_deadzone);
+    lua_setfield(L, -2, "setDeadzone");
+    lua_pushcfunction(L, l_camera2d_set_lookahead);
+    lua_setfield(L, -2, "setLookahead");
+    lua_pushcfunction(L, l_camera2d_set_follow_lerp);
+    lua_setfield(L, -2, "setFollowLerp");
+    lua_pushcfunction(L, l_camera2d_shake);
+    lua_setfield(L, -2, "shake");
+    lua_pushcfunction(L, l_camera2d_move_to);
+    lua_setfield(L, -2, "moveTo");
+    lua_pushcfunction(L, l_camera2d_update);
+    lua_setfield(L, -2, "update");
+    lua_pushcfunction(L, l_camera2d_apply);
+    lua_setfield(L, -2, "apply");
+    lua_pushcfunction(L, l_camera2d_get_visible_rect);
+    lua_setfield(L, -2, "getVisibleRect");
+    lua_pushcfunction(L, l_camera2d_set_position);
+    lua_setfield(L, -2, "setPosition");
+    lua_pushcfunction(L, l_camera2d_get_position);
+    lua_setfield(L, -2, "getPosition");
+    lua_pushcfunction(L, l_camera2d_set_zoom);
+    lua_setfield(L, -2, "setZoom");
+    lua_pushcfunction(L, l_camera2d_get_zoom);
+    lua_setfield(L, -2, "getZoom");
+    lua_pushcfunction(L, l_camera2d_set_rotation);
+    lua_setfield(L, -2, "setRotation");
+    lua_pushcfunction(L, l_camera2d_get_rotation);
+    lua_setfield(L, -2, "getRotation");
+    lua_pushcfunction(L, l_camera2d_set_offset);
+    lua_setfield(L, -2, "setOffset");
+    lua_pushcfunction(L, l_camera2d_get_offset);
+    lua_setfield(L, -2, "getOffset");
+    lua_pushcfunction(L, l_camera2d_screen_to_world);
+    lua_setfield(L, -2, "screenToWorld");
+    lua_pushcfunction(L, l_camera2d_world_to_screen);
+    lua_setfield(L, -2, "worldToScreen");
+    lua_pushcfunction(L, l_camera2d_is_moving);
+    lua_setfield(L, -2, "isMoving");
+    lua_pushcfunction(L, l_camera2d_is_shaking);
+    lua_setfield(L, -2, "isShaking");
+
+    lua_pushcfunction(L, l_camera2d_tostring);
+    lua_setfield(L, -2, "__tostring");
+    lua_pushcfunction(L, l_camera2d_gc);
     lua_setfield(L, -2, "__gc");
 
     lua_pop(L, 1);
@@ -3167,6 +3470,248 @@ static int l_graphics_get_white_texture(lua_State* L) {
     return 1;
 }
 
+static int l_graphics_new_camera2d(lua_State* L) {
+    Camera2D cam;
+    if (lua_gettop(L) >= 2) {
+        float x = static_cast<float>(luaL_optnumber(L, 1, 0.0));
+        float y = static_cast<float>(luaL_optnumber(L, 2, 0.0));
+        cam.setPosition(x, y);
+    }
+    if (lua_gettop(L) >= 3) {
+        float zoom = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+        cam.setZoom(zoom);
+    }
+    push_camera2d_userdata(L, cam);
+    return 1;
+}
+
+static int l_graphics_push_effect(lua_State* L) {
+    bool ok = false;
+    if (lua_isstring(L, 1)) {
+        std::string effName = luaL_checkstring(L, 1);
+        ok = Engine::get().get_post_process_chain().pushEffect(effName);
+    } else if (lua_isuserdata(L, 1)) {
+        auto shader = check_shader(L, 1);
+        std::string effName = luaL_optstring(L, 2, "custom");
+        ok = Engine::get().get_post_process_chain().pushEffect(shader, effName);
+    } else {
+        luaL_error(L, "pushEffect expects built-in effect name string or Graphics.Shader userdata");
+        return 0;
+    }
+
+    // Optional uniform table
+    int uTableIdx = (lua_isuserdata(L, 1) && lua_isstring(L, 2)) ? 3 : 2;
+    if (lua_istable(L, uTableIdx)) {
+        lua_pushnil(L);
+        while (lua_next(L, uTableIdx) != 0) {
+            if (lua_isstring(L, -2)) {
+                std::string uName = lua_tostring(L, -2);
+                if (lua_isboolean(L, -1)) {
+                    Engine::get().get_post_process_chain().setEffectUniform(uName, lua_toboolean(L, -1) ? 1 : 0);
+                } else if (lua_isnumber(L, -1)) {
+                    Engine::get().get_post_process_chain().setEffectUniform(uName, static_cast<float>(lua_tonumber(L, -1)));
+                } else if (lua_istable(L, -1)) {
+                    int len = static_cast<int>(lua_objlen(L, -1));
+                    if (len == 2) {
+                        lua_rawgeti(L, -1, 1); float x = static_cast<float>(lua_tonumber(L, -1));
+                        lua_rawgeti(L, -2, 2); float y = static_cast<float>(lua_tonumber(L, -1));
+                        lua_pop(L, 2);
+                        Engine::get().get_post_process_chain().setEffectUniform(uName, x, y);
+                    } else if (len == 3) {
+                        lua_rawgeti(L, -1, 1); float x = static_cast<float>(lua_tonumber(L, -1));
+                        lua_rawgeti(L, -2, 2); float y = static_cast<float>(lua_tonumber(L, -1));
+                        lua_rawgeti(L, -3, 3); float z = static_cast<float>(lua_tonumber(L, -1));
+                        lua_pop(L, 3);
+                        Engine::get().get_post_process_chain().setEffectUniform(uName, x, y, z);
+                    } else if (len >= 4) {
+                        lua_rawgeti(L, -1, 1); float x = static_cast<float>(lua_tonumber(L, -1));
+                        lua_rawgeti(L, -2, 2); float y = static_cast<float>(lua_tonumber(L, -1));
+                        lua_rawgeti(L, -3, 3); float z = static_cast<float>(lua_tonumber(L, -1));
+                        lua_rawgeti(L, -4, 4); float w = static_cast<float>(lua_tonumber(L, -1));
+                        lua_pop(L, 4);
+                        Engine::get().get_post_process_chain().setEffectUniform(uName, x, y, z, w);
+                    }
+                }
+            }
+            lua_pop(L, 1);
+        }
+    }
+
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+static int l_graphics_pop_effect(lua_State* L) {
+    bool ok = Engine::get().get_post_process_chain().popEffect();
+    lua_pushboolean(L, ok);
+    return 1;
+}
+
+static int l_graphics_clear_effects(lua_State* /*L*/) {
+    Engine::get().get_post_process_chain().clearEffects();
+    return 0;
+}
+
+static int l_graphics_set_effect_uniform(lua_State* L) {
+    auto& chain = Engine::get().get_post_process_chain();
+    auto& effects = chain.getEffects();
+    if (effects.empty()) {
+        lua_pushboolean(L, false);
+        return 1;
+    }
+
+    int argStart = 1;
+    PostEffectPass* targetPass = &effects.back();
+
+    if (lua_isstring(L, 1) && lua_isstring(L, 2)) {
+        std::string effName = lua_tostring(L, 1);
+        for (auto it = effects.rbegin(); it != effects.rend(); ++it) {
+            if (it->name == effName) {
+                targetPass = &(*it);
+                break;
+            }
+        }
+        argStart = 2;
+    } else if (lua_isnumber(L, 1) && lua_isstring(L, 2)) {
+        int idx = static_cast<int>(lua_tointeger(L, 1)) - 1;
+        if (idx >= 0 && idx < static_cast<int>(effects.size())) {
+            targetPass = &effects[idx];
+        }
+        argStart = 2;
+    }
+
+    const char* uName = luaL_checkstring(L, argStart);
+    int top = lua_gettop(L);
+    int valCount = top - argStart;
+
+    if (valCount == 1) {
+        int vIdx = argStart + 1;
+        if (lua_isboolean(L, vIdx)) {
+            targetPass->uniforms[uName] = lua_toboolean(L, vIdx) ? 1 : 0;
+        } else if (lua_isnumber(L, vIdx)) {
+            targetPass->uniforms[uName] = static_cast<float>(lua_tonumber(L, vIdx));
+        } else if (lua_istable(L, vIdx)) {
+            int len = static_cast<int>(lua_objlen(L, vIdx));
+            if (len == 2) {
+                lua_rawgeti(L, vIdx, 1); float x = static_cast<float>(lua_tonumber(L, -1));
+                lua_rawgeti(L, vIdx, 2); float y = static_cast<float>(lua_tonumber(L, -1));
+                lua_pop(L, 2);
+                targetPass->uniforms[uName] = glm::vec2(x, y);
+            } else if (len == 3) {
+                lua_rawgeti(L, vIdx, 1); float x = static_cast<float>(lua_tonumber(L, -1));
+                lua_rawgeti(L, vIdx, 2); float y = static_cast<float>(lua_tonumber(L, -1));
+                lua_rawgeti(L, vIdx, 3); float z = static_cast<float>(lua_tonumber(L, -1));
+                lua_pop(L, 3);
+                targetPass->uniforms[uName] = glm::vec3(x, y, z);
+            } else if (len >= 4) {
+                lua_rawgeti(L, vIdx, 1); float x = static_cast<float>(lua_tonumber(L, -1));
+                lua_rawgeti(L, vIdx, 2); float y = static_cast<float>(lua_tonumber(L, -1));
+                lua_rawgeti(L, vIdx, 3); float z = static_cast<float>(lua_tonumber(L, -1));
+                lua_rawgeti(L, vIdx, 4); float w = static_cast<float>(lua_tonumber(L, -1));
+                lua_pop(L, 4);
+                targetPass->uniforms[uName] = glm::vec4(x, y, z, w);
+            }
+        }
+    } else if (valCount == 2) {
+        float x = static_cast<float>(luaL_checknumber(L, argStart + 1));
+        float y = static_cast<float>(luaL_checknumber(L, argStart + 2));
+        targetPass->uniforms[uName] = glm::vec2(x, y);
+    } else if (valCount == 3) {
+        float x = static_cast<float>(luaL_checknumber(L, argStart + 1));
+        float y = static_cast<float>(luaL_checknumber(L, argStart + 2));
+        float z = static_cast<float>(luaL_checknumber(L, argStart + 3));
+        targetPass->uniforms[uName] = glm::vec3(x, y, z);
+    } else if (valCount >= 4) {
+        float x = static_cast<float>(luaL_checknumber(L, argStart + 1));
+        float y = static_cast<float>(luaL_checknumber(L, argStart + 2));
+        float z = static_cast<float>(luaL_checknumber(L, argStart + 3));
+        float w = static_cast<float>(luaL_checknumber(L, argStart + 4));
+        targetPass->uniforms[uName] = glm::vec4(x, y, z, w);
+    }
+
+    lua_pushboolean(L, true);
+    return 1;
+}
+
+static int l_graphics_draw_text_markup(lua_State* L) {
+    const char* str = luaL_checkstring(L, 1);
+    float x = static_cast<float>(luaL_checknumber(L, 2));
+    float y = static_cast<float>(luaL_checknumber(L, 3));
+
+    RichTextOptions opts;
+    opts.time = static_cast<float>(Engine::get().get_time());
+    opts.defaultColor = Engine::get().get_active_color();
+
+    if (lua_istable(L, 4)) {
+        lua_getfield(L, 4, "scale");
+        if (!lua_isnil(L, -1)) opts.scale = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, 4, "wrapWidth");
+        if (!lua_isnil(L, -1)) opts.wrapWidth = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, 4, "align");
+        if (lua_isstring(L, -1)) {
+            std::string al = lua_tostring(L, -1);
+            if (al == "center") opts.align = 1;
+            else if (al == "right") opts.align = 2;
+            else opts.align = 0;
+        } else if (lua_isnumber(L, -1)) {
+            opts.align = static_cast<int>(lua_tointeger(L, -1));
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 4, "visibleChars");
+        if (!lua_isnil(L, -1)) opts.visibleChars = static_cast<int>(lua_tointeger(L, -1));
+        lua_pop(L, 1);
+    } else {
+        if (lua_gettop(L) >= 4 && !lua_isnil(L, 4)) opts.scale = static_cast<float>(lua_tonumber(L, 4));
+        if (lua_gettop(L) >= 5 && !lua_isnil(L, 5)) opts.wrapWidth = static_cast<float>(lua_tonumber(L, 5));
+        if (lua_gettop(L) >= 6 && !lua_isnil(L, 6)) {
+            if (lua_isstring(L, 6)) {
+                std::string al = lua_tostring(L, 6);
+                if (al == "center") opts.align = 1;
+                else if (al == "right") opts.align = 2;
+                else opts.align = 0;
+            } else if (lua_isnumber(L, 6)) {
+                opts.align = static_cast<int>(lua_tointeger(L, 6));
+            }
+        }
+        if (lua_gettop(L) >= 7 && !lua_isnil(L, 7)) opts.visibleChars = static_cast<int>(lua_tointeger(L, 7));
+    }
+
+    RichText::drawMarkup(Engine::get().get_batch2d(), str, x, y, opts);
+    return 0;
+}
+
+static int l_graphics_measure_text_markup(lua_State* L) {
+    const char* str = luaL_checkstring(L, 1);
+    float scale = 1.0f;
+    float wrapWidth = -1.0f;
+
+    if (lua_istable(L, 2)) {
+        lua_getfield(L, 2, "scale");
+        if (!lua_isnil(L, -1)) scale = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+
+        lua_getfield(L, 2, "wrapWidth");
+        if (!lua_isnil(L, -1)) wrapWidth = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+    } else {
+        if (lua_gettop(L) >= 2 && !lua_isnil(L, 2)) scale = static_cast<float>(lua_tonumber(L, 2));
+        if (lua_gettop(L) >= 3 && !lua_isnil(L, 3)) wrapWidth = static_cast<float>(lua_tonumber(L, 3));
+    }
+
+    glm::vec2 size = RichText::measureMarkup(Engine::get().get_batch2d(), str, scale, wrapWidth);
+    int totalChars = RichText::countPrintableChars(str);
+
+    lua_pushnumber(L, size.x);
+    lua_pushnumber(L, size.y);
+    lua_pushinteger(L, totalChars);
+    return 3;
+}
+
 void register_graphics_bindings(lua_State* L) {
     register_texture_metatable(L);
     register_font_metatable(L);
@@ -3174,6 +3719,7 @@ void register_graphics_bindings(lua_State* L) {
     register_shader_metatable(L);
     register_model_metatable(L);
     register_animator_metatable(L);
+    register_camera2d_metatable(L);
 
     lua_getglobal(L, "crayon");
     lua_newtable(L);
@@ -3485,6 +4031,30 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_unproject);
     lua_setfield(L, -2, "unproject");
+
+    // Camera2D Object
+    lua_pushcfunction(L, l_graphics_new_camera2d);
+    lua_setfield(L, -2, "newCamera2D");
+
+    // Post-Process Chain
+    lua_pushcfunction(L, l_graphics_push_effect);
+    lua_setfield(L, -2, "pushEffect");
+
+    lua_pushcfunction(L, l_graphics_pop_effect);
+    lua_setfield(L, -2, "popEffect");
+
+    lua_pushcfunction(L, l_graphics_clear_effects);
+    lua_setfield(L, -2, "clearEffects");
+
+    lua_pushcfunction(L, l_graphics_set_effect_uniform);
+    lua_setfield(L, -2, "setEffectUniform");
+
+    // Rich Text Markup
+    lua_pushcfunction(L, l_graphics_draw_text_markup);
+    lua_setfield(L, -2, "drawTextMarkup");
+
+    lua_pushcfunction(L, l_graphics_measure_text_markup);
+    lua_setfield(L, -2, "measureTextMarkup");
 
     lua_setfield(L, -2, "graphics");
     lua_pop(L, 1);
