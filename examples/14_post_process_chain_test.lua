@@ -3,22 +3,22 @@
 
 function crayon.config(config)
     config.window.title = "Crayon Engine - Post-Process Chain Test"
-    config.window.width = 960
-    config.window.height = 720
+    config.window.width = 320
+    config.window.height = 240
     config.window.virtualWidth = 320
     config.window.virtualHeight = 240
     config.modules.physics = false
-    config.modules.mesh3d = false
+    config.modules.mesh3D = false
 end
 
 local effectsList = {
-    { name = "chromatic", label = "1: Chromatic Aberration", active = false },
-    { name = "vignette", label = "2: Vignette (Pulsing)", active = false },
-    { name = "vhs", label = "3: VHS Tape Glitch", active = false },
-    { name = "bloom2d", label = "4: Bloom 2D", active = false },
-    { name = "pixelate", label = "5: Pixelate", active = false },
-    { name = "radialBlur", label = "6: Radial Blur", active = false },
-    { name = "filmGrain", label = "7: Film Grain", active = false },
+    { name = "chromatic",  label = "1: Chromatic Aberration", active = false },
+    { name = "vignette",   label = "2: Vignette (Pulsing)",   active = false },
+    { name = "vhs",        label = "3: VHS Tape Glitch",      active = false },
+    { name = "bloom2d",    label = "4: Bloom 2D",             active = false },
+    { name = "pixelate",   label = "5: Pixelate",             active = false },
+    { name = "radialBlur", label = "6: Radial Blur",          active = false },
+    { name = "filmGrain",  label = "7: Film Grain",           active = false },
 }
 
 local function rebuildChain()
@@ -86,18 +86,18 @@ function crayon.draw()
         local g = 0.5 + 0.5 * math.sin(t + i + 2)
         local b = 0.5 + 0.5 * math.sin(t + i + 4)
         crayon.graphics.setColor(r, g, b, 0.85)
-        crayon.graphics.drawCircle(cx, cy, 22, true)
+        crayon.graphics.drawCircle("fill", cx, cy, 22)
     end
 
     -- Center emblem
     crayon.graphics.setColor(1.0, 0.85, 0.2, 1.0)
-    crayon.graphics.drawRoundedRect(120, 85, 80, 70, 8, true)
+    crayon.graphics.drawRoundedRect("fill", 120, 85, 80, 70, 8)
     crayon.graphics.setColor(0.1, 0.1, 0.15, 1.0)
     crayon.graphics.drawText("CRAYON", 132, 110, 1.2)
 
     -- Instructions HUD
     crayon.graphics.setColor(0.0, 0.0, 0.0, 0.75)
-    crayon.graphics.drawRect(4, 4, 312, 60, true)
+    crayon.graphics.drawRect("fill", 4, 4, 312, 60)
 
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
     crayon.graphics.drawText("Press 1-7 to toggle stackable effects:", 8, 8, 1.0)

@@ -1,8 +1,18 @@
 -- ============================================================================
 -- Example 04: Offscreen Canvases & Custom Shaders
 -- Demonstrates: crayon.graphics.createCanvas, canvas:renderTo,
---               custom post-processing shaders, and uniform uploading.
+--               custom shaders with uniforms, and full-screen blit.
 -- ============================================================================
+
+function crayon.config(config)
+    config.window.title = "04 - Canvases & Custom Shaders"
+    config.window.width = 640
+    config.window.height = 480
+    config.window.virtualWidth = 640
+    config.window.virtualHeight = 480
+    config.modules.physics = false
+    config.modules.mesh3D = false
+end
 
 local gameCanvas = nil
 local crtShader  = nil
@@ -11,12 +21,11 @@ local playerX = 160
 local playerY = 120
 
 -- ----------------------------------------------------------------------------
--- Vertex shader: Crayon's loadShader() requires BOTH sources.
--- This matches the standard 2D batch attribute layout:
---   location 0 = position (vec2 in pixel space)
---   location 1 = texcoord (vec2)
---   location 2 = color    (vec4)
--- and expects a single u_projection matrix uniform.
+-- Vertex shader: matches Crayon's standard 2D batch attribute layout:
+--   location 0 = a_position (vec2, in virtual/pixel space)
+--   location 1 = a_uv       (vec2)
+--   location 2 = a_color    (vec4)
+-- and expects the Batch2D to upload `u_projection`.
 -- ----------------------------------------------------------------------------
 local crtVertShader = [[
 #version 330 core
@@ -69,14 +78,15 @@ void main() {
 ]]
 
 function crayon.init()
-    crayon.window.setTitle("04 - Canvases & Custom Shaders")
-    crayon.window.setResolution(640, 480)
-
     -- 1. Create a 320x240 internal low-res canvas for retro pixel density
     gameCanvas = crayon.graphics.createCanvas(320, 240)
 
     -- 2. Compile custom post-processing shader (both sources required)
     crtShader = crayon.graphics.loadShader(crtVertShader, crtFragShader)
+
+    if not crtShader then
+        error("Failed to compile CRT shader")
+    end
 end
 
 function crayon.update(dt)
@@ -105,7 +115,7 @@ function crayon.draw()
             crayon.graphics.drawCircle("line", 160, 120, rad, 32)
         end
 
-        -- Player entity (rounded — use drawRoundedRect, not drawRect)
+        -- Player entity
         crayon.graphics.setColor(1.0, 0.7, 0.2, 1.0)
         crayon.graphics.drawRoundedRect("fill", playerX - 10, playerY - 10, 20, 20, 4)
         crayon.graphics.setColor(1.0, 1.0, 1.0, 0.9)
@@ -119,17 +129,15 @@ function crayon.draw()
     -- 2. Clear the main screen
     crayon.graphics.clear(0.0, 0.0, 0.0, 1.0)
 
-    -- 3. Blit the canvas through the CRT shader, stretched to the full window
+    -- 3. Blit the canvas through the CRT shader, stretched to full virtual res
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
 
-    if crtShader then
-        crayon.graphics.setShader(crtShader)
-        crtShader:sendFloat("u_time", elapsedTime)
-        crtShader:sendVec2("u_resolution", 320.0, 240.0)  -- canvas-space
-    end
+    crayon.graphics.setShader(crtShader)
+    crtShader:sendFloat("u_time", elapsedTime)
+    crtShader:sendVec2("u_resolution", 320.0, 240.0)  -- canvas-space for scanline density
 
-    -- drawSprite() blits a Texture or Canvas; there is no drawTexture().
-    crayon.graphics.drawSprite(gameCanvas:getTexture(), 0, 0, 640, 480)
+    -- drawSprite() blits a Texture or Canvas. drawTexture() is an alias of the same.
+    crayon.graphics.drawSprite(gameCanvas, 0, 0, 640, 480)
 
     -- 4. Reset shader to default before drawing overlay text
     crayon.graphics.setShader(nil)

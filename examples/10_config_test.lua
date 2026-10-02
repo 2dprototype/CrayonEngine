@@ -13,8 +13,8 @@ function crayon.config(t)
 
     -- 2. Window & Virtual Resolution Settings (camelCase)
     t.window.title = "Crayon Config Demo (Optimized 2D Mode)"
-    t.window.width = 800              -- Physical window width
-    t.window.height = 600             -- Physical window height
+    t.window.width = 400              -- Physical window width
+    t.window.height = 300             -- Physical window height
     t.window.virtualWidth = 400       -- Internal virtual canvas width
     t.window.virtualHeight = 300      -- Internal virtual canvas height
     t.window.resizable = true         -- Window is resizable
