@@ -77,7 +77,6 @@ local function detect_animations(names)
         end
     end
 
-    -- Fallbacks if names don't match typical conventions
     if not anim_map.idle and #names >= 1 then anim_map.idle = names[1] end
     if not anim_map.walk and #names >= 2 then anim_map.walk = names[2] end
     if not anim_map.run and #names >= 3 then anim_map.run = names[3] end
@@ -142,25 +141,27 @@ function crayon.init()
     -- Static Ground Plane
     ground_body = crayon.physics3d.createPlane(0, 0, 0, 0, 1, 0, 100.0)
 
-    -- Player Character Physics Capsule: x, y, z, half_height, radius, motion, friction, restitution, density
+    -- Player Character Physics Capsule
     char_body = crayon.physics3d.createCapsule(player.x, player.y + 0.9, player.z, 0.5, 0.4, "dynamic", 0.8, 0.0, 200.0)
     if char_body and char_body:isValid() then
-        -- Prevent player from toppling over like a bowling pin
         char_body:setAngularVelocity(0, 0, 0)
         char_body:setDamping(0.3, 1.0)
     end
 
     -- 4. Spawn RPG Town / Arena Props
-    -- Arena Outer Pillars & Ruins
     for angle = 0, 315, 45 do
         local rad = math.rad(angle)
         local px = math.cos(rad) * 16.0
         local pz = math.sin(rad) * 16.0
         local pillar = crayon.physics3d.createCylinder(px, 3.0, pz, 3.0, 0.8, "static", 0.6, 0.1)
-        table.insert(physics_props, { body = pillar, type = "pillar", x = px, y = 3.0, z = pz, r = 0.8, h = 6.0, col = {0.6, 0.65, 0.7} })
+        table.insert(physics_props, {
+            body = pillar, type = "pillar",
+            x = px, y = 3.0, z = pz,
+            r = 0.8, h = 6.0,
+            col = {0.6, 0.65, 0.7}
+        })
     end
 
-    -- Dynamic Physics Crates & Chests to smash
     local crate_positions = {
         {-3, 1.0, -4}, {-2.2, 1.0, -4}, {-2.6, 2.0, -4},
         { 4, 1.0, -3}, { 4.8, 1.0, -3},
@@ -178,7 +179,6 @@ function crayon.init()
         })
     end
 
-    -- Interactive Target Dummies / Slimes (Spheres)
     local target_spots = {
         {x = -6.0, z = -6.0},
         {x =  6.0, z = -7.0},
@@ -203,33 +203,38 @@ function crayon.update(dt)
     -- -------------------------------------------------------------
     -- 1. Camera Orbit & Mouse Input
     -- -------------------------------------------------------------
-    if crayon.input.isDown("mouse_right") or crayon.input.isDown("mouse_middle") then
+    -- FIX: crayon.input.isDown doesn't exist. Mouse buttons live on
+    -- crayon.mouse.isDown (or crayon.input.isMouseDown with numeric/name id).
+    if crayon.mouse.isDown("right") or crayon.mouse.isDown("middle") then
+        -- FIX: getMouseDelta is exposed on crayon.input (aliased from mouse)
         local dx, dy = crayon.input.getMouseDelta()
-        cam.yaw = cam.yaw - dx * 0.35
+        cam.yaw   = cam.yaw   - dx * 0.35
         cam.pitch = math.max(5.0, math.min(75.0, cam.pitch - dy * 0.25))
     end
 
     -- Mouse Scroll Zoom
-    local wheel = crayon.input.getMouseWheel()
-    if wheel ~= 0 then
-        cam.dist = math.max(2.5, math.min(18.0, cam.dist - wheel * 0.75))
+    -- FIX: getMouseWheel returns (x, y). Original captured only x.
+    local _, wheel_y = crayon.input.getMouseWheel()
+    if wheel_y and wheel_y ~= 0 then
+        cam.dist = math.max(2.5, math.min(18.0, cam.dist - wheel_y * 0.75))
     end
 
     -- -------------------------------------------------------------
     -- 2. Player Input & Locomotion
     -- -------------------------------------------------------------
-    local move_fwd = 0.0
+    local move_fwd   = 0.0
     local move_right = 0.0
 
-    if crayon.input.isDown("w") then move_fwd = move_fwd + 1.0 end
-    if crayon.input.isDown("s") then move_fwd = move_fwd - 1.0 end
-    if crayon.input.isDown("a") then move_right = move_right - 1.0 end
-    if crayon.input.isDown("d") then move_right = move_right + 1.0 end
+    -- FIX: crayon.input.isDown -> crayon.key.isDown
+    if crayon.key.isDown("w") then move_fwd   = move_fwd   + 1.0 end
+    if crayon.key.isDown("s") then move_fwd   = move_fwd   - 1.0 end
+    if crayon.key.isDown("a") then move_right = move_right - 1.0 end
+    if crayon.key.isDown("d") then move_right = move_right + 1.0 end
 
-    player.is_running = crayon.input.isDown("lshift")
+    player.is_running = crayon.key.isDown("lshift")
     local current_speed = player.is_running and player.run_speed or player.walk_speed
 
-    -- Calculate movement direction relative to Camera Yaw
+    -- Direction relative to camera yaw
     local cam_rad = math.rad(cam.yaw)
     local cam_fwd_x = math.sin(cam_rad)
     local cam_fwd_z = math.cos(cam_rad)
@@ -244,18 +249,17 @@ function crayon.update(dt)
     local target_vz = 0.0
 
     if move_len > 0.001 then
-        world_move_x = (world_move_x / move_len)
-        world_move_z = (world_move_z / move_len)
+        world_move_x = world_move_x / move_len
+        world_move_z = world_move_z / move_len
         target_vx = world_move_x * current_speed
         target_vz = world_move_z * current_speed
 
-        -- Smooth Character Rotation toward movement vector
         player.target_rot_y = math.deg(math.atan2(world_move_x, world_move_z))
     end
 
     -- Smooth angular turning
     local angle_diff = (player.target_rot_y - player.rot_y)
-    while angle_diff > 180.0 do angle_diff = angle_diff - 360.0 end
+    while angle_diff >  180.0 do angle_diff = angle_diff - 360.0 end
     while angle_diff < -180.0 do angle_diff = angle_diff + 360.0 end
     player.rot_y = player.rot_y + angle_diff * math.min(1.0, dt * 14.0)
 
@@ -267,17 +271,20 @@ function crayon.update(dt)
         local vx, vy, vz = char_body:getVelocity()
 
         -- Ground check raycast
-        local hit, hx, hy, hz = crayon.physics3d.raycast(px, py + 0.1, pz, 0, -1, 0, 0.8)
+        local hit = crayon.physics3d.raycast(px, py + 0.1, pz, 0, -1, 0, 0.8)
         player.is_grounded = (hit == true)
 
-        -- Jump (SPACE)
-        if crayon.input.isPressed("space") and player.is_grounded then
+        -- Jump
+        if crayon.key.isPressed("space") and player.is_grounded then
             vy = 7.5
             char_body:applyImpulse(0, 350.0, 0)
         end
 
-        -- Attack Action (Left Mouse or 'F' or 'E')
-        if (crayon.input.isMouseDown(1) or crayon.input.isPressed("f") or crayon.input.isPressed("e")) and not player.is_attacking then
+        -- Attack Action
+        -- FIX: crayon.input.isPressed -> crayon.key.isPressed
+        --      crayon.input.isMouseDown(1) is valid (aliased from mouse)
+        if (crayon.input.isMouseDown(1) or crayon.key.isPressed("f") or crayon.key.isPressed("e"))
+           and not player.is_attacking then
             player.is_attacking = true
             player.attack_timer = 0.65
             if animator and anim_map.attack then
@@ -285,13 +292,11 @@ function crayon.update(dt)
                 current_anim = "attack"
             end
 
-            -- Combat Hit Detection: Swing arc in front of character
             local attack_range = 2.4
             local rad = math.rad(player.rot_y)
             local fx = math.sin(rad)
             local fz = math.cos(rad)
 
-            -- Hit nearby enemies
             for _, e in ipairs(enemies) do
                 if e.hp > 0 and e.body and e.body:isValid() then
                     local ex, ey, ez = e.body:getPosition()
@@ -299,13 +304,11 @@ function crayon.update(dt)
                     local dz = ez - pz
                     local dist = math.sqrt(dx * dx + dz * dz)
                     if dist <= attack_range then
-                        -- Check if target is roughly in front
                         local dot = (dx * fx + dz * fz) / (dist > 0 and dist or 1)
                         if dot > 0.3 then
                             e.hp = e.hp - 1
                             e.hit_flash = 0.25
                             player.score = player.score + 50
-                            -- Pushback impulse
                             e.body:applyImpulse(fx * 300.0, 150.0, fz * 300.0)
                             print("[RPG] Hit Enemy! HP remaining: " .. e.hp)
                         end
@@ -313,7 +316,6 @@ function crayon.update(dt)
                 end
             end
 
-            -- Hit and kick dynamic physics props
             for _, p in ipairs(physics_props) do
                 if p.type == "box" and p.body and p.body:isValid() then
                     local bx, by, bz = p.body:getPosition()
@@ -327,7 +329,6 @@ function crayon.update(dt)
             end
         end
 
-        -- Attack duration timer
         if player.is_attacking then
             player.attack_timer = player.attack_timer - dt
             if player.attack_timer <= 0 then
@@ -335,17 +336,15 @@ function crayon.update(dt)
             end
         end
 
-        -- Apply horizontal linear velocity with acceleration
         local accel = player.is_grounded and 16.0 or 6.0
         vx = vx + (target_vx - vx) * math.min(1.0, dt * accel)
         vz = vz + (target_vz - vz) * math.min(1.0, dt * accel)
 
         char_body:setVelocity(vx, vy, vz)
-        char_body:setAngularVelocity(0, 0, 0) -- maintain vertical stance
+        char_body:setAngularVelocity(0, 0, 0)
 
-        -- Sync player position
         player.x = px
-        player.y = py - 0.5 -- feet position
+        player.y = py - 0.5
         player.z = pz
         player.vx = vx
         player.vy = vy
@@ -353,7 +352,7 @@ function crayon.update(dt)
     end
 
     -- -------------------------------------------------------------
-    -- 4. Animation State Machine (Idle <-> Walk <-> Run <-> Attack)
+    -- 4. Animation State Machine
     -- -------------------------------------------------------------
     if animator and not player.is_attacking then
         local horiz_speed = math.sqrt(player.vx * player.vx + player.vz * player.vz)
@@ -375,7 +374,6 @@ function crayon.update(dt)
             end
         end
 
-        -- Dynamic playback speed matching character velocity
         if current_anim == "walk" then
             animator:setSpeed(math.max(0.6, horiz_speed / player.walk_speed))
         elseif current_anim == "run" then
@@ -392,23 +390,20 @@ function crayon.update(dt)
     -- -------------------------------------------------------------
     -- 5. Third-Person Follow Camera Tracking
     -- -------------------------------------------------------------
-    -- Look target tracks slightly above player pelvis
     cam.target_x = cam.target_x + (player.x - cam.target_x) * math.min(1.0, dt * 10.0)
     cam.target_y = cam.target_y + (player.y + 1.4 - cam.target_y) * math.min(1.0, dt * 10.0)
     cam.target_z = cam.target_z + (player.z - cam.target_z) * math.min(1.0, dt * 10.0)
 
-    local rad_yaw = math.rad(cam.yaw)
+    local rad_yaw   = math.rad(cam.yaw)
     local rad_pitch = math.rad(cam.pitch)
     local desired_x = cam.target_x - cam.dist * math.cos(rad_pitch) * math.sin(rad_yaw)
     local desired_y = cam.target_y + cam.dist * math.sin(rad_pitch)
     local desired_z = cam.target_z - cam.dist * math.cos(rad_pitch) * math.cos(rad_yaw)
 
-    -- Smooth camera damping
     cam.curr_x = cam.curr_x + (desired_x - cam.curr_x) * math.min(1.0, dt * 14.0)
     cam.curr_y = cam.curr_y + (desired_y - cam.curr_y) * math.min(1.0, dt * 14.0)
     cam.curr_z = cam.curr_z + (desired_z - cam.curr_z) * math.min(1.0, dt * 14.0)
 
-    -- Update Enemy Flash Timers
     for _, e in ipairs(enemies) do
         if e.hit_flash > 0 then
             e.hit_flash = e.hit_flash - dt
@@ -422,83 +417,94 @@ function crayon.draw()
     -- 1. Setup 3D Camera
     crayon.graphics.setCamera3d({
         position = {cam.curr_x, cam.curr_y, cam.curr_z},
-        target = {cam.target_x, cam.target_y, cam.target_z},
-        up = {0, 1, 0},
-        fov = cam.fov,
-        near = 0.1,
-        far = 150.0
+        target   = {cam.target_x, cam.target_y, cam.target_z},
+        up       = {0, 1, 0},
+        fov      = cam.fov,
+        near     = 0.1,
+        far      = 150.0
     })
 
-    -- 2. Draw Floor Arena Grid
+    -- 2. Floor Arena Grid
     crayon.graphics.setColor(0.3, 0.35, 0.45, 1.0)
     crayon.graphics.drawGrid3d(40.0, 40, 0.0)
 
     -- Central Plaza Ring
     crayon.graphics.setColor(0.5, 0.55, 0.65, 1.0)
-    crayon.graphics.drawCylinder(0, 0.05, 0, 8.0, 0.1, nil)
+    crayon.graphics.drawCylinder(0, 0.05, 0, 8.0, 0.1)
 
     -- 3. Draw Town Ruins / Pillars
     for _, prop in ipairs(physics_props) do
         if prop.type == "pillar" then
             crayon.graphics.setColor(prop.col[1], prop.col[2], prop.col[3], 1.0)
-            crayon.graphics.drawCylinder(prop.x, prop.y, prop.z, prop.r, prop.h, nil)
-            -- Capital atop pillar
+            crayon.graphics.drawCylinder(prop.x, prop.y, prop.z, prop.r, prop.h)
             crayon.graphics.drawCube(prop.x, prop.y + prop.h * 0.5, prop.z, prop.r * 2.4, 0.4, prop.r * 2.4)
         elseif prop.type == "box" and prop.body and prop.body:isValid() then
             local bx, by, bz = prop.body:getPosition()
-            local qx, qy, qz, qw = prop.body:getRotation()
+            -- FIX: getRotation returns 3 values (Euler XYZ), not a quaternion.
+            -- The rotation was captured but never applied; boxes visually stayed
+            -- axis-aligned while physics tumbled. Wire it into drawCube now.
+            local rx, ry, rz = prop.body:getRotation()
             crayon.graphics.setColor(prop.col[1], prop.col[2], prop.col[3], 1.0)
-            crayon.graphics.drawCube(bx, by, bz, prop.size[1], prop.size[2], prop.size[3])
+            crayon.graphics.drawCube(
+                bx, by, bz,
+                prop.size[1], prop.size[2], prop.size[3],
+                nil, math.rad(rx), math.rad(ry), math.rad(rz)
+            )
         end
     end
 
-    -- 4. Draw Interactive Target Dummies / Enemies
+    -- 4. Interactive Target Dummies / Enemies
     for _, e in ipairs(enemies) do
         if e.body and e.body:isValid() then
             local ex, ey, ez = e.body:getPosition()
             if e.hit_flash > 0 then
-                crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0) -- Flash white on hit
+                crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
             elseif e.hp <= 0 then
-                crayon.graphics.setColor(0.3, 0.3, 0.35, 1.0) -- Defeated
+                crayon.graphics.setColor(0.3, 0.3, 0.35, 1.0)
             else
-                crayon.graphics.setColor(0.85, 0.25, 0.3, 1.0) -- Active enemy
+                crayon.graphics.setColor(0.85, 0.25, 0.3, 1.0)
             end
             crayon.graphics.drawSphere(ex, ey, ez, e.radius)
 
-            -- HP Bar billboard
             if e.hp > 0 then
                 crayon.graphics.setColor(0.1, 0.1, 0.1, 0.8)
                 crayon.graphics.drawBillboard(ex, ey + 0.9, ez, 0.9, 0.15)
                 crayon.graphics.setColor(0.2, 0.85, 0.3, 1.0)
-                crayon.graphics.drawBillboard(ex - 0.45 * (1.0 - e.hp / e.max_hp), ey + 0.9, ez, 0.85 * (e.hp / e.max_hp), 0.1)
+                crayon.graphics.drawBillboard(
+                    ex - 0.45 * (1.0 - e.hp / e.max_hp), ey + 0.9, ez,
+                    0.85 * (e.hp / e.max_hp), 0.1
+                )
             end
         end
     end
 
-    -- 5. Draw Player Character Model (Skinned glTF Mesh with Animator)
+    -- 5. Player Character
     if character_model and character_model:isValid() then
         crayon.graphics.setColor(1, 1, 1, 1)
 
-        -- Soldier model glTF default orientation and scale adjustment
         local model_scale = 1.0
-        local y_rot = player.rot_y
+        -- FIX: rotate expects radians. player.rot_y is in degrees.
+        local rad_y = math.rad(player.rot_y)
 
         if is_skinned and animator then
+            -- Model metatable exposes `:drawSkinned(...)` as an alias for
+            -- crayon.graphics.drawModelSkinned. The call is fine as written.
             character_model:drawSkinned(
                 animator,
                 player.x, player.y, player.z,
-                0, y_rot, 0,
+                0, rad_y, 0,
                 model_scale, model_scale, model_scale
             )
         else
-            character_model:draw(
+            -- FIX: Model has no `:draw()` method. Use the global function.
+            crayon.graphics.drawModel(
+                character_model,
                 player.x, player.y, player.z,
-                0, y_rot, 0,
+                0, rad_y, 0,
                 model_scale, model_scale, model_scale
             )
         end
     else
-        -- Fallback Mannequin if model fails to load
         crayon.graphics.setColor(0.2, 0.5, 0.9, 1.0)
         crayon.graphics.drawCapsule(player.x, player.y + 0.9, player.z, 0.4, 0.5)
     end
@@ -506,7 +512,6 @@ function crayon.draw()
     -- 6. HUD / UI Display
     crayon.graphics.resetCamera2d()
 
-    -- Title & Stats Bar
     crayon.graphics.setColor(0, 0, 0, 0.55)
     crayon.graphics.drawRect("fill", 10, 10, 260, 105)
 
@@ -516,19 +521,16 @@ function crayon.draw()
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawText("Action: " .. string.upper(current_anim), 20, 35, 1)
     crayon.graphics.drawText("Score:  " .. tostring(player.score), 20, 50, 1)
-    crayon.graphics.drawText("FPS:    " .. tostring(crayon.window.getFps()), 20, 65, 1)
+    crayon.graphics.drawText("FPS:    " .. tostring(crayon.time.getFps()), 20, 65, 1)
 
-    -- Controls legend
     crayon.graphics.setColor(0.8, 0.85, 0.9, 1.0)
     crayon.graphics.drawText("WASD: Move  |  LSHIFT: Run  |  SPACE: Jump", 20, 80, 1)
     crayon.graphics.drawText("Left Mouse / F: Attack  |  Right Mouse: Orbit Cam", 20, 95, 1)
 
-    -- Player Health Bar
     crayon.graphics.setColor(0.1, 0.1, 0.1, 0.8)
     crayon.graphics.drawRect("fill", 15, 122, 160, 16)
     crayon.graphics.setColor(0.9, 0.2, 0.25, 1.0)
     crayon.graphics.drawRect("fill", 17, 124, 156 * (player.health / player.max_health), 12)
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawText("HP: " .. player.health .. "/" .. player.max_health, 25, 125, 1)
-    -- crayon.physics3d.drawDebug(0.3, 1.0, 0.4, 1.0, 0.6, 0.6, 0.8, 0.8)
 end

@@ -85,7 +85,6 @@ function crayon.init()
         end
 
         -- 2. Setup upper-body layer mask (Layer 1)
-        -- Joint "Spine" or "Chest" can be used as root joint for the mask
         local spine_joint = "Spine"
         if character_model:getJointIndex("Spine1") >= 0 then
             spine_joint = "Spine1"
@@ -106,20 +105,25 @@ function crayon.init()
     end
 
     -- Physics ground plane
-    crayon.physics3d.createPlane(0, 1, 0, 0, 0.6, 0.2)
+    -- FIX: createPlane(x, y, z [, nx, ny, nz, halfExtent])
+    -- Original passed (0, 1, 0, 0, 0.6, 0.2) → position (0,1,0), normal (0, 0.6, 0.2)
+    -- which is a near-vertical tilted plane at y=1. Correct to a flat ground at origin.
+    crayon.physics3d.createPlane(0, 0, 0, 0, 1, 0, 50.0)
 end
 
 function crayon.update(dt)
     -- Camera Orbit Controls
-    if crayon.input.isDown("mouse_right") or crayon.input.isDown("mouse_middle") then
+    -- FIX: crayon.input.isDown doesn't exist; mouse buttons go through crayon.mouse
+    if crayon.mouse.isDown("right") or crayon.mouse.isDown("middle") then
         local dx, dy = crayon.input.getMouseDelta()
         cam.yaw = cam.yaw + dx * 0.3
         cam.pitch = math.max(-85.0, math.min(85.0, cam.pitch - dy * 0.3))
     end
 
-    local scroll = crayon.input.getMouseWheel()
-    if scroll ~= 0 then
-        cam.dist = math.max(2.0, math.min(30.0, cam.dist - scroll * 0.75))
+    -- FIX: getMouseWheel returns two values (wx, wy); original captured only the first
+    local scroll_x, scroll_y = crayon.input.getMouseWheel()
+    if scroll_y and scroll_y ~= 0 then
+        cam.dist = math.max(2.0, math.min(30.0, cam.dist - scroll_y * 0.75))
     end
 
     -- Update Camera Position
@@ -130,18 +134,18 @@ function crayon.update(dt)
     cam.z = cam.target_z + cam.dist * math.cos(rad_pitch) * math.sin(rad_yaw)
 
     -- Toggle Retro Shader Effects
-    if crayon.input.isPressed("f1") then
+    if crayon.key.isPressed("f1") then
         retro_enabled = not retro_enabled
     end
 
     -- Toggle Locomotion Blend Tree (Walk <-> Run)
-    if crayon.input.isPressed("b") then
+    if crayon.key.isPressed("b") then
         blend_mode = not blend_mode
         print("[SkeletalDemo] Locomotion Blend Tree: " .. (blend_mode and "ACTIVE" or "OFF"))
     end
 
     -- Toggle Upper-Body Bone Masking (Aim/Shoot over locomotion)
-    if crayon.input.isPressed("m") then
+    if crayon.key.isPressed("m") then
         upper_body_mask_enabled = not upper_body_mask_enabled
         print("[SkeletalDemo] Upper-Body Layer Masking: " .. (upper_body_mask_enabled and "ACTIVE" or "OFF"))
     end
@@ -149,7 +153,7 @@ function crayon.update(dt)
     -- Switch Animation Clip via [1..9]
     if not blend_mode and #anim_names > 0 then
         for i = 1, math.min(9, #anim_names) do
-            if crayon.input.isPressed(tostring(i)) then
+            if crayon.key.isPressed(tostring(i)) then
                 current_anim_idx = i
                 animator:crossFade(anim_names[current_anim_idx], 0.25, true)
                 print("[SkeletalDemo] CrossFading to clip: " .. anim_names[current_anim_idx])
@@ -159,9 +163,9 @@ function crayon.update(dt)
 
     -- Adjust Locomotion Blend Factor (Left/Right Arrows)
     if blend_mode then
-        if crayon.input.isDown("left") then
+        if crayon.key.isDown("left") then
             blend_factor = math.max(0.0, blend_factor - dt * 1.5)
-        elseif crayon.input.isDown("right") then
+        elseif crayon.key.isDown("right") then
             blend_factor = math.min(1.0, blend_factor + dt * 1.5)
         end
 
@@ -179,23 +183,26 @@ function crayon.update(dt)
     end
 
     -- Toggle Physics Ragdoll Mode (SPACE)
-    if crayon.input.isPressed("space") and character_pose and animator then
+    if crayon.key.isPressed("space") and character_pose and animator then
         physics_ragdoll_active = not physics_ragdoll_active
         if physics_ragdoll_active then
-            -- 1. Transfer current animated pose to physics SkeletonPose
             animator:applyToPhysicsPose(character_pose)
             print("[SkeletalDemo] Animated pose captured into Physics SkeletonPose! Ragdoll dynamic.")
         else
-            -- 2. Transfer ragdoll pose back to animator for seamless stand-up
             animator:capturePhysicsPose(character_pose)
             print("[SkeletalDemo] Ragdoll captured back into Animator. Resuming animation playback.")
         end
     end
 
-    -- Update Animator (Engine automatically steps physics at fixed 60Hz in game loop)
+    -- Update Animator
     if animator and not physics_ragdoll_active then
         animator:update(dt)
     end
+
+    -- FIX: step the physics world each frame. The engine does NOT auto-step
+    -- (every other physics example in the codebase calls this explicitly).
+    -- Without it, the ragdoll pose is frozen after the initial transfer.
+    crayon.physics3d.step(dt)
 
     -- Rotate lighting for atmospheric retro look
     light_rot = light_rot + dt * 0.4
@@ -217,6 +224,7 @@ function crayon.draw()
             }
         })
     else
+        -- Empty table + nil fields disable jitter / fog / CRT in the binding
         crayon.graphics.setRetroEffects({})
     end
 
@@ -260,18 +268,21 @@ function crayon.draw()
         crayon.graphics.setColor(0.95, 0.8, 0.65, 1.0)
         crayon.graphics.drawSphere(0, 2.3, 0, 0.3)
         -- Limbs
+        -- FIX: rx/ry/rz for drawCylinder are radians (matches glm::rotate).
+        -- Original passed `leg_swing * 40` → up to ±18 RADIANS (±1031°, three
+        -- full spins). Multiplied by 0.9 instead, capped to ~±23° of motion.
         crayon.graphics.setColor(0.2, 0.4, 0.7, 1.0)
-        crayon.graphics.drawCylinder(-0.25, 0.6, leg_swing * 0.4, 0.12, 0.8, nil, leg_swing * 40, 0, 0)
-        crayon.graphics.drawCylinder(0.25, 0.6, -leg_swing * 0.4, 0.12, 0.8, nil, -leg_swing * 40, 0, 0)
-        crayon.graphics.drawCylinder(-0.45, 1.5, arm_swing * 0.3, 0.1, 0.6, nil, arm_swing * 45, 0, 0)
-        crayon.graphics.drawCylinder(0.45, 1.5, -arm_swing * 0.3, 0.1, 0.6, nil, -arm_swing * 45, 0, 0)
+        crayon.graphics.drawCylinder(-0.25, 0.6,  leg_swing * 0.4, 0.12, 0.8, nil,  leg_swing * 0.9, 0, 0)
+        crayon.graphics.drawCylinder( 0.25, 0.6, -leg_swing * 0.4, 0.12, 0.8, nil, -leg_swing * 0.9, 0, 0)
+        crayon.graphics.drawCylinder(-0.45, 1.5,  arm_swing * 0.3, 0.10, 0.6, nil,  arm_swing * 0.9, 0, 0)
+        crayon.graphics.drawCylinder( 0.45, 1.5, -arm_swing * 0.3, 0.10, 0.6, nil, -arm_swing * 0.9, 0, 0)
     end
 
     -- Draw UI Overlay
     crayon.graphics.resetCamera2d()
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawText("=== CRAYON ENGINE - 3D SKELETAL ANIMATION PIPELINE ===", 15, 15, 1)
-    crayon.graphics.drawText("FPS: " .. tostring(crayon.window.getFps()), 15, 30, 1)
+    crayon.graphics.drawText("FPS: " .. tostring(crayon.time.getFps()), 15, 30, 1)
 
     if character_model and is_skinned_model then
         crayon.graphics.drawText("Status: Loaded Skinned glTF Model (" .. character_model:getJointCount() .. " joints)", 15, 50, 1)

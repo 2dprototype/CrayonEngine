@@ -31,9 +31,10 @@ function build_sine_terrain(time_val)
             local wx = x * step - half_size
             local wz = z * step - half_size
             -- Double sine wave height
-            local wy = math.sin(wx * 0.9 + time_val * 2.0) * 0.5 + math.cos(wz * 0.9 + time_val * 1.5) * 0.5
+            local wy = math.sin(wx * 0.9 + time_val * 2.0) * 0.5
+                     + math.cos(wz * 0.9 + time_val * 1.5) * 0.5
 
-            -- Calculate approximate normal
+            -- Approximate normal via partial derivatives
             local dX = 0.9 * math.cos(wx * 0.9 + time_val * 2.0) * 0.5
             local dZ = -0.9 * math.sin(wz * 0.9 + time_val * 1.5) * 0.5
             local nx = -dX
@@ -56,7 +57,7 @@ function build_sine_terrain(time_val)
         end
     end
 
-    -- Generate quad triangle indices (1-based for Lua)
+    -- Generate quad triangle indices (1-based for Lua; engine converts to 0-based)
     for z = 0, grid_res - 1 do
         for x = 0, grid_res - 1 do
             local row1 = z * (grid_res + 1)
@@ -67,7 +68,7 @@ function build_sine_terrain(time_val)
             local p3 = row2 + x + 1
             local p4 = row2 + x + 2
 
-            -- Triangle 1
+            -- Triangle 1 (winding matches terrain up-normal)
             table.insert(indices, p1)
             table.insert(indices, p3)
             table.insert(indices, p2)
@@ -110,27 +111,30 @@ function crayon.update(dt)
     timer = timer + dt
 
     -- Camera Controls
-    if crayon.input.isDown("left") or crayon.input.isDown("a") then cam.yaw = cam.yaw - 45.0 * dt end
-    if crayon.input.isDown("right") or crayon.input.isDown("d") then cam.yaw = cam.yaw + 45.0 * dt end
-    if crayon.input.isDown("up") or crayon.input.isDown("w") then cam.pitch = math.min(-10.0, cam.pitch + 35.0 * dt) end
-    if crayon.input.isDown("down") or crayon.input.isDown("s") then cam.pitch = math.max(-80.0, cam.pitch - 35.0 * dt) end
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("left")  or crayon.key.isDown("a") then cam.yaw   = cam.yaw   - 45.0 * dt end
+    if crayon.key.isDown("right") or crayon.key.isDown("d") then cam.yaw   = cam.yaw   + 45.0 * dt end
+    if crayon.key.isDown("up")    or crayon.key.isDown("w") then cam.pitch = math.min(-10.0, cam.pitch + 35.0 * dt) end
+    if crayon.key.isDown("down")  or crayon.key.isDown("s") then cam.pitch = math.max(-80.0, cam.pitch - 35.0 * dt) end
 
-    -- Zoom
+    -- Zoom (getMouseWheel DOES exist on crayon.input — keep it)
     local wheel_x, wheel_y = crayon.input.getMouseWheel()
     if wheel_y and wheel_y ~= 0 then
         cam.dist = math.max(4.0, math.min(25.0, cam.dist - wheel_y * 1.0))
     end
 
-    -- Rebuild animated mesh on spacebar or every few frames
-    if crayon.input.isDown("space") then
+    -- Rebuild animated mesh while SPACE is held
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("space") then
         terrain_mesh = build_sine_terrain(timer)
     end
 
-    if crayon.input.isPressed("1") then
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+    if crayon.key.isPressed("1") then
         use_texture = not use_texture
     end
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -159,7 +163,8 @@ function crayon.draw()
     -- 2. Draw Custom Procedural Mesh
     -- drawModel(model, x, y, z, rx, ry, rz, sx, sy, sz, tex)
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-    crayon.graphics.drawModel(terrain_mesh, 0, 0, 0, 0, 0, 0, 1, 1, 1, use_texture and tex_grass or 0)
+    crayon.graphics.drawModel(terrain_mesh, 0, 0, 0, 0, 0, 0, 1, 1, 1,
+                              use_texture and tex_grass or 0)
 
     -- ========================================================================
     -- 2D HUD OVERLAY
@@ -172,7 +177,7 @@ function crayon.draw()
     crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
     crayon.graphics.drawText("PROCEDURAL MESH GENERATION", 8, 10, 1.0)
 
-    local fps = math.floor(crayon.window.getFps() + 0.5)
+    local fps = math.floor(crayon.time.getFps() + 0.5)
     crayon.graphics.setColor(0.4, 1.0, 0.5, 1.0)
     crayon.graphics.drawText("FPS: " .. fps, 265, 10, 1.0)
 

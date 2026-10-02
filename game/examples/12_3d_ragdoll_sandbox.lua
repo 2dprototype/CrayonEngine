@@ -74,7 +74,10 @@ local function spawn_ragdoll(x, y, z, scale)
         table.insert(rd.parts, { body = larm, type = "capsule", len = arm_len, r = arm_r * 0.9, col = col_skin })
 
         -- Elbow Hinge Joint (Upper Arm <-> Lower Arm)
-        local elbow_c = crayon.physics3d.createHingeConstraint(uarm, larm, arm_x, y + 1.95 * scale, z, 1.0, 0.0, 0.0, 0.0, math.rad(130))
+        -- NOTE: createHingeConstraint only accepts pivot + axis. Angle limits
+        -- are NOT supported by the current binding — the trailing args are
+        -- ignored. Kept only for readability / future compatibility.
+        local elbow_c = crayon.physics3d.createHingeConstraint(uarm, larm, arm_x, y + 1.95 * scale, z, 1.0, 0.0, 0.0)
         table.insert(rd.constraints, elbow_c)
     end
 
@@ -100,8 +103,8 @@ local function spawn_ragdoll(x, y, z, scale)
         local calf = crayon.physics3d.createCapsule(leg_x, y + 0.75 * scale, z, calf_len * 0.5, leg_r * 0.85, "dynamic", friction, restitution, density)
         table.insert(rd.parts, { body = calf, type = "capsule", len = calf_len, r = leg_r * 0.85, col = col_shoes })
 
-        -- Knee Hinge Joint (Thigh <-> Calf, bends backwards)
-        local knee_c = crayon.physics3d.createHingeConstraint(thigh, calf, leg_x, y + 1.05 * scale, z, 1.0, 0.0, 0.0, math.rad(-130), 0.0)
+        -- Knee Hinge Joint (Thigh <-> Calf) — angle limits ignored, see note above
+        local knee_c = crayon.physics3d.createHingeConstraint(thigh, calf, leg_x, y + 1.05 * scale, z, 1.0, 0.0, 0.0)
         table.insert(rd.constraints, knee_c)
     end
 
@@ -181,17 +184,18 @@ function crayon.update(dt)
     local fwd_x, fwd_z = math.cos(rad_yaw), math.sin(rad_yaw)
     local right_x, right_z = -fwd_z, fwd_x
 
-    if crayon.input.isDown("w") then cam.x = cam.x + fwd_x * move_speed; cam.z = cam.z + fwd_z * move_speed end
-    if crayon.input.isDown("s") then cam.x = cam.x - fwd_x * move_speed; cam.z = cam.z - fwd_z * move_speed end
-    if crayon.input.isDown("a") then cam.x = cam.x - right_x * move_speed; cam.z = cam.z - right_z * move_speed end
-    if crayon.input.isDown("d") then cam.x = cam.x + right_x * move_speed; cam.z = cam.z + right_z * move_speed end
-    if crayon.input.isDown("q") or crayon.input.isDown("space") then cam.y = cam.y + move_speed end
-    if crayon.input.isDown("z") or crayon.input.isDown("lshift") then cam.y = cam.y - move_speed end
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("w") then cam.x = cam.x + fwd_x * move_speed; cam.z = cam.z + fwd_z * move_speed end
+    if crayon.key.isDown("s") then cam.x = cam.x - fwd_x * move_speed; cam.z = cam.z - fwd_z * move_speed end
+    if crayon.key.isDown("a") then cam.x = cam.x - right_x * move_speed; cam.z = cam.z - right_z * move_speed end
+    if crayon.key.isDown("d") then cam.x = cam.x + right_x * move_speed; cam.z = cam.z + right_z * move_speed end
+    if crayon.key.isDown("q") or crayon.key.isDown("space")  then cam.y = cam.y + move_speed end
+    if crayon.key.isDown("z") or crayon.key.isDown("lshift") then cam.y = cam.y - move_speed end
 
-    if crayon.input.isDown("left") then cam.yaw = cam.yaw - 80.0 * dt end
-    if crayon.input.isDown("right") then cam.yaw = cam.yaw + 80.0 * dt end
-    if crayon.input.isDown("up") then cam.pitch = math.min(cam.pitch + 60.0 * dt, 80.0) end
-    if crayon.input.isDown("down") then cam.pitch = math.max(cam.pitch - 60.0 * dt, -80.0) end
+    if crayon.key.isDown("left")  then cam.yaw   = cam.yaw   - 80.0 * dt end
+    if crayon.key.isDown("right") then cam.yaw   = cam.yaw   + 80.0 * dt end
+    if crayon.key.isDown("up")    then cam.pitch = math.min(cam.pitch + 60.0 * dt,  80.0) end
+    if crayon.key.isDown("down")  then cam.pitch = math.max(cam.pitch - 60.0 * dt, -80.0) end
 
     local rad_pitch = math.rad(cam.pitch)
     local look_x = math.cos(rad_pitch) * math.cos(rad_yaw)
@@ -199,7 +203,8 @@ function crayon.update(dt)
     local look_z = math.cos(rad_pitch) * math.sin(rad_yaw)
 
     -- Shoot Heavy Cannonball on Click or 'F'
-    if crayon.input.isMouseDown(1) or crayon.input.isPressed("f") then
+    -- isMouseDown is valid on crayon.input; isPressed is NOT — use crayon.key.isPressed
+    if crayon.input.isMouseDown(1) or crayon.key.isPressed("f") then
         local r = 0.5
         local ball = crayon.physics3d.createSphere(cam.x + look_x * 1.5, cam.y + look_y * 1.5, cam.z + look_z * 1.5, r, "dynamic", 0.5, 0.4, 2500.0)
         local v = 45.0
@@ -208,7 +213,7 @@ function crayon.update(dt)
     end
 
     -- Spawn a new Ragdoll in front of camera on 'B'
-    if crayon.input.isPressed("b") then
+    if crayon.key.isPressed("b") then
         local rx = cam.x + look_x * 6.0
         local ry = math.max(cam.y + look_y * 6.0, 1.5)
         local rz = cam.z + look_z * 6.0
@@ -218,7 +223,7 @@ function crayon.update(dt)
     end
 
     -- Radial Blast / Explosion on 'E' using Overlap Sphere Query!
-    if crayon.input.isPressed("e") then
+    if crayon.key.isPressed("e") then
         local blast_pos = {cam.x + look_x * 8.0, cam.y + look_y * 8.0, cam.z + look_z * 8.0}
         local blast_radius = 12.0
         local nearby_bodies = crayon.physics3d.overlapSphere(blast_pos[1], blast_pos[2], blast_pos[3], blast_radius)
@@ -237,7 +242,7 @@ function crayon.update(dt)
     end
 
     -- Zero-G toggle on 'G'
-    if crayon.input.isPressed("g") then
+    if crayon.key.isPressed("g") then
         zero_g = not zero_g
         if zero_g then
             crayon.physics3d.setGravity(0.0, 0.0, 0.0)
@@ -247,12 +252,12 @@ function crayon.update(dt)
     end
 
     -- Wireframe Debug toggle on 'TAB'
-    if crayon.input.isPressed("tab") then
+    if crayon.key.isPressed("tab") then
         show_debug = not show_debug
     end
 
     -- Reset Scene on 'R'
-    if crayon.input.isPressed("r") then
+    if crayon.key.isPressed("r") then
         reset_scene()
     end
 end
@@ -332,7 +337,7 @@ function crayon.draw()
     crayon.graphics.drawRect("line", 4, 4, 205, 54)
 
     local total_bodies, active_bodies = crayon.physics3d.getBodyCount()
-    local fps = math.floor(crayon.window.getFps() + 0.5)
+    local fps = math.floor(crayon.time.getFps() + 0.5)
 
     crayon.graphics.setColor(1.0, 0.85, 0.2, 1.0)
     crayon.graphics.drawText("3D JOLT RAGDOLL SHOWCASE", 8, 8, 1.0)

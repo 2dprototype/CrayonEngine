@@ -29,16 +29,9 @@ local function reset_scene()
     floor_body = crayon.physics3d.createPlane(0, 0, 0, 0, 1, 0, 50.0)
 
     -- Static flower pot / base
-    -- createCylinder(x, y, z, radius, halfHeight, tex, rx, ry, rz) is graphics-side;
-    -- physics side is createCylinder(x, y, z, halfHeight, radius, ...)
     crayon.physics3d.createCylinder(0, 0.4, 0, 0.4, 0.8, "static", 0.6, 0.2)
 
     -- Build rod points along a vertical line, anchored at (0, 0.8, 0)
-    -- createSoftBodyRod expects a table with:
-    --   points            : array of {x, y, z}
-    --   stretchCompliance : float
-    --   bendTwistCompliance : float
-    --   pinRoot           : bool
     local points = {}
     local segs = num_segments
     local total_len = rod_length
@@ -78,49 +71,50 @@ function crayon.update(dt)
     local rgt_x = math.cos(rad_yaw)
     local rgt_z = math.sin(rad_yaw)
 
-    if crayon.input.isDown("w") then
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("w") then
         cam.x = cam.x + fwd_x * move_speed
         cam.y = cam.y + fwd_y * move_speed
         cam.z = cam.z + fwd_z * move_speed
     end
-    if crayon.input.isDown("s") then
+    if crayon.key.isDown("s") then
         cam.x = cam.x - fwd_x * move_speed
         cam.y = cam.y - fwd_y * move_speed
         cam.z = cam.z - fwd_z * move_speed
     end
-    if crayon.input.isDown("a") then
+    if crayon.key.isDown("a") then
         cam.x = cam.x - rgt_x * move_speed
         cam.z = cam.z - rgt_z * move_speed
     end
-    if crayon.input.isDown("d") then
+    if crayon.key.isDown("d") then
         cam.x = cam.x + rgt_x * move_speed
         cam.z = cam.z + rgt_z * move_speed
     end
-    if crayon.input.isDown("space") then cam.y = cam.y + move_speed end
-    if crayon.input.isDown("lshift") then cam.y = cam.y - move_speed end
+    if crayon.key.isDown("space")  then cam.y = cam.y + move_speed end
+    if crayon.key.isDown("lshift") then cam.y = cam.y - move_speed end
 
-    if crayon.input.isDown("left")  then cam.yaw   = cam.yaw   - rot_speed end
-    if crayon.input.isDown("right") then cam.yaw   = cam.yaw   + rot_speed end
-    if crayon.input.isDown("up")    then cam.pitch = math.min(85.0, cam.pitch + rot_speed) end
-    if crayon.input.isDown("down")  then cam.pitch = math.max(-85.0, cam.pitch - rot_speed) end
+    if crayon.key.isDown("left")  then cam.yaw   = cam.yaw   - rot_speed end
+    if crayon.key.isDown("right") then cam.yaw   = cam.yaw   + rot_speed end
+    if crayon.key.isDown("up")    then cam.pitch = math.min(85.0, cam.pitch + rot_speed) end
+    if crayon.key.isDown("down")  then cam.pitch = math.max(-85.0, cam.pitch - rot_speed) end
 
     -- Toggle wind breeze
-    if crayon.input.isPressed("g") then
+    if crayon.key.isPressed("g") then
         wind_active = not wind_active
     end
 
     -- Toggle debug lines
-    if crayon.input.isPressed("tab") then
+    if crayon.key.isPressed("tab") then
         show_debug = not show_debug
     end
 
     -- Reset scene
-    if crayon.input.isPressed("r") then
+    if crayon.key.isPressed("r") then
         reset_scene()
     end
 
     -- Flick plant tip: soft bodies expose applyImpulse(i, x, y, z) with 1-based index
-    if crayon.input.isPressed("f") and rod and rod:isValid() then
+    if crayon.key.isPressed("f") and rod and rod:isValid() then
         local vc = rod:getVertexCount()
         rod:applyImpulse(vc, 2.0, 0.0, 1.0)   -- vc == last vertex (1-based)
     end
@@ -139,7 +133,7 @@ function crayon.update(dt)
         end
     end
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -161,9 +155,12 @@ function crayon.draw()
     })
 
     -- Ground grid
+    -- FIX: drawLine3d only takes 6 args (x1,y1,z1,x2,y2,z2); color comes from
+    -- setColor. The trailing 4 args in the original were silently ignored.
+    crayon.graphics.setColor(0.2, 0.25, 0.25, 1.0)
     for i = -12, 12, 2 do
-        crayon.graphics.drawLine3d(i, 0.0, -12, i, 0.0, 12, 0.2, 0.25, 0.25, 1.0)
-        crayon.graphics.drawLine3d(-12, 0.0, i, 12, 0.0, i, 0.2, 0.25, 0.25, 1.0)
+        crayon.graphics.drawLine3d(i, 0.0, -12, i, 0.0, 12)
+        crayon.graphics.drawLine3d(-12, 0.0, i, 12, 0.0, i)
     end
 
     -- Pot cylinder (graphics: x,y,z, radius, height, tex, rx,ry,rz)
@@ -180,7 +177,9 @@ function crayon.draw()
                 local nx, ny, nz = rod:getVertex(i)
                 if px and nx then
                     -- Stem segment
-                    crayon.graphics.drawLine3d(px, py, pz, nx, ny, nz, 0.2, 0.75, 0.3, 1.0)
+                    -- FIX: drop trailing color args from drawLine3d; setColor first
+                    crayon.graphics.setColor(0.2, 0.75, 0.3, 1.0)
+                    crayon.graphics.drawLine3d(px, py, pz, nx, ny, nz)
 
                     -- Node sphere
                     crayon.graphics.setColor(0.15, 0.85, 0.35, 1.0)
@@ -198,7 +197,8 @@ function crayon.draw()
                             local lz = tx * sign * 0.7
 
                             crayon.graphics.setColor(0.3, 0.9, 0.4, 1.0)
-                            crayon.graphics.drawLine3d(nx, ny, nz, nx + lx, ny + ly, nz + lz, 0.3, 0.9, 0.4, 1.0)
+                            crayon.graphics.drawLine3d(nx, ny, nz, nx + lx, ny + ly, nz + lz)
+                            crayon.graphics.setColor(0.4, 0.95, 0.5, 1.0)
                             crayon.graphics.drawSphere(nx + lx, ny + ly, nz + lz, 0.10)
                         end
                     end

@@ -10,10 +10,10 @@ local cam = {
     fov = 60
 }
 
-local STATE_ANIMATED        = 1
-local STATE_PHYSICAL_ANIM   = 2
-local STATE_RAGDOLL         = 3
-local STATE_GETTING_UP      = 4
+local STATE_ANIMATED      = 1
+local STATE_PHYSICAL_ANIM = 2
+local STATE_RAGDOLL       = 3
+local STATE_GETTING_UP    = 4
 
 local char_state = STATE_ANIMATED
 local char_pos = { x = 0.0, y = 1.0, z = 0.0 }
@@ -276,7 +276,7 @@ local function trigger_knockdown(ix, iy, iz)
     char_ragdoll:setMotorsStiffness(0.0)
     char_ragdoll:setLinearVelocity(vx, vy, vz)
     char_ragdoll:addImpulse(ix or 0, iy or 40, iz or 0)
-    -- Part 0 = Pelvis, Part 1 = Spine. Pick whichever you want to emphasize.
+    -- Part 0 = Pelvis, Part 1 = Spine.
     char_ragdoll:addImpulseToPart(1,
         (ix or 0) * 0.8,
         (iy or 30),
@@ -291,6 +291,7 @@ local function trigger_recovery()
     char_state = STATE_GETTING_UP
     get_up_timer = 0.0
 
+    -- getRootTransform returns 7 values (px,py,pz, qx,qy,qz,qw). Capture first 3.
     local rx, ry, rz = char_ragdoll:getRootTransform()
     ground_orientation = char_ragdoll:getGroundOrientation()
     print(string.format("[RagdollDemo] Root (%.2f,%.2f,%.2f) orientation=%s",
@@ -324,6 +325,9 @@ function crayon.init()
     crayon.graphics.setShadingMode("gouraud")
     crayon.graphics.setLight(-0.6, -1.0, 0.4, 1.0, 0.95, 0.9, 0.25, 0.25, 0.3)
 
+    -- FIX: gravity was never set.
+    crayon.physics3d.setGravity(0, -18.0, 0)
+
     -- Ground plane (y = 0, up = +Y)
     crayon.physics3d.createPlane(0, 0, 0, 0, 1, 0, 100)
 
@@ -352,7 +356,6 @@ function crayon.init()
             char_pose = crayon.physics3d.createSkeletonPose(char_skeleton)
         end
 
-        -- Pick a get-up clip if we can, otherwise Idle
         local anims = m:getAnimationNames()
         get_up_clip = anims[1] or "Idle"
         for _, name in ipairs(anims) do
@@ -368,7 +371,6 @@ function crayon.init()
         end
     end
 
-    -- Ragdoll — drive from pose if we have a skinned model
     char_ragdoll = create_humanoid_ragdoll(char_pos.x, char_pos.y, char_pos.z)
     if char_ragdoll then
         char_ragdoll:setHardKeying(true)
@@ -380,25 +382,27 @@ end
 -- ----------------------------------------------------------------
 function crayon.update(dt)
     -- Camera orbit
-    if crayon.input.isMouseDown("right") then
+    if crayon.mouse.isDown("right") then
         local dx, dy = crayon.input.getMouseDelta()
-        cam.yaw = cam.yaw + dx * 0.3
+        cam.yaw   = cam.yaw   + dx * 0.3
         cam.pitch = math.max(-85.0, math.min(85.0, cam.pitch - dy * 0.3))
     end
 
     local _, scroll = crayon.input.getMouseWheel()
-    if scroll ~= 0 then
+    if scroll and scroll ~= 0 then
         cam.dist = math.max(2.0, math.min(30.0, cam.dist - scroll))
     end
 
-    local rad_yaw = math.rad(cam.yaw)
+    local rad_yaw   = math.rad(cam.yaw)
     local rad_pitch = math.rad(cam.pitch)
     cam.x = cam.target_x + cam.dist * math.cos(rad_pitch) * math.cos(rad_yaw)
     cam.y = cam.target_y + cam.dist * math.sin(rad_pitch)
     cam.z = cam.target_z + cam.dist * math.cos(rad_pitch) * math.sin(rad_yaw)
 
-    -- Knockdown
-    if crayon.input.isPressed("space") or crayon.input.isPressed("k") then
+    -- -------------------------------------------------------------
+    -- Input → intent (FIX: keyboard on crayon.key, not crayon.input)
+    -- -------------------------------------------------------------
+    if crayon.key.isPressed("space") or crayon.key.isPressed("k") then
         if char_state ~= STATE_RAGDOLL and char_state ~= STATE_GETTING_UP then
             local fwd_x = -math.sin(char_rot_y) * 250.0
             local fwd_z = -math.cos(char_rot_y) * 250.0
@@ -406,8 +410,7 @@ function crayon.update(dt)
         end
     end
 
-    -- Motor mode toggle
-    if crayon.input.isPressed("m") then
+    if crayon.key.isPressed("m") then
         if char_state == STATE_ANIMATED then
             char_state = STATE_PHYSICAL_ANIM
             char_ragdoll:setHardKeying(false)
@@ -421,8 +424,7 @@ function crayon.update(dt)
         end
     end
 
-    -- Force recovery
-    if crayon.input.isPressed("r") and char_state == STATE_RAGDOLL then
+    if crayon.key.isPressed("r") and char_state == STATE_RAGDOLL then
         trigger_recovery()
     end
 
@@ -444,13 +446,22 @@ function crayon.update(dt)
         end
     end
 
+    -- -------------------------------------------------------------
+    -- CRITICAL FIX: step the physics world.
+    -- Without this the ragdoll never falls, cannonballs never move,
+    -- and "settle" detection never fires.
+    -- -------------------------------------------------------------
+    crayon.physics3d.step(dt)
+
+    -- -------------------------------------------------------------
     -- State machine
+    -- -------------------------------------------------------------
     if char_state == STATE_ANIMATED or char_state == STATE_PHYSICAL_ANIM then
         local move_x, move_z = 0.0, 0.0
-        if crayon.input.isDown("w") then move_z = move_z - 1.0 end
-        if crayon.input.isDown("s") then move_z = move_z + 1.0 end
-        if crayon.input.isDown("a") then move_x = move_x - 1.0 end
-        if crayon.input.isDown("d") then move_x = move_x + 1.0 end
+        if crayon.key.isDown("w") then move_z = move_z - 1.0 end
+        if crayon.key.isDown("s") then move_z = move_z + 1.0 end
+        if crayon.key.isDown("a") then move_x = move_x - 1.0 end
+        if crayon.key.isDown("d") then move_x = move_x + 1.0 end
 
         local input_len = math.sqrt(move_x*move_x + move_z*move_z)
         local speed = 5.0
@@ -463,7 +474,6 @@ function crayon.update(dt)
             move_x, move_z = 0.0, 0.0
         end
 
-        -- Preserve gravity accumulation from the controller
         local _, vy, _ = char_controller:getLinearVelocity()
         if char_controller:isSupported() and vy < 0 then vy = 0.0 end
 
@@ -502,9 +512,11 @@ function crayon.update(dt)
             settle_timer = 0.0
         end
 
-        if char_animator and char_pose then
+        if char_pose then
             char_ragdoll:getPose(char_pose)
-            char_animator:capturePhysicsPose(char_pose)
+            if char_animator then
+                char_animator:capturePhysicsPose(char_pose)
+            end
         end
 
     elseif char_state == STATE_GETTING_UP then
@@ -513,12 +525,17 @@ function crayon.update(dt)
             char_animator:update(dt)
         end
 
-        -- Snap ragdoll to the current animated get-up pose
         if char_animator and char_pose then
             local cx, cy, cz = char_controller:getPosition()
             char_animator:applyToPhysicsPose(char_pose, cx, cy - 0.55, cz)
             char_ragdoll:setPose(char_pose)
         end
+
+        -- Keep the virtual controller grounded through the recovery
+        char_controller:update(dt)
+        local cx, cy, cz = char_controller:getPosition()
+        char_pos.x, char_pos.y, char_pos.z = cx, cy, cz
+        cam.target_x, cam.target_y, cam.target_z = cx, cy + 0.9, cz
 
         if get_up_timer >= get_up_duration then
             char_state = STATE_ANIMATED
@@ -559,7 +576,6 @@ function crayon.draw()
                 0, char_rot_y, 0, 1, 1, 1)
         end
     else
-        -- Fallback: procedural body visual
         if char_ragdoll and char_ragdoll:isValid() then
             local n = char_ragdoll:getPartCount()
             for i = 0, n - 1 do

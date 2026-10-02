@@ -26,18 +26,21 @@ local function reset_scene()
 
     -- Create hanging cloth
     -- 20x20 grid, size 6.0 x 6.0, centered at x=0, y=6.0, z=0
+    -- NOTE: createSoftBodyCloth only recognizes these keys:
+    --   x, y, z, width, height, segmentsX, segmentsY,
+    --   compliance, bendCompliance, pinCorners, addLra
+    -- Other keys (mass, pinnedTop, hasShear, hasBend, hasLRA)
+    -- are silently ignored.
     cloth = crayon.physics3d.createSoftBodyCloth({
         x = 0.0, y = 6.0, z = 0.0,
         width = 6.0,
         height = 6.0,
         segmentsX = 20,
         segmentsY = 20,
-        mass = 2.0,
         compliance = 0.0001,
-        pinnedTop = true,      -- Pins top corners
-        hasShear = true,
-        hasBend = true,        -- Dihedral bend constraints
-        hasLRA = true          -- Long range attachment constraints (tethers)
+        bendCompliance = 0.01,   -- was implicitly relying on default via hasBend=true
+        pinCorners = true,        -- renamed from pinnedTop
+        addLra = true             -- renamed from hasLRA
     })
 end
 
@@ -60,49 +63,51 @@ function crayon.update(dt)
     local rgt_x = math.cos(rad_yaw)
     local rgt_z = math.sin(rad_yaw)
 
-    if crayon.input.isDown("w") then
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("w") then
         cam.x = cam.x + fwd_x * move_speed
         cam.y = cam.y + fwd_y * move_speed
         cam.z = cam.z + fwd_z * move_speed
     end
-    if crayon.input.isDown("s") then
+    if crayon.key.isDown("s") then
         cam.x = cam.x - fwd_x * move_speed
         cam.y = cam.y - fwd_y * move_speed
         cam.z = cam.z - fwd_z * move_speed
     end
-    if crayon.input.isDown("a") then
+    if crayon.key.isDown("a") then
         cam.x = cam.x - rgt_x * move_speed
         cam.z = cam.z - rgt_z * move_speed
     end
-    if crayon.input.isDown("d") then
+    if crayon.key.isDown("d") then
         cam.x = cam.x + rgt_x * move_speed
         cam.z = cam.z + rgt_z * move_speed
     end
-    if crayon.input.isDown("space") then cam.y = cam.y + move_speed end
-    if crayon.input.isDown("left_shift") then cam.y = cam.y - move_speed end
+    if crayon.key.isDown("space") then cam.y = cam.y + move_speed end
+    if crayon.key.isDown("lshift") then cam.y = cam.y - move_speed end
 
-    if crayon.input.isDown("left")  then cam.yaw = cam.yaw - rot_speed end
-    if crayon.input.isDown("right") then cam.yaw = cam.yaw + rot_speed end
-    if crayon.input.isDown("up")    then cam.pitch = math.min(85.0, cam.pitch + rot_speed) end
-    if crayon.input.isDown("down")  then cam.pitch = math.max(-85.0, cam.pitch - rot_speed) end
+    if crayon.key.isDown("left")  then cam.yaw   = cam.yaw   - rot_speed end
+    if crayon.key.isDown("right") then cam.yaw   = cam.yaw   + rot_speed end
+    if crayon.key.isDown("up")    then cam.pitch = math.min(85.0, cam.pitch + rot_speed) end
+    if crayon.key.isDown("down")  then cam.pitch = math.max(-85.0, cam.pitch - rot_speed) end
 
     -- Toggle debug lines
-    if crayon.input.isPressed("tab") then
+    if crayon.key.isPressed("tab") then
         show_debug = not show_debug
     end
 
     -- Toggle wind
-    if crayon.input.isPressed("g") then
+    if crayon.key.isPressed("g") then
         wind_active = not wind_active
     end
 
     -- Reset scene
-    if crayon.input.isPressed("r") then
+    if crayon.key.isPressed("r") then
         reset_scene()
     end
 
     -- Shoot cannonball on F or Left Click
-    if crayon.input.isPressed("f") or crayon.input.isMousePressed(1) then
+    -- isMousePressed IS a valid alias on crayon.input — keep it
+    if crayon.key.isPressed("f") or crayon.input.isMousePressed(1) then
         local shoot_dir_x = fwd_x
         local shoot_dir_y = fwd_y
         local shoot_dir_z = fwd_z
@@ -118,13 +123,15 @@ function crayon.update(dt)
     end
 
     -- Apply wind force to cloth vertices
+    -- FIX: vertex indices in the C binding are 1-indexed (v_idx - 1 internally),
+    -- so the loop must run from 1 to vert_count (inclusive).
     if wind_active and cloth then
         wind_time = wind_time + dt
         local gust = math.sin(wind_time * 3.0) * 0.5 + 0.5
         local wx = (math.sin(wind_time * 1.5) * 0.3 + 0.7) * 4.0 * gust
         local wz = (math.cos(wind_time * 2.0) * 0.2 - 0.8) * 6.0 * gust
         local vert_count = cloth:getVertexCount()
-        for i = 0, vert_count - 1 do
+        for i = 1, vert_count do
             -- Add subtle wave variation per vertex index
             local fx = wx + math.sin(wind_time * 5.0 + i * 0.1) * 0.8
             local fz = wz + math.cos(wind_time * 4.0 + i * 0.1) * 0.8
@@ -150,10 +157,12 @@ function crayon.draw()
     })
 
     -- Draw ground grid
+    -- FIX: drawLine3d only takes 6 args (x1,y1,z1,x2,y2,z2). Color comes from
+    -- setColor. The trailing 4 args in the original were silently ignored.
     crayon.graphics.setColor(0.2, 0.25, 0.3, 1.0)
     for i = -15, 15, 3 do
-        crayon.graphics.drawLine3d(i, 0.0, -15, i, 0.0, 15, 0.2, 0.25, 0.3, 1.0)
-        crayon.graphics.drawLine3d(-15, 0.0, i, 15, 0.0, i, 0.2, 0.25, 0.3, 1.0)
+        crayon.graphics.drawLine3d(i, 0.0, -15, i, 0.0, 15)
+        crayon.graphics.drawLine3d(-15, 0.0, i, 15, 0.0, i)
     end
 
     -- Draw rigid cannonballs

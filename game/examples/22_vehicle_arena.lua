@@ -36,7 +36,6 @@ local function spawn_vehicle(x, y, z)
     )
 
     -- 2. Define 4 Wheels with suspension & drive flags
-    -- Local offsets relative to chassis center
     local half_w = 1.05
     local half_l = 1.45
     local wheel_y = -0.25
@@ -44,7 +43,6 @@ local function spawn_vehicle(x, y, z)
     local wheel_w = 0.28
 
     local wheels = {
-        -- Front Left (Steering)
         {
             pos = {-half_w, wheel_y, half_l},
             radius = wheel_r, width = wheel_w,
@@ -58,7 +56,6 @@ local function spawn_vehicle(x, y, z)
             isFront = true,
             isDrive = false
         },
-        -- Front Right (Steering)
         {
             pos = {half_w, wheel_y, half_l},
             radius = wheel_r, width = wheel_w,
@@ -72,7 +69,6 @@ local function spawn_vehicle(x, y, z)
             isFront = true,
             isDrive = false
         },
-        -- Rear Left (Drive + Handbrake)
         {
             pos = {-half_w, wheel_y, -half_l},
             radius = wheel_r, width = wheel_w,
@@ -86,7 +82,6 @@ local function spawn_vehicle(x, y, z)
             isFront = false,
             isDrive = true
         },
-        -- Rear Right (Drive + Handbrake)
         {
             pos = {half_w, wheel_y, -half_l},
             radius = wheel_r, width = wheel_w,
@@ -116,18 +111,30 @@ local function reset_arena()
     crayon.physics3d.destroyAll()
     arena_props = {}
 
+    -- FIX: gravity was never set. Vehicles are tuned for ~18 m/s² downward.
+    crayon.physics3d.setGravity(0, -18.0, 0)
+
     -- Static Ground Plane
     ground_body = crayon.physics3d.createPlane(0, 0, 0, 0, 1, 0, 150.0)
 
     -- Stunt Jump Ramp (slanted box)
+    -- setRotation takes (rx, ry, rz [, activate]) — values in radians.
     local ramp = crayon.physics3d.createBox(0, 1.2, 25.0, 4.0, 0.4, 3.5, "static", 0.8, 0.1)
-    ramp:setRotation(math.rad(-18.0), 0, 0, 1) -- slant ramp up
-    table.insert(arena_props, { body = ramp, col = {0.8, 0.6, 0.2} })
+    ramp:setRotation(math.rad(-18.0), 0, 0)
+    table.insert(arena_props, {
+        body = ramp,
+        col = {0.8, 0.6, 0.2},
+        half = {4.0, 0.4, 3.5}
+    })
 
     -- Obstacle traffic cones / cubes to knock over
     for i = -4, 4, 2 do
         local box = crayon.physics3d.createBox(i * 1.8, 0.5, 12.0, 0.4, 0.5, 0.4, "dynamic", 0.6, 0.3, 30.0)
-        table.insert(arena_props, { body = box, col = {0.9, 0.3, 0.2} })
+        table.insert(arena_props, {
+            body = box,
+            col = {0.9, 0.3, 0.2},
+            half = {0.4, 0.5, 0.4}
+        })
     end
 
     -- Spawn the vehicle at origin
@@ -145,62 +152,81 @@ function crayon.init()
 end
 
 function crayon.update(dt)
-    -- Advance the physics simulation (CRITICAL FIX)
-    -- crayon.physics3d.update(dt)
-
-    -- Gather Vehicle Controls
+    -- -------------------------------------------------------------
+    -- 1. Gather Vehicle Controls
+    -- -------------------------------------------------------------
     local throttle = 0.0
-    if crayon.input.isDown("w") or crayon.input.isDown("up") then
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("w") or crayon.key.isDown("up") then
         throttle = 1.0
-    elseif crayon.input.isDown("s") or crayon.input.isDown("down") then
+    elseif crayon.key.isDown("s") or crayon.key.isDown("down") then
         throttle = -0.8
     end
 
     local steer = 0.0
-    if crayon.input.isDown("a") or crayon.input.isDown("left") then
+    if crayon.key.isDown("a") or crayon.key.isDown("left") then
         steer = -1.0
-    elseif crayon.input.isDown("d") or crayon.input.isDown("right") then
+    elseif crayon.key.isDown("d") or crayon.key.isDown("right") then
         steer = 1.0
     end
 
-    local brake = (throttle < 0 and 0.0) or (crayon.input.isDown("s") and 1.0 or 0.0)
-    local handbrake = crayon.input.isDown("space")
+    -- Reverse (throttle < 0) already provides braking via the wheel constraint.
+    -- The explicit brake flag is only meaningful when actively decelerating.
+    local brake = 0.0
+    local handbrake = crayon.key.isDown("space")
 
-    -- Send driver inputs to vehicle constraint
+    -- -------------------------------------------------------------
+    -- 2. Send driver inputs to vehicle constraint
+    -- -------------------------------------------------------------
     if car and car:isValid() then
         car:setInputWheeled(throttle, steer, brake, handbrake)
     end
 
-    -- Reset vehicle
-    if crayon.input.isPressed("r") then
+    -- -------------------------------------------------------------
+    -- 3. Step physics AFTER applying this frame's inputs.
+    --    FIX: original had this commented out AND used a non-existent
+    --    `update()` method. The engine exposes `step([dt, steps])`.
+    -- -------------------------------------------------------------
+    crayon.physics3d.step(dt)
+
+    -- -------------------------------------------------------------
+    -- 4. Reset / Debug toggles
+    -- -------------------------------------------------------------
+    if crayon.key.isPressed("r") then
         reset_arena()
     end
-
-    -- Toggle debug draw
-    if crayon.input.isPressed("f1") then
+    if crayon.key.isPressed("f1") then
         show_debug = not show_debug
     end
 
-    -- Mouse orbit camera controls
-    if crayon.input.isDown("mouse_right") or crayon.input.isDown("mouse_middle") then
+    -- -------------------------------------------------------------
+    -- 5. Mouse orbit camera controls
+    -- -------------------------------------------------------------
+    -- FIX: crayon.input.isDown("mouse_right") doesn't exist.
+    --      Use crayon.mouse.isDown("right").
+    if crayon.mouse.isDown("right") or crayon.mouse.isDown("middle") then
+        -- getMouseDelta IS exposed on crayon.input (aliased from mouse).
         local dx, dy = crayon.input.getMouseDelta()
-        cam.yaw = cam.yaw - dx * 0.35
+        cam.yaw   = cam.yaw   - dx * 0.35
         cam.pitch = math.max(5.0, math.min(80.0, cam.pitch - dy * 0.25))
     end
 
-    local wheel = crayon.input.getMouseWheel()
-    if wheel ~= 0 then
-        cam.dist = math.max(3.0, math.min(25.0, cam.dist - wheel * 0.8))
+    -- FIX: getMouseWheel returns (x, y); we only want the vertical scroll.
+    local _, wheel_y = crayon.input.getMouseWheel()
+    if wheel_y and wheel_y ~= 0 then
+        cam.dist = math.max(3.0, math.min(25.0, cam.dist - wheel_y * 0.8))
     end
 
-    -- Smooth Camera Follow
+    -- -------------------------------------------------------------
+    -- 6. Smooth Camera Follow
+    -- -------------------------------------------------------------
     if chassis_body and chassis_body:isValid() then
         local px, py, pz = chassis_body:getPosition()
         cam.target_x = cam.target_x + (px - cam.target_x) * math.min(1.0, dt * 10.0)
         cam.target_y = cam.target_y + (py + 0.8 - cam.target_y) * math.min(1.0, dt * 10.0)
         cam.target_z = cam.target_z + (pz - cam.target_z) * math.min(1.0, dt * 10.0)
 
-        local rad_yaw = math.rad(cam.yaw)
+        local rad_yaw   = math.rad(cam.yaw)
         local rad_pitch = math.rad(cam.pitch)
         local desired_x = cam.target_x - cam.dist * math.cos(rad_pitch) * math.sin(rad_yaw)
         local desired_y = cam.target_y + cam.dist * math.sin(rad_pitch)
@@ -229,53 +255,73 @@ function crayon.draw()
     crayon.graphics.setColor(0.3, 0.35, 0.45, 1.0)
     crayon.graphics.drawGrid3d(100.0, 50, 0.0)
 
-    -- Draw Solid Vehicle Car Body & Wheels
+    -- -------------------------------------------------------------
+    -- NEW: Render arena props (ramp + obstacle cones).
+    -- The original tracked them in `arena_props` but never drew them,
+    -- so the ramp and cones were invisible.
+    -- -------------------------------------------------------------
+    for _, prop in ipairs(arena_props) do
+        if prop.body and prop.body:isValid() then
+            local px, py, pz = prop.body:getPosition()
+            local rx, ry, rz = prop.body:getRotation()  -- radians
+            crayon.graphics.setColor(prop.col[1], prop.col[2], prop.col[3], 1.0)
+            crayon.graphics.drawCube(
+                px, py, pz,
+                prop.half[1] * 2.0, prop.half[2] * 2.0, prop.half[3] * 2.0,
+                nil, rx, ry, rz
+            )
+        end
+    end
+
+    -- -------------------------------------------------------------
+    -- Vehicle chassis + cabin (drawn in local space via matrix stack)
+    -- -------------------------------------------------------------
     if chassis_body and chassis_body:isValid() then
         local px, py, pz = chassis_body:getPosition()
-        local rx, ry, rz = chassis_body:getRotation()
+        local rx, ry, rz = chassis_body:getRotation()  -- radians
 
-        -- Isolate transformations for the chassis
         crayon.graphics.pushMatrix()
         crayon.graphics.translate(px, py, pz)
-        -- Apply Euler rotations
         crayon.graphics.rotate(ry, 0, 1, 0)
         crayon.graphics.rotate(rx, 1, 0, 0)
         crayon.graphics.rotate(rz, 0, 0, 1)
 
-        -- Chassis main hull (Blue Sports Car)
         crayon.graphics.setColor(0.2, 0.55, 0.95, 1.0)
         crayon.graphics.drawCube(0, 0, 0, 1.9, 0.7, 4.0)
 
-        -- Cabin / Cockpit Roof (offset relative to the center)
         crayon.graphics.setColor(0.15, 0.2, 0.3, 1.0)
         crayon.graphics.drawCube(0, 0.55, -0.2, 1.5, 0.5, 2.0)
-        
+
         crayon.graphics.popMatrix()
 
-        -- Draw Wheels at simulated suspension positions
+        -- Wheels at simulated suspension positions
         if car and car:isValid() then
             local wheel_count = car:getWheelCount()
             for i = 0, wheel_count - 1 do
                 local wheel = car:getWheelTransform(i)
-                if wheel then
+                if wheel and wheel.position then
                     local wx = wheel.position.x
                     local wy = wheel.position.y
                     local wz = wheel.position.z
-                    
+
                     crayon.graphics.setColor(0.15, 0.15, 0.15, 1.0)
-                    -- Convert 90 degrees to radians to properly orient the cylinder as a wheel
+                    -- Cylinder axis is Y by default; rotate 90° about Z to lay it on its side.
                     crayon.graphics.drawCylinder(wx, wy, wz, 0.40, 0.28, nil, 0, 0, math.rad(90))
                 end
             end
         end
     end
 
-    -- Draw Physics Debug Overlay (shows suspension springs & collision rays)
+    -- -------------------------------------------------------------
+    -- Debug wireframes
+    -- -------------------------------------------------------------
     if show_debug then
         crayon.physics3d.drawDebug()
     end
 
-    -- Draw HUD
+    -- -------------------------------------------------------------
+    -- HUD
+    -- -------------------------------------------------------------
     crayon.graphics.resetCamera2d()
     crayon.graphics.setColor(0, 0, 0, 0.6)
     crayon.graphics.drawRect("fill", 10, 10, 270, 120)
@@ -286,10 +332,10 @@ function crayon.draw()
     crayon.graphics.setColor(1, 1, 1, 1)
     if car and car:isValid() then
         crayon.graphics.drawText(string.format("Speed: %.1f km/h", car:getSpeedKmh()), 20, 36, 1)
-        crayon.graphics.drawText(string.format("RPM:   %.0f", car:getEngineRpm()), 20, 52, 1)
-        crayon.graphics.drawText(string.format("Gear:  %d", car:getTransmissionGear()), 20, 68, 1)
+        crayon.graphics.drawText(string.format("RPM:   %.0f",      car:getEngineRpm()), 20, 52, 1)
+        crayon.graphics.drawText(string.format("Gear:  %d",        car:getTransmissionGear()), 20, 68, 1)
     end
-    crayon.graphics.drawText(string.format("FPS:   %d", crayon.window.getFps()), 20, 84, 1)
+    crayon.graphics.drawText(string.format("FPS:   %d", crayon.time.getFps()), 20, 84, 1)
 
     crayon.graphics.setColor(0.75, 0.85, 0.95, 1.0)
     crayon.graphics.drawText("WASD: Drive  |  SPACE: Handbrake  |  R: Reset", 20, 102, 1)

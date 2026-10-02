@@ -25,21 +25,23 @@ function crayon.init()
 end
 
 function crayon.update(dt)
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+
     -- 1: Cycle Scaling Mode
-    if crayon.input.isPressed("1") or crayon.input.isPressed("tab") then
+    if crayon.key.isPressed("1") or crayon.key.isPressed("tab") then
         cur_mode_idx = (cur_mode_idx % #scaling_modes) + 1
         crayon.window.setScalingMode(scaling_modes[cur_mode_idx])
     end
 
     -- 2: Cycle Internal Resolution
-    if crayon.input.isPressed("2") then
+    if crayon.key.isPressed("2") then
         cur_res_idx = (cur_res_idx % #resolutions) + 1
         local r = resolutions[cur_res_idx]
         crayon.window.setResolution(r[1], r[2])
     end
 
     -- 3: Cycle Window Size
-    if crayon.input.isPressed("3") then
+    if crayon.key.isPressed("3") then
         cur_win_idx = (cur_win_idx % #window_sizes) + 1
         local ws = window_sizes[cur_win_idx]
         crayon.window.setWindowSize(ws[1], ws[2])
@@ -47,27 +49,27 @@ function crayon.update(dt)
     end
 
     -- F: Toggle Fullscreen
-    if crayon.input.isPressed("f") then
+    if crayon.key.isPressed("f") then
         crayon.window.setFullscreen(not crayon.window.isFullscreen())
     end
 
     -- V: Toggle VSync
-    if crayon.input.isPressed("v") then
+    if crayon.key.isPressed("v") then
         crayon.window.setVsync(not crayon.window.getVsync())
     end
 
     -- B: Toggle Bordered
-    if crayon.input.isPressed("b") then
+    if crayon.key.isPressed("b") then
         crayon.window.setBordered(not crayon.window.isBordered())
     end
 
     -- C: Center Window
-    if crayon.input.isPressed("c") then
+    if crayon.key.isPressed("c") then
         crayon.window.center()
     end
 
     -- M: Maximize / Restore
-    if crayon.input.isPressed("m") then
+    if crayon.key.isPressed("m") then
         if crayon.window.isMaximized() then
             crayon.window.restore()
         else
@@ -75,7 +77,7 @@ function crayon.update(dt)
         end
     end
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end

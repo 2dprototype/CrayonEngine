@@ -114,17 +114,18 @@ function crayon.update(dt)
     local fwd_x, fwd_z = math.cos(rad_yaw), math.sin(rad_yaw)
     local right_x, right_z = -fwd_z, fwd_x
 
-    if crayon.input.isDown("w") then cam.x = cam.x + fwd_x * move_speed; cam.z = cam.z + fwd_z * move_speed end
-    if crayon.input.isDown("s") then cam.x = cam.x - fwd_x * move_speed; cam.z = cam.z - fwd_z * move_speed end
-    if crayon.input.isDown("a") then cam.x = cam.x - right_x * move_speed; cam.z = cam.z - right_z * move_speed end
-    if crayon.input.isDown("d") then cam.x = cam.x + right_x * move_speed; cam.z = cam.z + right_z * move_speed end
-    if crayon.input.isDown("q") or crayon.input.isDown("space") then cam.y = cam.y + move_speed end
-    if crayon.input.isDown("z") or crayon.input.isDown("lshift") then cam.y = cam.y - move_speed end
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("w") then cam.x = cam.x + fwd_x * move_speed; cam.z = cam.z + fwd_z * move_speed end
+    if crayon.key.isDown("s") then cam.x = cam.x - fwd_x * move_speed; cam.z = cam.z - fwd_z * move_speed end
+    if crayon.key.isDown("a") then cam.x = cam.x - right_x * move_speed; cam.z = cam.z - right_z * move_speed end
+    if crayon.key.isDown("d") then cam.x = cam.x + right_x * move_speed; cam.z = cam.z + right_z * move_speed end
+    if crayon.key.isDown("q") or crayon.key.isDown("space")  then cam.y = cam.y + move_speed end
+    if crayon.key.isDown("z") or crayon.key.isDown("lshift") then cam.y = cam.y - move_speed end
 
-    if crayon.input.isDown("left") then cam.yaw = cam.yaw - 80.0 * dt end
-    if crayon.input.isDown("right") then cam.yaw = cam.yaw + 80.0 * dt end
-    if crayon.input.isDown("up") then cam.pitch = math.min(cam.pitch + 60.0 * dt, 80.0) end
-    if crayon.input.isDown("down") then cam.pitch = math.max(cam.pitch - 60.0 * dt, -80.0) end
+    if crayon.key.isDown("left")  then cam.yaw   = cam.yaw   - 80.0 * dt end
+    if crayon.key.isDown("right") then cam.yaw   = cam.yaw   + 80.0 * dt end
+    if crayon.key.isDown("up")    then cam.pitch = math.min(cam.pitch + 60.0 * dt,  80.0) end
+    if crayon.key.isDown("down")  then cam.pitch = math.max(cam.pitch - 60.0 * dt, -80.0) end
 
     -- Shoot Cannonball along Camera Look Direction (Left Mouse or 'F')
     local rad_pitch = math.rad(cam.pitch)
@@ -132,14 +133,15 @@ function crayon.update(dt)
     local look_y = math.sin(rad_pitch)
     local look_z = math.cos(rad_pitch) * math.sin(rad_yaw)
 
-    if crayon.input.isMouseDown(1) or crayon.input.isPressed("f") then
+    -- isMouseDown is valid on crayon.input; isPressed is NOT — use crayon.key.isPressed
+    if crayon.input.isMouseDown(1) or crayon.key.isPressed("f") then
         local ball = spawn_sphere(cam.x + look_x * 1.5, cam.y + look_y * 1.5, cam.z + look_z * 1.5, 0.45, "dynamic", 0.4, 0.6)
         local shoot_speed = 35.0
         ball:setVelocity(look_x * shoot_speed, look_y * shoot_speed, look_z * shoot_speed)
     end
 
     -- Rain random tumbling spheres on 'B'
-    if crayon.input.isPressed("b") then
+    if crayon.key.isPressed("b") then
         for _ = 1, 10 do
             local rx = (math.random() - 0.5) * 8.0
             local rz = (math.random() - 0.5) * 8.0
@@ -149,7 +151,7 @@ function crayon.update(dt)
     end
 
     -- Radial Blast / Explosion Impulse on 'E'
-    if crayon.input.isPressed("e") then
+    if crayon.key.isPressed("e") then
         for _, b in ipairs(bodies) do
             if b.body:isValid() then
                 local bx, by, bz = b.body:getPosition()
@@ -165,12 +167,12 @@ function crayon.update(dt)
     end
 
     -- Toggle Debug Wireframe on 'TAB' or 'G'
-    if crayon.input.isPressed("tab") or crayon.input.isPressed("g") then
+    if crayon.key.isPressed("tab") or crayon.key.isPressed("g") then
         show_debug = not show_debug
     end
 
     -- Reset Scene on 'R'
-    if crayon.input.isPressed("r") then
+    if crayon.key.isPressed("r") then
         reset_scene()
     end
 end
@@ -231,7 +233,7 @@ function crayon.draw()
     crayon.graphics.drawRect("line", 4, 4, 185, 52)
 
     local total_bodies, active_bodies = crayon.physics3d.getBodyCount()
-    local fps = math.floor(crayon.window.getFps() + 0.5)
+    local fps = math.floor(crayon.time.getFps() + 0.5)
 
     crayon.graphics.setColor(1.0, 0.9, 0.2, 1.0)
     crayon.graphics.drawText("JOLT 3D PHYSICS SANDBOX", 8, 8, 1.0)

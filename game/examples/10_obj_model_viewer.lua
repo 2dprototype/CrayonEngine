@@ -78,51 +78,54 @@ function crayon.update(dt)
         rot_y = rot_y + 40.0 * dt
     end
 
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+
     -- Tab: Next Model
-    if crayon.input.isPressed("tab") or crayon.input.isPressed("space") then
+    if crayon.key.isPressed("tab") or crayon.key.isPressed("space") then
         cur_model_idx = (cur_model_idx % #model_files) + 1
         load_current_model()
     end
 
     -- 1: Cycle Shading Mode
-    if crayon.input.isPressed("1") then
+    if crayon.key.isPressed("1") then
         cur_shading_idx = (cur_shading_idx % #shading_modes) + 1
         crayon.graphics.setShadingMode(shading_modes[cur_shading_idx])
     end
 
     -- 2: Cycle Texture
-    if crayon.input.isPressed("2") then
+    if crayon.key.isPressed("2") then
         cur_tex_idx = (cur_tex_idx % #tex_list) + 1
     end
 
     -- R: Toggle Auto-Rotate
-    if crayon.input.isPressed("r") then
+    if crayon.key.isPressed("r") then
         auto_rotate = not auto_rotate
     end
 
     -- Camera Orbit Controls
-    if crayon.input.isDown("left") or crayon.input.isDown("a") then
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("left")  or crayon.key.isDown("a") then
         cam.yaw = cam.yaw - 60.0 * dt
     end
-    if crayon.input.isDown("right") or crayon.input.isDown("d") then
+    if crayon.key.isDown("right") or crayon.key.isDown("d") then
         cam.yaw = cam.yaw + 60.0 * dt
     end
-    if crayon.input.isDown("up") or crayon.input.isDown("w") then
+    if crayon.key.isDown("up")    or crayon.key.isDown("w") then
         cam.pitch = math.min(80.0, cam.pitch + 45.0 * dt)
     end
-    if crayon.input.isDown("down") or crayon.input.isDown("s") then
+    if crayon.key.isDown("down")  or crayon.key.isDown("s") then
         cam.pitch = math.max(-80.0, cam.pitch - 45.0 * dt)
     end
 
-    -- Zoom
+    -- Zoom (getMouseWheel DOES exist on crayon.input — keep it)
     local wheel_x, wheel_y = crayon.input.getMouseWheel()
     if wheel_y and wheel_y ~= 0 then
         cam.dist = math.max(1.0, math.min(15.0, cam.dist - wheel_y * 0.6))
     end
-    if crayon.input.isDown("q") then cam.dist = math.min(15.0, cam.dist + 3.0 * dt) end
-    if crayon.input.isDown("e") then cam.dist = math.max(1.0, cam.dist - 3.0 * dt) end
+    if crayon.key.isDown("q") then cam.dist = math.min(15.0, cam.dist + 3.0 * dt) end
+    if crayon.key.isDown("e") then cam.dist = math.max(1.0,  cam.dist - 3.0 * dt) end
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -184,7 +187,7 @@ function crayon.draw()
     crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
     crayon.graphics.drawText("3D OBJ MODEL INSPECTOR", 8, 10, 1.0)
 
-    local fps = math.floor(crayon.window.getFps() + 0.5)
+    local fps = math.floor(crayon.time.getFps() + 0.5)
     crayon.graphics.setColor(0.4, 1.0, 0.5, 1.0)
     crayon.graphics.drawText("FPS: " .. fps, 265, 10, 1.0)
 

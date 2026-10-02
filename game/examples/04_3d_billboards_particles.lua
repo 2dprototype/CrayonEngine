@@ -77,20 +77,21 @@ function crayon.update(dt)
     timer = timer + dt
 
     -- Camera Orbit Controls
-    if crayon.input.isDown("left") or crayon.input.isDown("a") then
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("left")  or crayon.key.isDown("a") then
         cam.yaw = cam.yaw - 50.0 * dt
     end
-    if crayon.input.isDown("right") or crayon.input.isDown("d") then
+    if crayon.key.isDown("right") or crayon.key.isDown("d") then
         cam.yaw = cam.yaw + 50.0 * dt
     end
-    if crayon.input.isDown("up") or crayon.input.isDown("w") then
+    if crayon.key.isDown("up")    or crayon.key.isDown("w") then
         cam.pitch = math.min(10.0, cam.pitch + 40.0 * dt)
     end
-    if crayon.input.isDown("down") or crayon.input.isDown("s") then
+    if crayon.key.isDown("down")  or crayon.key.isDown("s") then
         cam.pitch = math.max(-75.0, cam.pitch - 40.0 * dt)
     end
 
-    -- Zoom
+    -- Zoom (getMouseWheel DOES exist on crayon.input — keep it)
     local wheel_x, wheel_y = crayon.input.getMouseWheel()
     if wheel_y and wheel_y ~= 0 then
         cam.dist = math.max(3.0, math.min(18.0, cam.dist - wheel_y * 1.0))
@@ -102,7 +103,8 @@ function crayon.update(dt)
     end
 
     -- Spacebar burst
-    if crayon.input.isPressed("space") then
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+    if crayon.key.isPressed("space") then
         for i = 1, 25 do
             table.insert(particles, spawn_particle())
         end
@@ -121,7 +123,7 @@ function crayon.update(dt)
         end
     end
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end

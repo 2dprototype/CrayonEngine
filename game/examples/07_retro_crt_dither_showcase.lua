@@ -37,17 +37,29 @@ function crayon.init()
 end
 
 function apply_effects()
-    crayon.graphics.setRetroEffects({
-        jitterResolution = fx.jitter and {160, 120} or nil,
-        affine = fx.affine,
-        dither = fx.dither,
-        ditherLevels = fx.dither_levels,
-        crt = fx.crt and {
+    -- The engine's `crt` option only disables when passed boolean `false`.
+    -- Passing `nil` is treated as "don't change". Same for the top-level
+    -- `vignette` field. So we build an explicit table here.
+    local crt_opts = false
+    if fx.crt then
+        crt_opts = {
             scanlines = fx.crt_scanlines,
             curvature = fx.crt_curvature,
-            vignette = fx.vignette
-        } or nil,
-        fog = fx.fog and { startDist = 4.0, endDist = 15.0, color = {0.06, 0.08, 0.14} } or nil
+            vignette  = fx.vignette
+        }
+    end
+
+    crayon.graphics.setRetroEffects({
+        jitterResolution = fx.jitter and {160, 120} or false,
+        affine           = fx.affine,
+        dither           = fx.dither,
+        ditherLevels     = fx.dither_levels,
+        crt              = crt_opts,
+        fog              = fx.fog and {
+            startDist = 4.0,
+            endDist   = 15.0,
+            color     = {0.06, 0.08, 0.14}
+        } or false
     })
 end
 
@@ -56,19 +68,20 @@ function crayon.update(dt)
     cam_rot = cam_rot + dt * 25.0
 
     -- Key toggles
-    if crayon.input.isPressed("1") then
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+    if crayon.key.isPressed("1") then
         fx.jitter = not fx.jitter
         apply_effects()
     end
-    if crayon.input.isPressed("2") then
+    if crayon.key.isPressed("2") then
         fx.affine = (fx.affine > 0.5) and 0.0 or 1.0
         apply_effects()
     end
-    if crayon.input.isPressed("3") then
+    if crayon.key.isPressed("3") then
         fx.dither = not fx.dither
         apply_effects()
     end
-    if crayon.input.isPressed("4") then
+    if crayon.key.isPressed("4") then
         local levels = {2, 4, 8, 16, 32}
         local cur_idx = 3
         for idx, lvl in ipairs(levels) do
@@ -78,20 +91,20 @@ function crayon.update(dt)
         fx.dither_levels = levels[cur_idx]
         apply_effects()
     end
-    if crayon.input.isPressed("5") then
+    if crayon.key.isPressed("5") then
         fx.crt = not fx.crt
         apply_effects()
     end
-    if crayon.input.isPressed("6") then
+    if crayon.key.isPressed("6") then
         fx.vignette = (fx.vignette > 0.0) and 0.0 or 0.45
         apply_effects()
     end
-    if crayon.input.isPressed("7") then
+    if crayon.key.isPressed("7") then
         fx.fog = not fx.fog
         apply_effects()
     end
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -144,19 +157,19 @@ function crayon.draw()
     crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
     crayon.graphics.drawText("RETRO SHADER DASHBOARD", 8, 10, 1.0)
 
-    local fps = math.floor(crayon.window.getFps() + 0.5)
+    local fps = math.floor(crayon.time.getFps() + 0.5)
     crayon.graphics.setColor(0.4, 1.0, 0.5, 1.0)
     crayon.graphics.drawText("FPS: " .. fps, 265, 10, 1.0)
 
     -- Effects status cards
     local cards = {
-        {"1: Jitter", fx.jitter and "ON (160x120)" or "OFF", fx.jitter},
-        {"2: Affine", (fx.affine > 0.5) and "ON (PS1 Warp)" or "OFF (Correct)", fx.affine > 0.5},
-        {"3: Dither", fx.dither and "ON (Bayer 4x4)" or "OFF", fx.dither},
-        {"4: Levels", fx.dither_levels .. " per channel", true},
-        {"5: CRT", fx.crt and "ON (Scanlines)" or "OFF", fx.crt},
-        {"6: Vignette", (fx.vignette > 0) and "ON" or "OFF", fx.vignette > 0},
-        {"7: Fog", fx.fog and "ON (Linear)" or "OFF", fx.fog}
+        {"1: Jitter",   fx.jitter and "ON (160x120)" or "OFF",          fx.jitter},
+        {"2: Affine",   (fx.affine > 0.5) and "ON (PS1 Warp)" or "OFF (Correct)", fx.affine > 0.5},
+        {"3: Dither",   fx.dither and "ON (Bayer 4x4)" or "OFF",        fx.dither},
+        {"4: Levels",   fx.dither_levels .. " per channel",             true},
+        {"5: CRT",      fx.crt and "ON (Scanlines)" or "OFF",           fx.crt},
+        {"6: Vignette", (fx.vignette > 0) and "ON" or "OFF",            fx.vignette > 0},
+        {"7: Fog",      fx.fog and "ON (Linear)" or "OFF",              fx.fog}
     }
 
     local by = 136

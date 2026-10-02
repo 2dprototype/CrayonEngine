@@ -127,7 +127,6 @@ function crayon.update(dt)
         crayon.window.setAlwaysOnTop(false)
         crayon.window.setBordered(true)
         crayon.key.setTextInput(false)
-        in_menu = true
         crayon.window.setResolution(320, 240)
         crayon.window.setTitle("Crayon Engine - Demo Launcher Hub")
         return
@@ -220,7 +219,8 @@ function crayon.draw()
     crayon.graphics.drawText("SCREENPET OVERLAY | DRAG BAR TO MOVE", 12, 10, 1.0)
 
     -- 3. Bezier Trajectory Rope connecting Pet to Mouse
-    local mx, my = crayon.input.getMousePos()
+    -- FIX: crayon.input.getMousePos() doesn't exist; use crayon.mouse.getPosition()
+    local mx, my = crayon.mouse.getPosition()
     local mid_x = (pet.x + mx) * 0.5
     local mid_y = math.max(pet.y, my) + 25.0 -- droop curve
     crayon.graphics.setColor(0.9, 0.6, 0.2, 0.75)
@@ -317,10 +317,11 @@ function crayon.draw()
     crayon.graphics.drawText(display_text, 14, 182, 1.0)
 
     -- Modifiers HUD
-    local shift_on = crayon.input.isShiftDown()
-    local ctrl_on  = crayon.input.isCtrlDown()
-    local alt_on   = crayon.input.isAltDown()
-    local caps_on  = crayon.input.isCapsLock()
+    -- FIX: crayon.input has no modifier helpers; use crayon.key.*
+    local shift_on = crayon.key.isShiftDown()
+    local ctrl_on  = crayon.key.isCtrlDown()
+    local alt_on   = crayon.key.isAltDown()
+    local caps_on  = crayon.key.isCapsLock()
     crayon.graphics.setColor(0.6, 0.7, 0.85, 1.0)
     crayon.graphics.drawText(string.format("MODS: [Shift:%s] [Ctrl:%s] [Alt:%s] [Caps:%s]",
         shift_on and "ON" or "-", ctrl_on and "ON" or "-", alt_on and "ON" or "-", caps_on and "ON" or "-"),

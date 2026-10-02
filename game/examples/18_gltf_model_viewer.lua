@@ -137,6 +137,10 @@ function crayon.init()
 
     load_current_model()
 
+    -- FIX: apply the initial shading mode so the HUD label matches the
+    -- actual renderer state on the very first frame.
+    crayon.graphics.setShadingMode(shading_modes[cur_shading_idx])
+
     crayon.graphics.setRetroEffects({
         jitterResolution = {240, 160},
         affine = 1.0,
@@ -153,12 +157,14 @@ end
 function crayon.update(dt)
     timer = timer + dt
 
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+
     -- Toggle model (TAB or Left/Right Arrow)
-    if crayon.input.isPressed("tab") or crayon.input.isPressed("right") then
+    if crayon.key.isPressed("tab") or crayon.key.isPressed("right") then
         cur_model_idx = (cur_model_idx % #model_files) + 1
         cur_tex_idx = 1
         load_current_model()
-    elseif crayon.input.isPressed("left") then
+    elseif crayon.key.isPressed("left") then
         cur_model_idx = cur_model_idx - 1
         if cur_model_idx < 1 then cur_model_idx = #model_files end
         cur_tex_idx = 1
@@ -166,13 +172,13 @@ function crayon.update(dt)
     end
 
     -- Shading mode toggle (1)
-    if crayon.input.isPressed("1") then
+    if crayon.key.isPressed("1") then
         cur_shading_idx = (cur_shading_idx % #shading_modes) + 1
         crayon.graphics.setShadingMode(shading_modes[cur_shading_idx])
     end
 
     -- Texture override toggle (2)
-    if crayon.input.isPressed("2") then
+    if crayon.key.isPressed("2") then
         cur_tex_idx = (cur_tex_idx % #tex_list) + 1
         if cur_model and cur_model:isValid() then
             local override_id = tex_list[cur_tex_idx].id
@@ -182,15 +188,15 @@ function crayon.update(dt)
         end
     end
 
-    if crayon.input.isPressed("b") then
+    if crayon.key.isPressed("b") then
         show_bounds = not show_bounds
     end
 
-    if crayon.input.isPressed("n") then
+    if crayon.key.isPressed("n") then
         show_nodes = not show_nodes
     end
 
-    if crayon.input.isPressed("space") then
+    if crayon.key.isPressed("space") then
         auto_rotate = not auto_rotate
     end
 
@@ -199,6 +205,7 @@ function crayon.update(dt)
     end
 
     -- Manual turntable drag (Mouse Drag)
+    -- isMouseDown and getMouseDelta are valid on crayon.input
     if crayon.input.isMouseDown("left") then
         local dx, dy = crayon.input.getMouseDelta()
         cam.yaw   = cam.yaw   + dx * 0.5
@@ -229,6 +236,7 @@ function crayon.draw()
     })
 
     -- 3D Coordinate Grid
+    -- FIX: drawLine3d only takes 6 args; color comes from setColor
     for i = -5, 5 do
         local col = (i == 0) and {0.4, 0.4, 0.5, 0.6} or {0.18, 0.20, 0.26, 0.4}
         crayon.graphics.setColor(col[1], col[2], col[3], col[4])

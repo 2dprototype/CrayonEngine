@@ -35,10 +35,12 @@ end
 function crayon.update(dt)
     cam_angle = cam_angle + dt * 30.0
 
-    if crayon.input.isDown("up") then cam_dist = math.max(3.0, cam_dist - dt * 5.0) end
-    if crayon.input.isDown("down") then cam_dist = math.min(15.0, cam_dist + dt * 5.0) end
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("up")   then cam_dist = math.max(3.0,  cam_dist - dt * 5.0) end
+    if crayon.key.isDown("down") then cam_dist = math.min(15.0, cam_dist + dt * 5.0) end
 
-    if crayon.input.isPressed("escape") then
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -91,5 +93,5 @@ function crayon.draw()
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
     crayon.graphics.drawText("3D Transform Hierarchy & Matrix Stack", 10, 10, 1.0)
     crayon.graphics.drawText("Up/Down: Zoom Camera", 10, 24, 1.0)
-    crayon.graphics.drawText("FPS: " .. math.floor(crayon.window.getFps() + 0.5), 260, 10, 1.0)
+    crayon.graphics.drawText("FPS: " .. math.floor(crayon.time.getFps() + 0.5), 260, 10, 1.0)
 end

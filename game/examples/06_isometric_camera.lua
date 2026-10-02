@@ -67,27 +67,28 @@ function crayon.update(dt)
     timer = timer + dt
 
     -- Cursor movement on isometric grid
-    if crayon.input.isPressed("up") or crayon.input.isPressed("w") then
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+    if crayon.key.isPressed("up") or crayon.key.isPressed("w") then
         cursor_z = math.max(-4, cursor_z - 1)
     end
-    if crayon.input.isPressed("down") or crayon.input.isPressed("s") then
+    if crayon.key.isPressed("down") or crayon.key.isPressed("s") then
         cursor_z = math.min(4, cursor_z + 1)
     end
-    if crayon.input.isPressed("left") or crayon.input.isPressed("a") then
+    if crayon.key.isPressed("left") or crayon.key.isPressed("a") then
         cursor_x = math.max(-4, cursor_x - 1)
     end
-    if crayon.input.isPressed("right") or crayon.input.isPressed("d") then
+    if crayon.key.isPressed("right") or crayon.key.isPressed("d") then
         cursor_x = math.min(4, cursor_x + 1)
     end
 
     -- Build block (SPACE) / Remove block (X or BACKSPACE)
-    if crayon.input.isPressed("space") then
+    if crayon.key.isPressed("space") then
         local cur_h = get_block(cursor_x, cursor_z)
         if cur_h < 5 then
             set_block(cursor_x, cursor_z, cur_h + 1)
         end
     end
-    if crayon.input.isPressed("x") or crayon.input.isPressed("backspace") then
+    if crayon.key.isPressed("x") or crayon.key.isPressed("backspace") then
         local cur_h = get_block(cursor_x, cursor_z)
         if cur_h > 0 then
             set_block(cursor_x, cursor_z, cur_h - 1)
@@ -95,10 +96,10 @@ function crayon.update(dt)
     end
 
     -- Rotate isometric view by 90 degrees (Q / E)
-    if crayon.input.isPressed("q") then
+    if crayon.key.isPressed("q") then
         cam.yaw = cam.yaw - 90.0
     end
-    if crayon.input.isPressed("e") then
+    if crayon.key.isPressed("e") then
         cam.yaw = cam.yaw + 90.0
     end
 
@@ -107,14 +108,14 @@ function crayon.update(dt)
     if wheel_y and wheel_y ~= 0 then
         cam.ortho_size = math.max(4.0, math.min(16.0, cam.ortho_size - wheel_y * 1.0))
     end
-    if crayon.input.isDown("r") then
+    if crayon.key.isDown("r") then
         cam.ortho_size = math.max(4.0, cam.ortho_size - 6.0 * dt)
     end
-    if crayon.input.isDown("f") then
+    if crayon.key.isDown("f") then
         cam.ortho_size = math.min(16.0, cam.ortho_size + 6.0 * dt)
     end
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end

@@ -111,33 +111,35 @@ function crayon.update(dt)
     timer = timer + dt
 
     -- Camera orbit controls
-    if crayon.input.isDown("left") or crayon.input.isDown("a") then
+    -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+    if crayon.key.isDown("left")  or crayon.key.isDown("a") then
         cam.yaw = cam.yaw - 45.0 * dt
     end
-    if crayon.input.isDown("right") or crayon.input.isDown("d") then
+    if crayon.key.isDown("right") or crayon.key.isDown("d") then
         cam.yaw = cam.yaw + 45.0 * dt
     end
-    if crayon.input.isDown("up") or crayon.input.isDown("w") then
+    if crayon.key.isDown("up")    or crayon.key.isDown("w") then
         cam.pitch = math.min(-5.0, cam.pitch + 35.0 * dt)
     end
-    if crayon.input.isDown("down") or crayon.input.isDown("s") then
+    if crayon.key.isDown("down")  or crayon.key.isDown("s") then
         cam.pitch = math.max(-80.0, cam.pitch - 35.0 * dt)
     end
 
-    -- Zoom
+    -- Zoom (getMouseWheel DOES exist on crayon.input — keep it)
     local wheel_x, wheel_y = crayon.input.getMouseWheel()
     if wheel_y and wheel_y ~= 0 then
         cam.dist = math.max(4.0, math.min(22.0, cam.dist - wheel_y * 1.0))
     end
 
     -- Toggle shading mode
-    if crayon.input.isPressed("1") or crayon.input.isPressed("tab") then
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+    if crayon.key.isPressed("1") or crayon.key.isPressed("tab") then
         cur_shading_idx = (cur_shading_idx % #shading_modes) + 1
         crayon.graphics.setShadingMode(shading_modes[cur_shading_idx])
     end
 
     -- Toggle textures
-    if crayon.input.isPressed("2") then
+    if crayon.key.isPressed("2") then
         use_textures = not use_textures
     end
 
@@ -151,7 +153,7 @@ function crayon.update(dt)
         8.0, 2.5           -- Radius & Intensity
     )
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -238,7 +240,7 @@ function crayon.draw()
     crayon.graphics.setColor(1.0, 0.9, 0.3, 1.0)
     crayon.graphics.drawText("3D PRIMITIVES & SHADING GALLERY", 8, 10, 1.0)
 
-    local fps = math.floor(crayon.window.getFps() + 0.5)
+    local fps = math.floor(crayon.time.getFps() + 0.5)
     crayon.graphics.setColor(0.4, 1.0, 0.5, 1.0)
     crayon.graphics.drawText("FPS:" .. fps, 265, 10, 1.0)
 

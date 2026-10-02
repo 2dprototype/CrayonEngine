@@ -7,7 +7,7 @@
 --  - Generating accurate static trimesh physics bodies using createMeshBody
 --  - Player ball physics controller rolling on glTF level terrain/platforms
 --  - Dynamic lighting, collectible items, and retro post-processing
--- ====================================================================
+-- =====================================================================
 
 local cam = {
     x = 0.0, y = 6.0, z = 12.0,
@@ -131,7 +131,8 @@ function crayon.update(dt)
     timer = timer + dt
     if message_timer > 0 then message_timer = message_timer - dt end
 
-    if crayon.input.isPressed("r") then
+    -- FIX: crayon.input.isPressed doesn't exist; use crayon.key.isPressed
+    if crayon.key.isPressed("r") then
         reset_game()
         return
     end
@@ -141,16 +142,17 @@ function crayon.update(dt)
         local move_x = 0.0
         local move_z = 0.0
 
-        if crayon.input.isDown("w") or crayon.input.isDown("up") then
+        -- FIX: crayon.input.isDown doesn't exist; use crayon.key.isDown
+        if crayon.key.isDown("w") or crayon.key.isDown("up") then
             move_z = move_z - 1.0
         end
-        if crayon.input.isDown("s") or crayon.input.isDown("down") then
+        if crayon.key.isDown("s") or crayon.key.isDown("down") then
             move_z = move_z + 1.0
         end
-        if crayon.input.isDown("a") or crayon.input.isDown("left") then
+        if crayon.key.isDown("a") or crayon.key.isDown("left") then
             move_x = move_x - 1.0
         end
-        if crayon.input.isDown("d") or crayon.input.isDown("right") then
+        if crayon.key.isDown("d") or crayon.key.isDown("right") then
             move_x = move_x + 1.0
         end
 
@@ -164,7 +166,7 @@ function crayon.update(dt)
         end
 
         -- Jump
-        if crayon.input.isPressed("space") then
+        if crayon.key.isPressed("space") then
             local px, py, pz = player.body:getPosition()
             -- Simple raycast down to check if grounded
             local hit = crayon.physics3d.raycast(px, py, pz, 0, -1, 0, player.radius + 0.25)
@@ -261,10 +263,15 @@ function crayon.draw()
     end
 
     -- 4. Draw Dynamic Physics Cubes
+    -- NOTE: body:getRotation() returns 3 EULER ANGLES (x, y, z), NOT a quaternion.
+    -- The original destructured 4 values (rx, ry, rz, rw) which left rw=nil.
+    -- Not visible in this example since rx/ry/rz weren't used for the cube draw,
+    -- but the fix is to only take 3.
     for _, item in ipairs(dynamic_cubes) do
         if item.body and item.body:isValid() then
             local bx, by, bz = item.body:getPosition()
-            local rx, ry, rz, rw = item.body:getRotation()
+            local rx, ry, rz = item.body:getRotation()  -- 3 values, not 4
+            -- Note: rx/ry/rz are Euler angles in the unit returned by the engine
             crayon.graphics.pushMatrix()
             crayon.graphics.translate(bx, by, bz)
             crayon.graphics.setColor(item.color[1], item.color[2], item.color[3], 1.0)
@@ -288,7 +295,9 @@ function crayon.draw()
     -- 6. Draw Player Ball
     if player.body and player.body:isValid() then
         local px, py, pz = player.body:getPosition()
-        local rx, ry, rz, rw = player.body:getRotation()
+        -- Note: getRotation returns 3 Euler angles, not a quaternion. Not used for
+        -- the sphere draw (spheres are rotation-agnostic), but keep the tuple arity right.
+        local rx, ry, rz = player.body:getRotation()
         crayon.graphics.pushMatrix()
         crayon.graphics.translate(px, py, pz)
         crayon.graphics.setColor(0.2, 0.7, 1.0, 1.0)
