@@ -7,8 +7,8 @@ namespace crayon {
 
 struct WindowConfig {
     std::string title = "Crayon Engine";
-    int width = 320*2;
-    int height = 240*2;
+    int width = 320;
+    int height = 240;
     int virtual_width = 320;
     int virtual_height = 240;
     int min_width = 1;
@@ -23,7 +23,7 @@ struct WindowConfig {
 };
 
 struct ModulesConfig {
-    bool physics = true;    // Jolt 3D physics subsystem
+    bool physics3d = true;  // Jolt 3D physics subsystem
     bool physics2d = true;  // Box2D 2D physics subsystem
     bool audio = true;      // MiniAudio audio playback/spatial subsystem
     bool mesh3d = true;     // 3D mesh & model renderer subsystem

@@ -102,7 +102,7 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
     }
 
     // 8. Conditionally initialize Jolt PhysicsSystem
-    if (m_config.modules.physics) {
+    if (m_config.modules.physics3d) {
         m_physics = std::make_unique<PhysicsSystem>();
         if (!m_physics->init()) {
             CRAYON_LOG_ERROR("Engine failed to initialize PhysicsSystem");
@@ -110,7 +110,7 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
         }
     } else {
         m_physics.reset();
-        CRAYON_LOG_INFO("PhysicsSystem skipped (disabled in crayon.config for optimization)");
+        CRAYON_LOG_INFO("Physics3D System skipped (disabled in crayon.config for optimization)");
     }
 
     // 8b. Conditionally initialize Box2D Physics2DSystem
@@ -343,7 +343,7 @@ void Engine::render_to_fbo() {
 }
 
 void Engine::step_simulation(float dt) {
-    if (m_physics && m_config.modules.physics) {
+    if (m_physics && m_config.modules.physics3d) {
         const float fixed_dt = 1.0f / 60.0f;
         m_physics_accumulator += dt;
         if (m_physics_accumulator > 0.2f) m_physics_accumulator = 0.2f;

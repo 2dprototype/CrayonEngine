@@ -7,7 +7,7 @@ function crayon.config(config)
     config.window.height = 240
     config.window.virtualWidth = 320
     config.window.virtualHeight = 240
-    config.modules.physics = false    -- 3D Jolt disabled for 2D optimization
+    config.modules.physics3d = false    -- 3D Jolt disabled for 2D optimization
     config.modules.physics2d = true   -- 2D Box2D enabled
     config.modules.mesh3D = false     -- NOTE: key is mesh3D (capital D), not mesh3d
 end

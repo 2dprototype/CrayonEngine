@@ -14,7 +14,7 @@ function crayon.config(t)
     t.window.scaling = "integer"
 
     -- Audio enabled, physics disabled
-    t.modules.physics = false
+    t.modules.physics3d = false
     t.modules.audio = true
     t.modules.mesh3D = false
 

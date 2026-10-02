@@ -103,7 +103,7 @@ void LuaRuntime::register_modules(const ModulesConfig& modules) {
         register_disabled_stub(m_L, "audio");
     }
 
-    if (modules.physics) {
+    if (modules.physics3d) {
         register_physics3d_bindings(m_L);
     } else {
         register_disabled_stub(m_L, "physics");
@@ -183,8 +183,8 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
 
     // t.modules (camelCase)
     lua_newtable(m_L);
-    lua_pushboolean(m_L, config.modules.physics);
-    lua_setfield(m_L, -2, "physics");
+    lua_pushboolean(m_L, config.modules.physics3d);
+    lua_setfield(m_L, -2, "physics3d");
     lua_pushboolean(m_L, config.modules.physics2d);
     lua_setfield(m_L, -2, "physics2d");
     lua_pushboolean(m_L, config.modules.audio);
@@ -340,8 +340,8 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     // Read t.modules (strict camelCase)
     lua_getfield(m_L, -1, "modules");
     if (lua_istable(m_L, -1)) {
-        lua_getfield(m_L, -1, "physics");
-        if (lua_isboolean(m_L, -1)) config.modules.physics = lua_toboolean(m_L, -1);
+        lua_getfield(m_L, -1, "physics3d");
+        if (lua_isboolean(m_L, -1)) config.modules.physics3d = lua_toboolean(m_L, -1);
         lua_pop(m_L, 1);
 
         lua_getfield(m_L, -1, "physics2d");
@@ -410,10 +410,11 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_pop(m_L, 1); // pop table t
     lua_pop(m_L, 1); // pop err_func
 
-    CRAYON_LOG_INFO("Configuration loaded from '{}': Title='{}', Win={}x{}, Virt={}x{}, Physics={}, Audio={}, Mesh3D={}",
+    CRAYON_LOG_INFO("Configuration loaded from '{}': Title='{}', Win={}x{}, Virt={}x{}, Physics3D={}, Physics2D={}, Audio={}, Mesh3D={}",
         filepath, config.window.title, config.window.width, config.window.height,
         config.window.virtual_width, config.window.virtual_height,
-        config.modules.physics ? "ON" : "OFF",
+        config.modules.physics3d ? "ON" : "OFF",
+        config.modules.physics2d ? "ON" : "OFF",
         config.modules.audio ? "ON" : "OFF",
         config.modules.mesh3d ? "ON" : "OFF");
 
