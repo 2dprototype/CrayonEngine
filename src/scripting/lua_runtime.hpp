@@ -51,10 +51,14 @@ public:
     void call_trigger_enter(uint32_t sensor_id, uint32_t other_body_id);
     void call_trigger_exit(uint32_t sensor_id, uint32_t other_body_id);
 
+    bool run_config_phase(const std::string& filepath, struct EngineConfig& config);
+
     lua_State* get_state() const { return m_L; }
 
-private:
     void register_modules();
+    void register_modules(const struct ModulesConfig& modules);
+
+private:
     int push_error_handler();
 
     lua_State* m_L = nullptr;

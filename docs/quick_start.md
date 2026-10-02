@@ -9,9 +9,12 @@ Crayon Engine is a 2D/3D game engine with retro aesthetics, modern physics, and 
 3. [Input Module](#input-module)
 4. [Graphics Module](#graphics-module)
 5. [Physics3D Module](#physics3d-module)
-6. [Physics2D Module](#physics2d-module)
-7. [Lua Callbacks](#lua-callbacks)
-8. [Complete Examples](#complete-examples)
+6. [Audio Module](#audio-module)
+7. [Particles Module](#particles-module)
+8. [Math Module](#math-module)
+9. [File System Module](#file-system-module)
+10. [Lua Callbacks](#lua-callbacks)
+11. [Complete Examples](#complete-examples)
 
 ---
 
@@ -22,10 +25,12 @@ Access via: `crayon.time`
 |----------|-------------|
 | `getTime()` | Total elapsed time (seconds) |
 | `getDt()` | Delta time (seconds since last frame) |
+| `getFps()` | Current frames per second |
 
 ```lua
 local t = crayon.time.getTime()
 local dt = crayon.time.getDt()
+local fps = crayon.time.getFps()
 ```
 
 ---
@@ -135,7 +140,7 @@ print("Display:", w, "x", h)
 
 ## Input Module
 
-> **Note:** The API is split into three sub-tables: `crayon.key`, `crayon.mouse`, and `crayon.gamepad`. There is **no** `crayon.input` table.
+> **Note:** The API is split into four sub-tables: `crayon.key`, `crayon.mouse`, `crayon.gamepad`, and `crayon.input` (unified camelCase aliases).
 
 ### `crayon.key`
 
@@ -206,6 +211,19 @@ print("Display:", w, "x", h)
 | `getName([idx])` | Gamepad name string |
 | `getCount()` | Number of connected gamepads |
 
+### `crayon.input` (Unified Aliases)
+
+A flat camelCase namespace combining key, mouse, and gamepad helpers:
+
+| Function | Description |
+|----------|-------------|
+| `isKeyDown(...)` / `isKeyPressed(...)` / `isKeyReleased(...)` | Keyboard |
+| `isMouseDown(...)` / `isMousePressed(...)` / `isMouseReleased(...)` | Mouse buttons |
+| `getMousePosition()` / `getMouseX()` / `getMouseY()` | Mouse position |
+| `getMouseDelta()` / `getMouseWheel()` | Mouse delta/wheel |
+| `setMouseVisible(v)` / `setMouseGrabbed(v)` / `setMouseRelative(v)` | Mouse modes |
+| `isGamepadDown(b)` / `isGamepadPressed(b)` / `getGamepadAxis(a)` / `isGamepadConnected([i])` | Gamepad |
+
 ### Input Examples
 
 ```lua
@@ -223,6 +241,9 @@ local wx, wy = crayon.mouse.getWheel()
 -- Gamepad
 if crayon.gamepad.isDown(0) then fire() end
 local lx = crayon.gamepad.getAxis("leftx")
+
+-- Unified
+if crayon.input.isKeyPressed("space") then jump() end
 ```
 
 ---
@@ -236,6 +257,29 @@ Access via: `crayon.graphics`
 |----------|-------------|
 | `clear(r, g, b [, a])` | Clear screen with color (0–1) |
 | `setColor(r, g, b [, a])` | Set active drawing color (0–1) |
+| `createCanvas([w, h])` | Create offscreen canvas (defaults to virtual resolution) |
+| `setCanvas(canvas_or_nil)` | Bind canvas for rendering, or unbind with nil |
+
+**Canvas Methods**: `:getSize()`, `:getWidth()`, `:getHeight()`, `:clear(r,g,b,a)`, `:renderTo(fn)`, `:getTexture()`
+
+```lua
+local canvas = crayon.graphics.createCanvas(320, 240)
+canvas:renderTo(function()
+    canvas:clear(0, 0, 0, 1)
+    crayon.graphics.setColor(1, 0.5, 0)
+    crayon.graphics.drawCircle("fill", 160, 120, 50)
+end)
+crayon.graphics.drawSprite(canvas:getTexture(), 0, 0)
+```
+
+### Shaders
+
+| Function | Description |
+|----------|-------------|
+| `loadShader(path_or_source [, frag])` | Load shader from file path or inline GLSL source |
+| `setShader(shader_or_nil)` | Bind custom shader (nil = default) |
+
+**Shader Methods**: `:sendFloat(name, v)`, `:sendInt(name, v)`, `:sendVec2(name, x, y)`, `:sendVec3(name, x, y, z)`, `:sendVec4(name, x, y, z, w)`
 
 ### Retro Effects
 
@@ -297,7 +341,17 @@ Alternative: `setCamera3d(x, y, z [, yaw, pitch, fov])` — sets position and or
 | `setLight(dx, dy, dz [, lr, lg, lb, ar, ag, ab])` | Set directional light |
 | `setPointLight(idx, x, y, z [, r, g, b, radius, intensity])` | Set point light (idx 0-based or 1-based accepted) |
 | `setPointLightEnabled(idx, enabled)` | Enable/disable point light |
+| `setSpotLight(idx, px, py, pz, dx, dy, dz [, radius, r, g, b, intensity, innerAngle, outerAngle])` | Set spot light |
+| `setSpotLightEnabled(idx, enabled)` | Enable/disable spot light |
 | `setShadingMode(mode)` | Set shading: "gouraud", "flat", "unlit" |
+
+### Depth & Culling
+
+| Function | Description |
+|----------|-------------|
+| `setDepthTest([enabled])` | Toggle depth testing (default: true) |
+| `setDepthWrite([enabled])` | Toggle depth writes (default: true) |
+| `setCullFace(mode)` | "back", "front", or false to disable |
 
 ### Textures
 
@@ -308,6 +362,16 @@ Alternative: `setCamera3d(x, y, z [, yaw, pitch, fov])` — sets position and or
 | `getWhiteTexture()` | Returns white 1x1 texture userdata |
 
 **Texture Methods**: `:getSize()`, `:getWidth()`, `:getHeight()`, `:getId()`, `:isValid()`
+
+### Fonts
+
+| Function | Description |
+|----------|-------------|
+| `loadFont(path [, size, nearest])` | Load a font (default size: 16, nearest: true) |
+| `setFont(font_or_nil)` | Set active font for subsequent drawText calls |
+| `getFont()` | Get the currently active font |
+
+**Font Methods**: `:getSize()`, `:getLineHeight()`, `:getAscent()`, `:getDescent()`, `:measure(text [, scale])`, `:getWidth(text [, scale])`, `:getHeight(text [, scale])`
 
 ### Models & Meshes
 
@@ -394,7 +458,7 @@ Alternative: `setCamera3d(x, y, z [, yaw, pitch, fov])` — sets position and or
 
 | Function | Description |
 |----------|-------------|
-| `drawSprite(tex, x, y, w, h, rot, ox, oy)` | Draw sprite |
+| `drawSprite(tex, x, y, w, h, rot, ox, oy)` | Draw sprite (alias: `drawTexture`) |
 | `drawSpritePart(tex, x, y, u0, v0, u1, v1, w, h, rot, ox, oy)` | Draw sprite part |
 | `drawSpriteTiled(tex, x, y, w, h, tileW, tileH, ox, oy)` | Tiled sprite |
 | `drawSprite9slice(tex, x, y, w, h, left, top, right, bottom [, texW, texH])` | 9-slice sprite |
@@ -417,7 +481,8 @@ Alternative: `setCamera3d(x, y, z [, yaw, pitch, fov])` — sets position and or
 | `drawGradientRect(x, y, w, h, cTl, cTr, cBr, cBl)` | 4-corner gradient |
 | `drawGradientH(x, y, w, h, cLeft, cRight)` | Horizontal gradient |
 | `drawGradientV(x, y, w, h, cTop, cBottom)` | Vertical gradient |
-| `drawText(text, x, y, scale)` | Draw text |
+| `setSkyGradient([topColor, bottomColor])` | Set/draw sky gradient (alias: `drawSkyGradient`) |
+| `drawText(text, x, y [, scale_or_opts])` | Draw text. Opts: `{scale, wrap, align, font}` |
 | `getTextWidth(text, scale)` | Text width |
 | `getTextHeight(text, scale)` | Text height |
 
@@ -444,7 +509,7 @@ Alternative: `setCamera3d(x, y, z [, yaw, pitch, fov])` — sets position and or
 ---
 
 ## Physics3D Module
-Access via: `crayon.physics3d`
+Access via: `crayon.physics3d` (alias: `crayon.physics`)
 
 ### Body Creation
 
@@ -480,6 +545,8 @@ Access via: `crayon.physics3d`
 | `:setGravityFactor(f)` | Gravity multiplier |
 | `:setFriction(f)` / `:setRestitution(r)` | Physics material |
 | `:setMotionType(type)` | Change motion type |
+| `:setMotionQuality(mode)` | "discrete" / "linearCast" (CCD) |
+| `:setPlanarLock(plane)` | "xy", "xz", "yz" for planar 2D-in-3D constraint |
 | `:setDamping(linear [, angular])` | Set damping |
 | `:setSensor(bool)` / `:isSensor()` | Sensor (trigger) mode |
 
@@ -501,7 +568,8 @@ Access via: `crayon.physics3d`
 {
     shapes = true, softBodies = true, constraints = true,
     softBodyConstraints = true, softBodyRods = true,
-    bounds = false, velocities = false
+    bounds = false, velocities = false,
+    characters = false, vehicles = false, ragdolls = false
 }
 ```
 
@@ -510,7 +578,7 @@ Access via: `crayon.physics3d`
 | Function | Description |
 |----------|-------------|
 | `createPointConstraint(b1, b2, px, py, pz)` | Point constraint |
-| `createHingeConstraint(b1, b2, px, py, pz, ax, ay, az [, minAngle, maxAngle])` | Hinge |
+| `createHingeConstraint(b1, b2, px, py, pz, ax, ay, az)` | Hinge |
 | `createDistanceConstraint(b1, b2, p1x, p1y, p1z, p2x, p2y, p2z [, minD, maxD])` | Distance |
 | `createFixedConstraint(b1, b2)` | Fixed |
 | `destroyConstraint(c)` | Destroy (userdata or id) |
@@ -737,7 +805,7 @@ Access via: `crayon.physics3d`
     shearCompliance = 0.0,
     bendCompliance = 0.0,
     lraMultiplier = 1.0,
-    bendType = "dihedral",                -- "dihedral", "bend", "none"
+    bendType = "dihedral",                -- "dihedral", "distance", "none"
     lraType = "euclidean"                 -- "euclidean", "geodesic", "none"
 }
 ```
@@ -769,26 +837,199 @@ Access via: `crayon.physics3d`
 
 ---
 
-## Physics2D Module
-Access via: `crayon.physics2d`
+## Audio Module
+Access via: `crayon.audio`
+
+### Sound Effects
 
 | Function | Description |
 |----------|-------------|
-| `createBody([x, y, mass])` | Create 2D body |
+| `loadSound(path)` | Load a sound effect, returns ID |
+| `unloadSound(id)` | Unload a sound, returns bool |
+| `playSound(id [, volume, pitch, pan, loop])` | Play a sound effect, returns voice ID |
+| `playSound(id, opts)` | Play with `{volume, pitch, pan, loop}` table |
+| `playSound3d(id, x, y, z [, opts])` | Positional 3D sound. Opts: `{volume, pitch, minDist, maxDist}` |
+| `stopSound(voiceId)` | Stop a specific voice |
+| `stopAllSounds()` | Stop all playing sounds |
+| `isSoundPlaying(voiceId)` | Returns bool |
 
-**Body Methods**: `:getPosition()`, `:setPosition(x,y)`, `:getVelocity()`, `:setVelocity(vx,vy)`, `:getAngle()`, `:setAngle(a)`, `:applyForce(fx,fy)`, `:isValid()`, `:destroy()`
+### Music
+
+| Function | Description |
+|----------|-------------|
+| `playMusic(path [, loop, fadeIn])` | Play background music, returns bool |
+| `playMusic(path, opts)` | Opts: `{loop, fadeIn}` |
+| `stopMusic([fadeOut])` | Stop music with optional fade |
+| `pauseMusic()` / `resumeMusic()` | Pause / resume music |
+| `isMusicPlaying()` | Returns bool |
+
+### Volume & Listener
+
+| Function | Description |
+|----------|-------------|
+| `setMasterVolume(v)` / `getMasterVolume()` | Master volume (0–1) |
+| `setMusicVolume(v)` / `getMusicVolume()` | Music volume |
+| `setSfxVolume(v)` / `getSfxVolume()` | SFX volume |
+| `setListenerPosition(x, y, z)` | 3D audio listener position |
+| `setListenerOrientation(fx, fy, fz [, ux, uy, uz])` | Listener forward and up vectors |
+
+```lua
+local coin = crayon.audio.loadSound("coin.wav")
+crayon.audio.playSound(coin, { volume = 0.8, pitch = 1.0 })
+crayon.audio.playMusic("bgm.ogg", { loop = true, fadeIn = 2.0 })
+```
+
+---
+
+## Particles Module
+Access via: `crayon.particles`
+
+| Function | Description |
+|----------|-------------|
+| `createEmitter(config)` | Create a particle emitter |
+
+**Emitter Config:**
+```lua
+{
+    maxParticles = 1000,
+    emissionRate = 50.0,            -- particles per second
+    lifetimeMin = 0.5,
+    lifetimeMax = 1.5,
+    sizeStart = 0.5,
+    sizeEnd = 0.0,
+    gravity = -9.8,                 -- applied to Y axis
+    blendMode = "additive",         -- "alpha", "additive", "multiply"
+    is3d = false
+}
+```
+
+**Emitter Methods:**
+
+| Method | Description |
+|--------|-------------|
+| `:emit([count])` | Emit N particles (default 1) |
+| `:burst(count)` | Emit a burst of particles |
+| `:update(dt)` | Advance simulation |
+| `:draw()` | Draw with 2D batch renderer |
+| `:draw3d()` | Draw with 3D mesh renderer |
+| `:reset()` | Reset all particles |
+| `:setPosition(x, y [, z])` | Set emitter position |
+| `:setEmissionRate(rate)` | Set particles per second |
+| `:setActive(active)` | Enable/disable emission |
+| `:getAliveCount()` | Number of live particles |
+
+```lua
+local fire = crayon.particles.createEmitter({
+    maxParticles = 500,
+    emissionRate = 100,
+    lifetimeMin = 0.3, lifetimeMax = 0.8,
+    blendMode = "additive",
+    is3d = true
+})
+fire:setPosition(0, 1, 0)
+
+function crayon.update(dt)
+    fire:update(dt)
+end
+
+function crayon.draw()
+    fire:draw3d()
+end
+```
+
+---
+
+## Math Module
+Access via: `crayon.math`
+
+### Scalars & Interpolation
+
+| Function | Description |
+|----------|-------------|
+| `lerp(a, b, t)` | Linear interpolation |
+| `clamp(v, min, max)` | Clamp value |
+| `smoothstep(e0, e1, x)` | Hermite smoothstep |
+| `remap(val, inMin, inMax, outMin, outMax)` | Remap range |
+| `damp(a, b, lambda, dt)` | Exponential damping |
+| `noise(x [, y])` | Smooth value noise |
+
+### 2D Vectors
+
+| Function | Description |
+|----------|-------------|
+| `vec2Length(x, y)` | Length |
+| `vec2Normalize(x, y)` | Returns nx, ny |
+| `vec2Dot(x1, y1, x2, y2)` | Dot product |
+| `vec2Distance(x1, y1, x2, y2)` | Distance |
+
+### 3D Vectors
+
+| Function | Description |
+|----------|-------------|
+| `vec3Length(x, y, z)` | Length |
+| `vec3Normalize(x, y, z)` | Returns nx, ny, nz |
+| `vec3Cross(x1,y1,z1, x2,y2,z2)` | Returns cx, cy, cz |
+| `vec3Dot(x1,y1,z1, x2,y2,z2)` | Dot product |
+| `vec3Distance(x1,y1,z1, x2,y2,z2)` | Distance |
+
+### Quaternions
+
+| Function | Description |
+|----------|-------------|
+| `quatFromEuler(pitch, yaw, roll)` | Returns qx, qy, qz, qw |
+| `quatSlerp(q1x,q1y,q1z,q1w, q2x,q2y,q2z,q2w, t)` | Returns interpolated quaternion |
+
+```lua
+local t = crayon.math.clamp(crayon.time.getTime(), 0, 1)
+local x = crayon.math.lerp(0, 100, t)
+local nx, ny = crayon.math.vec2Normalize(3, 4)
+local value = crayon.math.noise(10.5, 3.2)
+```
+
+---
+
+## File System Module
+Access via: `crayon.fs`
+
+| Function | Description |
+|----------|-------------|
+| `exists(path)` | Returns bool |
+| `isFile(path)` | Returns bool |
+| `isDirectory(path)` | Returns bool |
+| `readText(path)` | Returns string or nil, error |
+| `writeText(path, content)` | Write file, creates parent dirs, returns bool [, error] |
+| `appendText(path, content)` | Append to file, returns bool [, error] |
+| `listDir(path)` | Array of filenames |
+| `getSaveDir([org, app])` | Platform-appropriate save directory |
+
+```lua
+local data = crayon.fs.readText("config.json")
+crayon.fs.writeText("saves/slot1.dat", "player data")
+local save_dir = crayon.fs.getSaveDir("MyGame", "MyProject")
+for _, f in ipairs(crayon.fs.listDir("assets/")) do
+    print(f)
+end
+```
 
 ---
 
 ## Lua Callbacks
 
-The runtime invokes these optional globals or `crayon.*` functions:
+The runtime invokes these optional `crayon.*` functions:
+
+### Lifecycle
 
 | Callback | Args |
 |----------|------|
 | `crayon.init()` | — |
 | `crayon.update(dt)` | dt |
 | `crayon.draw()` | — |
+| `crayon.quit()` | — |
+
+### Input Events
+
+| Callback | Args |
+|----------|------|
 | `crayon.keydown(key, isRepeat)` or `crayon.keypressed` | key, is_repeat |
 | `crayon.keyup(key)` or `crayon.keyreleased` | key |
 | `crayon.mousedown(x, y, button)` or `crayon.mousepressed` | x, y, btn |
@@ -799,6 +1040,22 @@ The runtime invokes these optional globals or `crayon.*` functions:
 | `crayon.gamepaddown(btn)` or `crayon.gamepadpressed` | btn |
 | `crayon.gamepadup(btn)` or `crayon.gamepadreleased` | btn |
 | `crayon.gamepadaxis(axis, value)` | axis, value |
+
+### Window Events
+
+| Callback | Args |
+|----------|------|
+| `crayon.windowResized(w, h)` or `crayon.resize` | w, h |
+| `crayon.focusChanged(focused)` or `crayon.focus` | bool |
+
+### Physics Events
+
+| Callback | Args |
+|----------|------|
+| `crayon.onCollisionEnter(bodyA, bodyB, nx, ny, nz, impulse)` or `crayon.collisionEnter` | ids, normal, impulse |
+| `crayon.onCollisionExit(bodyA, bodyB)` or `crayon.collisionExit` | ids |
+| `crayon.onTriggerEnter(sensorId, otherBodyId)` or `crayon.triggerEnter` | ids |
+| `crayon.onTriggerExit(sensorId, otherBodyId)` or `crayon.triggerExit` | ids |
 
 ---
 
@@ -830,7 +1087,7 @@ function crayon.draw()
     crayon.graphics.setColor(1, 0.8, 0.2)
     crayon.graphics.drawRect("fill", player.x - 8, player.y - 8, 16, 16)
     crayon.graphics.setColor(1, 1, 1)
-    crayon.graphics.drawText("FPS: " .. math.floor(crayon.window.getFps()), 4, 4, 1)
+    crayon.graphics.drawText("FPS: " .. math.floor(crayon.time.getFps()), 4, 4, 1)
 end
 ```
 
@@ -950,5 +1207,82 @@ function crayon.draw()
         local p1, p2, p3 = verts[f[1]], verts[f[2]], verts[f[3]]
         crayon.graphics.drawTriangle3d(p1, p2, p3)
     end
+end
+```
+
+### Example 6: Audio & Particles
+
+```lua
+local explosion_sfx, music
+local fire
+
+function crayon.init()
+    explosion_sfx = crayon.audio.loadSound("explosion.wav")
+    crayon.audio.playMusic("bgm.ogg", { loop = true, fadeIn = 2.0 })
+    crayon.audio.setSfxVolume(0.8)
+
+    fire = crayon.particles.createEmitter({
+        maxParticles = 500,
+        emissionRate = 80,
+        lifetimeMin = 0.4, lifetimeMax = 1.0,
+        sizeStart = 0.6, sizeEnd = 0.1,
+        gravity = -2.0,
+        blendMode = "additive",
+        is3d = true
+    })
+    fire:setPosition(0, 1, 0)
+end
+
+function crayon.update(dt)
+    fire:update(dt)
+    if crayon.key.isPressed("space") then
+        crayon.audio.playSound(explosion_sfx)
+        fire:burst(100)
+    end
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0.05, 0.05, 0.1)
+    fire:draw3d()
+end
+```
+
+### Example 7: Canvas & Shader
+
+```lua
+local canvas, shader
+
+function crayon.init()
+    crayon.window.setResolution(640, 360)
+    canvas = crayon.graphics.createCanvas(320, 240)
+    shader = crayon.graphics.loadShader([[
+        #version 330 core
+        layout(location=0) in vec3 aPos;
+        layout(location=1) in vec2 aUV;
+        out vec2 uv;
+        uniform mat4 uProjection;
+        uniform mat4 uView;
+        void main() {
+            uv = aUV;
+            gl_Position = uProjection * uView * vec4(aPos, 1.0);
+        }
+    ]], [[
+        #version 330 core
+        in vec2 uv;
+        out vec4 fragColor;
+        void main() {
+            fragColor = vec4(uv, 0.5, 1.0);
+        }
+    ]])
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0, 0, 0)
+    canvas:renderTo(function()
+        canvas:clear(0.2, 0.0, 0.4, 1.0)
+        crayon.graphics.setColor(1, 1, 1)
+        crayon.graphics.drawText("On Canvas", 10, 10, 2)
+    end)
+    crayon.graphics.drawSprite(canvas:getTexture(), 0, 0, 640, 480)
 end
 ```

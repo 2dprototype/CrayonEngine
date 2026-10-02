@@ -1,5 +1,6 @@
 #include "lua_runtime.hpp"
 #include "../core/log.hpp"
+#include "../core/engine_config.hpp"
 
 namespace crayon {
 
@@ -24,6 +25,28 @@ static int lua_error_handler(lua_State* L) {
     return 1;
 }
 
+static int l_disabled_module_error(lua_State* L) {
+    const char* mod_name = (const char*)lua_touserdata(L, lua_upvalueindex(1));
+    return luaL_error(L, "Module '%s' is disabled in crayon.config(). Set t.modules.%s = true to enable it.", mod_name, mod_name);
+}
+
+static void register_disabled_stub(lua_State* L, const char* name) {
+    lua_getglobal(L, "crayon");
+    if (!lua_istable(L, -1)) {
+        lua_pop(L, 1);
+        return;
+    }
+    lua_newtable(L);      // dummy module table
+    lua_newtable(L);      // metatable
+    lua_pushstring(L, "__index");
+    lua_pushlightuserdata(L, (void*)name);
+    lua_pushcclosure(L, l_disabled_module_error, 1);
+    lua_settable(L, -3);
+    lua_setmetatable(L, -2);
+    lua_setfield(L, -2, name);
+    lua_pop(L, 1); // pop crayon
+}
+
 LuaRuntime::LuaRuntime() = default;
 
 LuaRuntime::~LuaRuntime() {
@@ -43,8 +66,6 @@ bool LuaRuntime::init() {
     lua_newtable(m_L);
     lua_setglobal(m_L, "crayon");
 
-    register_modules();
-
     m_initialized = true;
     CRAYON_LOG_INFO("LuaRuntime initialized (LuaJIT)");
     return true;
@@ -59,15 +80,332 @@ void LuaRuntime::shutdown() {
 }
 
 void LuaRuntime::register_modules() {
+    register_modules(ModulesConfig{});
+}
+
+void LuaRuntime::register_modules(const ModulesConfig& modules) {
+    if (!m_L) return;
+
     register_window_bindings(m_L);
     register_graphics_bindings(m_L);
-    register_input_bindings(m_L);
     register_time_bindings(m_L);
-    register_audio_bindings(m_L);
-    register_physics3d_bindings(m_L);
-    register_particle_bindings(m_L);
     register_math_bindings(m_L);
-    register_fs_bindings(m_L);
+
+    if (modules.input) {
+        register_input_bindings(m_L);
+    } else {
+        register_disabled_stub(m_L, "input");
+    }
+
+    if (modules.audio) {
+        register_audio_bindings(m_L);
+    } else {
+        register_disabled_stub(m_L, "audio");
+    }
+
+    if (modules.physics) {
+        register_physics3d_bindings(m_L);
+    } else {
+        register_disabled_stub(m_L, "physics");
+        register_disabled_stub(m_L, "physics3d");
+    }
+
+    if (modules.particles) {
+        register_particle_bindings(m_L);
+    } else {
+        register_disabled_stub(m_L, "particle");
+    }
+
+    if (modules.fs) {
+        register_fs_bindings(m_L);
+    } else {
+        register_disabled_stub(m_L, "fs");
+    }
+}
+
+bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& config) {
+    if (!m_L) return false;
+
+    int err_func = push_error_handler();
+
+    // 1. Create table 't' with strict camelCase keys
+    lua_newtable(m_L);
+
+    lua_pushstring(m_L, config.identity.c_str());
+    lua_setfield(m_L, -2, "identity");
+
+    lua_pushstring(m_L, config.version.c_str());
+    lua_setfield(m_L, -2, "version");
+
+    lua_pushinteger(m_L, config.fps_limit);
+    lua_setfield(m_L, -2, "fpsLimit");
+
+    lua_pushboolean(m_L, config.console);
+    lua_setfield(m_L, -2, "console");
+
+    // t.window (camelCase)
+    lua_newtable(m_L);
+    lua_pushstring(m_L, config.window.title.c_str());
+    lua_setfield(m_L, -2, "title");
+    lua_pushinteger(m_L, config.window.width);
+    lua_setfield(m_L, -2, "width");
+    lua_pushinteger(m_L, config.window.height);
+    lua_setfield(m_L, -2, "height");
+    lua_pushinteger(m_L, config.window.virtual_width);
+    lua_setfield(m_L, -2, "virtualWidth");
+    lua_pushinteger(m_L, config.window.virtual_height);
+    lua_setfield(m_L, -2, "virtualHeight");
+    lua_pushinteger(m_L, config.window.min_width);
+    lua_setfield(m_L, -2, "minWidth");
+    lua_pushinteger(m_L, config.window.min_height);
+    lua_setfield(m_L, -2, "minHeight");
+    lua_pushboolean(m_L, config.window.resizable);
+    lua_setfield(m_L, -2, "resizable");
+    lua_pushboolean(m_L, config.window.fullscreen);
+    lua_setfield(m_L, -2, "fullscreen");
+    lua_pushboolean(m_L, config.window.vsync);
+    lua_setfield(m_L, -2, "vsync");
+    lua_pushboolean(m_L, config.window.transparent);
+    lua_setfield(m_L, -2, "transparent");
+    lua_pushboolean(m_L, config.window.borderless);
+    lua_setfield(m_L, -2, "borderless");
+    lua_pushboolean(m_L, config.window.always_on_top);
+    lua_setfield(m_L, -2, "alwaysOnTop");
+    lua_pushstring(m_L, config.window.scaling.c_str());
+    lua_setfield(m_L, -2, "scaling");
+    lua_setfield(m_L, -2, "window");
+
+    // t.modules (camelCase)
+    lua_newtable(m_L);
+    lua_pushboolean(m_L, config.modules.physics);
+    lua_setfield(m_L, -2, "physics");
+    lua_pushboolean(m_L, config.modules.audio);
+    lua_setfield(m_L, -2, "audio");
+    lua_pushboolean(m_L, config.modules.mesh3d);
+    lua_setfield(m_L, -2, "mesh3D");
+    lua_pushboolean(m_L, config.modules.particles);
+    lua_setfield(m_L, -2, "particles");
+    lua_pushboolean(m_L, config.modules.input);
+    lua_setfield(m_L, -2, "input");
+    lua_pushboolean(m_L, config.modules.fs);
+    lua_setfield(m_L, -2, "fs");
+    lua_setfield(m_L, -2, "modules");
+
+    // t.graphics (camelCase)
+    lua_newtable(m_L);
+    lua_newtable(m_L);
+    lua_pushnumber(m_L, config.graphics.clear_color.r);
+    lua_rawseti(m_L, -2, 1);
+    lua_pushnumber(m_L, config.graphics.clear_color.g);
+    lua_rawseti(m_L, -2, 2);
+    lua_pushnumber(m_L, config.graphics.clear_color.b);
+    lua_rawseti(m_L, -2, 3);
+    lua_pushnumber(m_L, config.graphics.clear_color.a);
+    lua_rawseti(m_L, -2, 4);
+    lua_setfield(m_L, -2, "clearColor");
+    lua_pushboolean(m_L, config.graphics.dither);
+    lua_setfield(m_L, -2, "dither");
+    lua_pushboolean(m_L, config.graphics.crt);
+    lua_setfield(m_L, -2, "crt");
+    lua_pushboolean(m_L, config.graphics.vignette);
+    lua_setfield(m_L, -2, "vignette");
+    lua_setfield(m_L, -2, "graphics");
+
+    // 2. Load and parse the script file
+    if (luaL_loadfile(m_L, filepath.c_str()) != 0) {
+        const char* err = lua_tostring(m_L, -1);
+        CRAYON_LOG_ERROR("Failed to parse script for config phase '{}':\n{}", filepath, err ? err : "unknown error");
+        lua_pop(m_L, 3); // pop error, table t, err_func
+        return false;
+    }
+
+    // 3. Execute top-level script chunk
+    if (lua_pcall(m_L, 0, 0, err_func) != 0) {
+        const char* err = lua_tostring(m_L, -1);
+        CRAYON_LOG_ERROR("Error executing script during config phase '{}':\n{}", filepath, err ? err : "unknown error");
+        lua_pop(m_L, 2); // pop error, table t
+        lua_pop(m_L, 1); // pop err_func
+        return false;
+    }
+
+    // 4. Check for crayon.config only (no aliases allowed)
+    bool has_config = false;
+    lua_getglobal(m_L, "crayon");
+    if (lua_istable(m_L, -1)) {
+        lua_getfield(m_L, -1, "config");
+        if (lua_isfunction(m_L, -1)) {
+            has_config = true;
+        } else {
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_remove(m_L, -2); // remove crayon table, leaving function (if found) at top
+
+    if (has_config) {
+        // Stack: err_func, table t, config_func
+        lua_pushvalue(m_L, -2); // push copy of table t as argument
+        if (lua_pcall(m_L, 1, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.config():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1); // pop error
+        }
+    }
+
+    // 5. Read back modified values from table t (at top of stack before err_func)
+    lua_getfield(m_L, -1, "identity");
+    if (lua_isstring(m_L, -1)) config.identity = lua_tostring(m_L, -1);
+    lua_pop(m_L, 1);
+
+    lua_getfield(m_L, -1, "version");
+    if (lua_isstring(m_L, -1)) config.version = lua_tostring(m_L, -1);
+    lua_pop(m_L, 1);
+
+    lua_getfield(m_L, -1, "fpsLimit");
+    if (lua_isnumber(m_L, -1)) config.fps_limit = static_cast<int>(lua_tointeger(m_L, -1));
+    lua_pop(m_L, 1);
+
+    lua_getfield(m_L, -1, "console");
+    if (lua_isboolean(m_L, -1)) config.console = lua_toboolean(m_L, -1);
+    lua_pop(m_L, 1);
+
+    // Read t.window (strict camelCase)
+    lua_getfield(m_L, -1, "window");
+    if (lua_istable(m_L, -1)) {
+        lua_getfield(m_L, -1, "title");
+        if (lua_isstring(m_L, -1)) config.window.title = lua_tostring(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "width");
+        if (lua_isnumber(m_L, -1)) config.window.width = static_cast<int>(lua_tointeger(m_L, -1));
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "height");
+        if (lua_isnumber(m_L, -1)) config.window.height = static_cast<int>(lua_tointeger(m_L, -1));
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "virtualWidth");
+        if (lua_isnumber(m_L, -1)) config.window.virtual_width = static_cast<int>(lua_tointeger(m_L, -1));
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "virtualHeight");
+        if (lua_isnumber(m_L, -1)) config.window.virtual_height = static_cast<int>(lua_tointeger(m_L, -1));
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "minWidth");
+        if (lua_isnumber(m_L, -1)) config.window.min_width = static_cast<int>(lua_tointeger(m_L, -1));
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "minHeight");
+        if (lua_isnumber(m_L, -1)) config.window.min_height = static_cast<int>(lua_tointeger(m_L, -1));
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "resizable");
+        if (lua_isboolean(m_L, -1)) config.window.resizable = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "fullscreen");
+        if (lua_isboolean(m_L, -1)) config.window.fullscreen = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "vsync");
+        if (lua_isboolean(m_L, -1)) config.window.vsync = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "transparent");
+        if (lua_isboolean(m_L, -1)) config.window.transparent = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "borderless");
+        if (lua_isboolean(m_L, -1)) config.window.borderless = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "alwaysOnTop");
+        if (lua_isboolean(m_L, -1)) config.window.always_on_top = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "scaling");
+        if (lua_isstring(m_L, -1)) config.window.scaling = lua_tostring(m_L, -1);
+        lua_pop(m_L, 1);
+    }
+    lua_pop(m_L, 1); // pop t.window
+
+    // Read t.modules (strict camelCase)
+    lua_getfield(m_L, -1, "modules");
+    if (lua_istable(m_L, -1)) {
+        lua_getfield(m_L, -1, "physics");
+        if (lua_isboolean(m_L, -1)) config.modules.physics = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "audio");
+        if (lua_isboolean(m_L, -1)) config.modules.audio = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "mesh3D");
+        if (lua_isboolean(m_L, -1)) config.modules.mesh3d = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "particles");
+        if (lua_isboolean(m_L, -1)) config.modules.particles = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "input");
+        if (lua_isboolean(m_L, -1)) config.modules.input = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "fs");
+        if (lua_isboolean(m_L, -1)) config.modules.fs = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+    }
+    lua_pop(m_L, 1); // pop t.modules
+
+    // Read t.graphics (strict camelCase)
+    lua_getfield(m_L, -1, "graphics");
+    if (lua_istable(m_L, -1)) {
+        lua_getfield(m_L, -1, "clearColor");
+        if (lua_istable(m_L, -1)) {
+            lua_rawgeti(m_L, -1, 1);
+            if (lua_isnumber(m_L, -1)) config.graphics.clear_color.r = static_cast<float>(lua_tonumber(m_L, -1));
+            lua_pop(m_L, 1);
+
+            lua_rawgeti(m_L, -1, 2);
+            if (lua_isnumber(m_L, -1)) config.graphics.clear_color.g = static_cast<float>(lua_tonumber(m_L, -1));
+            lua_pop(m_L, 1);
+
+            lua_rawgeti(m_L, -1, 3);
+            if (lua_isnumber(m_L, -1)) config.graphics.clear_color.b = static_cast<float>(lua_tonumber(m_L, -1));
+            lua_pop(m_L, 1);
+
+            lua_rawgeti(m_L, -1, 4);
+            if (lua_isnumber(m_L, -1)) config.graphics.clear_color.a = static_cast<float>(lua_tonumber(m_L, -1));
+            lua_pop(m_L, 1);
+        }
+        lua_pop(m_L, 1); // pop clearColor
+
+        lua_getfield(m_L, -1, "dither");
+        if (lua_isboolean(m_L, -1)) config.graphics.dither = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "crt");
+        if (lua_isboolean(m_L, -1)) config.graphics.crt = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "vignette");
+        if (lua_isboolean(m_L, -1)) config.graphics.vignette = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+    }
+    lua_pop(m_L, 1); // pop t.graphics
+
+    lua_pop(m_L, 1); // pop table t
+    lua_pop(m_L, 1); // pop err_func
+
+    CRAYON_LOG_INFO("Configuration loaded from '{}': Title='{}', Win={}x{}, Virt={}x{}, Physics={}, Audio={}, Mesh3D={}",
+        filepath, config.window.title, config.window.width, config.window.height,
+        config.window.virtual_width, config.window.virtual_height,
+        config.modules.physics ? "ON" : "OFF",
+        config.modules.audio ? "ON" : "OFF",
+        config.modules.mesh3d ? "ON" : "OFF");
+
+    return true;
 }
 
 int LuaRuntime::push_error_handler() {

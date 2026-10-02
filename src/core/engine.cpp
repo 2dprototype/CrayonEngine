@@ -26,12 +26,51 @@ Engine::~Engine() {
 }
 
 bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, const std::string& title) {
-    if (!m_window.init(title, window_w, window_h, virtual_w, virtual_h)) {
+    // 1. Populate default configuration (only override if explicitly provided)
+    if (!title.empty()) m_config.window.title = title;
+    if (window_w > 0) m_config.window.width = window_w;
+    if (window_h > 0) m_config.window.height = window_h;
+    if (virtual_w > 0) m_config.window.virtual_width = virtual_w;
+    if (virtual_h > 0) m_config.window.virtual_height = virtual_h;
+
+    // 2. Initialize LuaRuntime early for config execution
+    m_lua_runtime = std::make_unique<LuaRuntime>();
+    if (!m_lua_runtime->init()) {
+        CRAYON_LOG_ERROR("Engine failed to initialize LuaRuntime");
+        return false;
+    }
+
+    // 3. Run config phase if a game script exists (like love.conf, inside target script)
+    bool script_loaded = false;
+    if (!m_game_script_path.empty()) {
+        if (std::filesystem::exists(m_game_script_path)) {
+            m_last_script_write_time = std::filesystem::last_write_time(m_game_script_path);
+            script_loaded = m_lua_runtime->run_config_phase(m_game_script_path, m_config);
+        } else {
+            CRAYON_LOG_WARN("Game entry script not found: {}", m_game_script_path);
+        }
+    }
+
+    // 4. Initialize Window with configured properties
+    if (!m_window.init(m_config.window.title, m_config.window.width, m_config.window.height,
+                       m_config.window.virtual_width, m_config.window.virtual_height)) {
         CRAYON_LOG_ERROR("Engine failed to initialize Window");
         return false;
     }
 
-    if (!m_fbo.init(virtual_w, virtual_h)) {
+    m_window.set_resizable(m_config.window.resizable);
+    m_window.set_fullscreen(m_config.window.fullscreen);
+    m_window.set_vsync(m_config.window.vsync);
+    m_window.set_transparent(m_config.window.transparent);
+    m_window.set_scaling_mode_string(m_config.window.scaling);
+    m_window.set_bordered(!m_config.window.borderless);
+    m_window.set_always_on_top(m_config.window.always_on_top);
+    if (m_config.window.min_width > 1 || m_config.window.min_height > 1) {
+        m_window.set_window_min_size(m_config.window.min_width, m_config.window.min_height);
+    }
+
+    // 5. Initialize virtual FBO and Batch2D
+    if (!m_fbo.init(m_config.window.virtual_width, m_config.window.virtual_height)) {
         CRAYON_LOG_ERROR("Engine failed to initialize virtual FBO");
         return false;
     }
@@ -41,44 +80,68 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
         return false;
     }
 
-    if (!m_mesh_renderer.init()) {
-        CRAYON_LOG_ERROR("Engine failed to initialize MeshRenderer3D");
-        return false;
+    // 6. Conditionally initialize MeshRenderer3D
+    if (m_config.modules.mesh3d) {
+        if (!m_mesh_renderer.init()) {
+            CRAYON_LOG_ERROR("Engine failed to initialize MeshRenderer3D");
+            return false;
+        }
     }
 
+    // 7. Initialize post-processing shader
     m_post_shader = std::make_unique<Shader>();
     if (!m_post_shader->load_from_memory(SHADER_POST_VS, SHADER_POST_FS)) {
         CRAYON_LOG_ERROR("Engine failed to compile Post-Processing Shader");
         return false;
     }
 
-    m_physics = std::make_unique<PhysicsSystem>();
-    if (!m_physics->init()) {
-        CRAYON_LOG_ERROR("Engine failed to initialize PhysicsSystem");
-        return false;
-    }
-
-    if (!m_audio.init()) {
-        CRAYON_LOG_WARN("Engine failed to initialize AudioSystem (continuing without audio)");
-    }
-
-    m_lua_runtime = std::make_unique<LuaRuntime>();
-    if (!m_lua_runtime->init()) {
-        CRAYON_LOG_ERROR("Engine failed to initialize LuaRuntime");
-        return false;
-    }
-
-    if (!m_game_script_path.empty()) {
-        if (std::filesystem::exists(m_game_script_path)) {
-            m_last_script_write_time = std::filesystem::last_write_time(m_game_script_path);
-            m_lua_runtime->load_script(m_game_script_path);
-        } else {
-            CRAYON_LOG_WARN("Game entry script not found: {}", m_game_script_path);
+    // 8. Conditionally initialize Jolt PhysicsSystem
+    if (m_config.modules.physics) {
+        m_physics = std::make_unique<PhysicsSystem>();
+        if (!m_physics->init()) {
+            CRAYON_LOG_ERROR("Engine failed to initialize PhysicsSystem");
+            return false;
         }
+    } else {
+        m_physics.reset();
+        CRAYON_LOG_INFO("PhysicsSystem skipped (disabled in crayon.config for optimization)");
+    }
+
+    // 9. Conditionally initialize AudioSystem
+    if (m_config.modules.audio) {
+        if (!m_audio.init()) {
+            CRAYON_LOG_WARN("Engine failed to initialize AudioSystem (continuing without audio)");
+        }
+    } else {
+        CRAYON_LOG_INFO("AudioSystem skipped (disabled in crayon.config for optimization)");
+    }
+
+    // 10. Register Lua modules based on config
+    m_lua_runtime->register_modules(m_config.modules);
+
+    // 11. Apply graphics config
+    set_clear_color(m_config.graphics.clear_color.r,
+                    m_config.graphics.clear_color.g,
+                    m_config.graphics.clear_color.b,
+                    m_config.graphics.clear_color.a);
+
+    if (m_config.modules.mesh3d) {
+        auto retro = m_mesh_renderer.get_retro_effects();
+        if (m_config.graphics.dither) retro.dither_enabled = true;
+        if (m_config.graphics.crt) retro.crt_scanlines = true;
+        if (m_config.graphics.vignette) retro.vignette = true;
+        m_mesh_renderer.set_retro_effects(retro);
+    }
+
+    // 12. Call game init
+    if (script_loaded) {
+        m_lua_runtime->call_init();
     }
 
     m_running = true;
-    CRAYON_LOG_INFO("Crayon Engine initialized successfully");
+    CRAYON_LOG_INFO("Crayon Engine initialized successfully (Title='{}', {}x{}, Virt: {}x{})",
+        m_config.window.title, m_config.window.width, m_config.window.height,
+        m_config.window.virtual_width, m_config.window.virtual_height);
     return true;
 }
 
@@ -96,8 +159,12 @@ void Engine::shutdown() {
         m_physics->shutdown();
         m_physics.reset();
     }
-    m_audio.shutdown();
-    m_mesh_renderer.shutdown();
+    if (m_config.modules.audio) {
+        m_audio.shutdown();
+    }
+    if (m_config.modules.mesh3d) {
+        m_mesh_renderer.shutdown();
+    }
     m_batch2d.shutdown();
     m_fbo.shutdown();
     m_window.shutdown();
@@ -223,7 +290,9 @@ void Engine::render_to_fbo() {
 
     float aspect = static_cast<float>(virt_w) / static_cast<float>(virt_h);
 
-    m_mesh_renderer.begin(m_camera, aspect);
+    if (m_config.modules.mesh3d) {
+        m_mesh_renderer.begin(m_camera, aspect);
+    }
     m_batch2d.begin(virt_w, virt_h);
 
     if (m_game_script_path.empty()) {
@@ -243,13 +312,15 @@ void Engine::render_to_fbo() {
     }
 
     m_batch2d.end();
-    m_mesh_renderer.end();
+    if (m_config.modules.mesh3d) {
+        m_mesh_renderer.end();
+    }
 
     m_fbo.unbind();
 }
 
 void Engine::step_simulation(float dt) {
-    if (m_physics) {
+    if (m_physics && m_config.modules.physics) {
         const float fixed_dt = 1.0f / 60.0f;
         m_physics_accumulator += dt;
         if (m_physics_accumulator > 0.2f) m_physics_accumulator = 0.2f;
@@ -279,7 +350,9 @@ void Engine::step_simulation(float dt) {
         }
     }
 
-    m_audio.update(dt);
+    if (m_config.modules.audio) {
+        m_audio.update(dt);
+    }
 
     if (!m_game_script_path.empty()) {
         m_lua_runtime->call_update(dt);
@@ -292,16 +365,22 @@ void Engine::render_frame() {
     // 2. Post-Process and Blit to Window
     int win_w = 960, win_h = 720;
     m_window.get_window_size(win_w, win_h);
-    const auto& retro = m_mesh_renderer.get_retro_effects();
     PostProcessOptions opts;
-    opts.dither_enabled = retro.dither_enabled;
-    opts.dither_levels = retro.dither_levels;
-    opts.crt_scanlines = retro.crt_scanlines;
-    opts.scanline_strength = retro.scanline_strength;
-    opts.crt_curvature = retro.crt_curvature;
-    opts.curvature_distort = retro.curvature_distort;
-    opts.vignette = retro.vignette;
-    opts.vignette_strength = retro.vignette_strength;
+    if (m_config.modules.mesh3d) {
+        const auto& retro = m_mesh_renderer.get_retro_effects();
+        opts.dither_enabled = retro.dither_enabled;
+        opts.dither_levels = retro.dither_levels;
+        opts.crt_scanlines = retro.crt_scanlines;
+        opts.scanline_strength = retro.scanline_strength;
+        opts.crt_curvature = retro.crt_curvature;
+        opts.curvature_distort = retro.curvature_distort;
+        opts.vignette = retro.vignette;
+        opts.vignette_strength = retro.vignette_strength;
+    } else {
+        opts.dither_enabled = m_config.graphics.dither;
+        opts.crt_scanlines = m_config.graphics.crt;
+        opts.vignette = m_config.graphics.vignette;
+    }
     opts.transparent = m_window.is_transparent();
 
     m_fbo.blit_to_screen(m_window.get_viewport_info(), win_w, win_h, *m_post_shader, opts);
@@ -440,6 +519,17 @@ void Engine::run() {
 
         // Render Virtual Canvas & Blit
         render_frame();
+
+        // FPS limiting if configured
+        if (m_config.fps_limit > 0) {
+            double target_frame_time = 1.0 / static_cast<double>(m_config.fps_limit);
+            auto frame_end = clock::now();
+            std::chrono::duration<double> frame_duration = frame_end - current_time;
+            if (frame_duration.count() < target_frame_time) {
+                double sleep_sec = target_frame_time - frame_duration.count();
+                SDL_Delay(static_cast<Uint32>(sleep_sec * 1000.0));
+            }
+        }
     }
 }
 

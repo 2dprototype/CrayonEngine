@@ -5,6 +5,7 @@
 #include <unordered_map>
 #include <chrono>
 #include <filesystem>
+#include "engine_config.hpp"
 #include "window.hpp"
 #include "input.hpp"
 #include "audio_system.hpp"
@@ -28,7 +29,7 @@ public:
     Engine();
     ~Engine();
 
-    bool init(int window_w = 960, int window_h = 720, int virtual_w = 320, int virtual_h = 240, const std::string& title = "Crayon Engine");
+    bool init(int window_w = 0, int window_h = 0, int virtual_w = 0, int virtual_h = 0, const std::string& title = "");
     void shutdown();
 
     void run();
@@ -46,7 +47,10 @@ public:
     Camera& get_camera() { return m_camera; }
     AudioSystem& get_audio() { return m_audio; }
     LuaRuntime& get_lua_runtime() { return *m_lua_runtime; }
+    bool has_physics() const { return m_physics != nullptr; }
     PhysicsSystem& get_physics() { return *m_physics; }
+    const EngineConfig& get_config() const { return m_config; }
+    EngineConfig& get_config() { return m_config; }
 
     // Graphics state
     void set_clear_color(float r, float g, float b, float a = 1.0f);
@@ -77,6 +81,7 @@ public:
 private:
     void render_frame();
 
+    EngineConfig m_config;
     Window m_window;
     Input m_input;
     FBO m_fbo;
