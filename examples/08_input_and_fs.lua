@@ -17,9 +17,16 @@ function addLog(msg)
     if #logMessages > 6 then table.remove(logMessages) end
 end
 
+function crayon.config(config)
+    config.window.width = 640
+    config.window.height = 480
+    config.window.virtualWidth = 640
+    config.window.virtualHeight = 480
+end
+
 function crayon.init()
     crayon.window.setTitle("08 - Input & File System")
-    crayon.window.setResolution(640, 480)
+    -- crayon.window.setResolution(640, 480)
 
     -- Attempt reading saved high score using crayon.fs
     if crayon.fs.exists(savePath) then

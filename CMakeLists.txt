@@ -27,6 +27,7 @@ add_compile_definitions(
 include_directories(
     src
     editor
+    icon
     vendor/glad/include
     vendor/glm
     vendor/sdl3/include
@@ -118,7 +119,12 @@ set(EDITOR_SOURCES
 # Target 1: crayon -> crayon.exe (Standalone Runtime Player)
 # -------------------------------------------------------------
 if(BUILD_CRAYON)
-    add_executable(crayon ${ENGINE_SOURCES} src/main.cpp)
+    set(CRAYON_RESOURCES "")
+    if(WIN32)
+        set(CRAYON_RESOURCES icon/crayon.rc)
+    endif()
+
+    add_executable(crayon ${ENGINE_SOURCES} src/main.cpp ${CRAYON_RESOURCES})
 
     set_target_properties(crayon PROPERTIES
         OUTPUT_NAME "crayon"
