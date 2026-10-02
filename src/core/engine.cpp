@@ -4,6 +4,7 @@
 #include "../graphics/model3d.hpp"
 #include "../scripting/lua_runtime.hpp"
 #include "../physics/physics_system.hpp"
+#include "../physics/physics2d_system.hpp"
 #include <filesystem>
 
 namespace crayon {
@@ -112,6 +113,18 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
         CRAYON_LOG_INFO("PhysicsSystem skipped (disabled in crayon.config for optimization)");
     }
 
+    // 8b. Conditionally initialize Box2D Physics2DSystem
+    if (m_config.modules.physics2d) {
+        m_physics2d = std::make_unique<Physics2DSystem>();
+        if (!m_physics2d->init()) {
+            CRAYON_LOG_ERROR("Engine failed to initialize Physics2DSystem");
+            return false;
+        }
+    } else {
+        m_physics2d.reset();
+        CRAYON_LOG_INFO("Physics2DSystem skipped (disabled in crayon.config for optimization)");
+    }
+
     // 9. Conditionally initialize AudioSystem
     if (m_config.modules.audio) {
         if (!m_audio.init()) {
@@ -163,6 +176,10 @@ void Engine::shutdown() {
     if (m_physics) {
         m_physics->shutdown();
         m_physics.reset();
+    }
+    if (m_physics2d) {
+        m_physics2d->shutdown();
+        m_physics2d.reset();
     }
     if (m_config.modules.audio) {
         m_audio.shutdown();
@@ -350,6 +367,36 @@ void Engine::step_simulation(float dt) {
                         break;
                     case PhysicsEventType::TriggerExit:
                         m_lua_runtime->call_trigger_exit(evt.body_a, evt.body_b);
+                        break;
+                }
+            }
+        }
+    }
+
+    if (m_physics2d && m_config.modules.physics2d) {
+        const float fixed_dt = 1.0f / 60.0f;
+        m_physics2d_accumulator += dt;
+        if (m_physics2d_accumulator > 0.2f) m_physics2d_accumulator = 0.2f;
+        while (m_physics2d_accumulator >= fixed_dt) {
+            m_physics2d->update(fixed_dt);
+            m_physics2d_accumulator -= fixed_dt;
+        }
+
+        if (m_lua_runtime && !m_game_script_path.empty()) {
+            auto events = m_physics2d->getAndClearEvents();
+            for (const auto& evt : events) {
+                switch (evt.type) {
+                    case Physics2DEventType::CollisionEnter:
+                        m_lua_runtime->call_collision2d_enter(evt.bodyA, evt.bodyB, evt.normal.x, evt.normal.y, evt.impulse);
+                        break;
+                    case Physics2DEventType::CollisionExit:
+                        m_lua_runtime->call_collision2d_exit(evt.bodyA, evt.bodyB);
+                        break;
+                    case Physics2DEventType::TriggerEnter:
+                        m_lua_runtime->call_trigger2d_enter(evt.bodyA, evt.bodyB);
+                        break;
+                    case Physics2DEventType::TriggerExit:
+                        m_lua_runtime->call_trigger2d_exit(evt.bodyA, evt.bodyB);
                         break;
                 }
             }

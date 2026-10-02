@@ -23,24 +23,24 @@ end
 function crayon.update(dt)
     timer = timer + dt
 
-    if crayon.input.isPressed("tab") or crayon.input.isPressed("space") then
+    if crayon.key.isPressed("tab") or crayon.key.isPressed("space") then
         demo_mode = (demo_mode % num_modes) + 1
     end
-    if crayon.input.isPressed("1") then demo_mode = 1 end
-    if crayon.input.isPressed("2") then demo_mode = 2 end
-    if crayon.input.isPressed("3") then demo_mode = 3 end
-    if crayon.input.isPressed("4") then demo_mode = 4 end
+    if crayon.key.isPressed("1") then demo_mode = 1 end
+    if crayon.key.isPressed("2") then demo_mode = 2 end
+    if crayon.key.isPressed("3") then demo_mode = 3 end
+    if crayon.key.isPressed("4") then demo_mode = 4 end
 
     -- Mouse scroll for scissor viewport
     local wheel_x, wheel_y = crayon.input.getMouseWheel()
     if wheel_y and wheel_y ~= 0 then
         clip_scroll_y = clip_scroll_y - wheel_y * 12
     end
-    if crayon.input.isDown("up") then clip_scroll_y = clip_scroll_y - 40 * dt end
-    if crayon.input.isDown("down") then clip_scroll_y = clip_scroll_y + 40 * dt end
+    if crayon.key.isDown("up")   then clip_scroll_y = clip_scroll_y - 40 * dt end
+    if crayon.key.isDown("down") then clip_scroll_y = clip_scroll_y + 40 * dt end
     clip_scroll_y = math.max(0, math.min(120, clip_scroll_y))
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -74,11 +74,14 @@ function crayon.draw()
     crayon.graphics.drawText("[TAB/1-4]: Switch Page | [ESC]: Quit", 8, 226, 1.0)
 end
 
+-- ---------------------------------------------------------------------------
+-- Page 1: Basic Shapes
+-- ---------------------------------------------------------------------------
 function draw_basic_shapes()
     -- 1. Points
     crayon.graphics.setColor(0.9, 0.3, 0.4, 1.0)
     for i = 1, 8 do
-        crayon.graphics.drawPoint(15 + i * 4, 45)
+        crayon.graphics.drawPoint(15 + i * 4, 45, 2.0)
     end
     crayon.graphics.setColor(0.7, 0.8, 0.9, 1.0)
     crayon.graphics.drawText("Points", 15, 30, 1.0)
@@ -88,6 +91,7 @@ function draw_basic_shapes()
     crayon.graphics.drawLine(70, 35, 115, 65, 1.0)
     crayon.graphics.setColor(0.9, 0.6, 0.2, 1.0)
     crayon.graphics.drawLine(70, 65, 115, 35, 3.0)
+    crayon.graphics.setColor(0.7, 0.8, 0.9, 1.0)
     crayon.graphics.drawText("Thick Lines", 65, 75, 1.0)
 
     -- 3. Rectangles (fill & line)
@@ -115,8 +119,7 @@ function draw_basic_shapes()
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
     crayon.graphics.drawText("Quad", 35, 122, 1.0)
 
-    -- 6. Convex & Star Polygons (drawPolygon)
-    -- Hexagon
+    -- 6. Convex Polygon (Hexagon)
     local hex_pts = {}
     local hcx, hcy, hr = 135, 130, 25
     for i = 0, 5 do
@@ -130,7 +133,7 @@ function draw_basic_shapes()
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
     crayon.graphics.drawText("Polygon", 116, 162, 1.0)
 
-    -- 5-Point Star Polygon
+    -- 7. Star Polygon
     local star_pts = {}
     local scx, scy = 230, 130
     for i = 0, 9 do
@@ -145,7 +148,7 @@ function draw_basic_shapes()
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
     crayon.graphics.drawText("Star Polygon", 200, 165, 1.0)
 
-    -- Text Metrics demo
+    -- 8. Text Metrics Demo
     local test_msg = "Precise Text Width & Height"
     local tw = crayon.graphics.getTextWidth(test_msg, 1.0)
     local th = crayon.graphics.getTextHeight(test_msg, 1.0)
@@ -157,6 +160,9 @@ function draw_basic_shapes()
     crayon.graphics.drawText(test_msg, 19, 193, 1.0)
 end
 
+-- ---------------------------------------------------------------------------
+-- Page 2: Curves & Rings
+-- ---------------------------------------------------------------------------
 function draw_curves_and_rings()
     -- 1. Rounded Rectangles
     crayon.graphics.setColor(0.2, 0.35, 0.6, 0.85)
@@ -166,7 +172,7 @@ function draw_curves_and_rings()
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
     crayon.graphics.drawText("Rounded Rect", 26, 52, 1.0)
 
-    -- 2. Circles & Ellipses
+    -- 2. Ellipses
     local ecx, ecy = 160, 60
     crayon.graphics.setColor(0.8, 0.3, 0.4, 0.7)
     crayon.graphics.drawEllipse("fill", ecx, ecy, 36, 22, 24)
@@ -175,7 +181,7 @@ function draw_curves_and_rings()
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
     crayon.graphics.drawText("Ellipse", 143, 56, 1.0)
 
-    -- 3. Circular Rings (fill & line)
+    -- 3. Rings
     local rcx, rcy = 260, 60
     crayon.graphics.setColor(0.3, 0.8, 0.5, 0.8)
     crayon.graphics.drawRing("fill", rcx, rcy, 16, 26, 24)
@@ -184,20 +190,20 @@ function draw_curves_and_rings()
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
     crayon.graphics.drawText("Ring", 248, 56, 1.0)
 
-    -- 4. Dynamic Gauge Arcs
+    -- 4. Dynamic Gauge Arc
     local start_a = -math.pi * 0.8
-    local sweep = math.sin(timer * 2.0) * 0.5 + 0.5 -- 0 to 1
+    local sweep = math.sin(timer * 2.0) * 0.5 + 0.5 -- 0..1
     local end_a = start_a + sweep * math.pi * 1.6
 
-    -- Background Arc Track
+    -- Background track
     crayon.graphics.setColor(0.2, 0.25, 0.35, 0.7)
     crayon.graphics.drawArc("line", 80, 150, 40, start_a, start_a + math.pi * 1.6, 32)
-    -- Active Arc Fill
+    -- Active fill
     crayon.graphics.setColor(1.0, 0.7, 0.2, 1.0)
     crayon.graphics.drawArc("line", 80, 150, 40, start_a, end_a, 32)
     crayon.graphics.drawText("Arc Gauge: " .. math.floor(sweep * 100) .. "%", 45, 150, 1.0)
 
-    -- 5. Animated Multi-Ring Target
+    -- 5. Concentric Animated Rings
     local tcx, tcy = 220, 145
     for r = 1, 4 do
         local osc = math.sin(timer * 3.0 + r) * 3
@@ -210,15 +216,18 @@ function draw_curves_and_rings()
     crayon.graphics.drawText("Concentric Rings", 175, 195, 1.0)
 end
 
+-- ---------------------------------------------------------------------------
+-- Page 3: Blend Modes
+-- ---------------------------------------------------------------------------
 function draw_blending_modes()
     local modes = {"alpha", "additive", "multiply", "none"}
-    local labels = {"Alpha (Default)", "Additive (Glow)", "Multiply (Shadow)", "None (Opaque)"}
+    local labels = {"Alpha", "Additive", "Multiply", "None"}
 
     for col = 1, 4 do
         local bx = 20 + (col - 1) * 75
         local by = 45
 
-        -- Background checkerboard or pattern to showcase blend transparency
+        -- Background pattern to reveal transparency
         crayon.graphics.setBlendMode("alpha")
         crayon.graphics.setColor(0.2, 0.2, 0.25, 1.0)
         crayon.graphics.drawRect("fill", bx, by, 65, 90)
@@ -228,12 +237,11 @@ function draw_blending_modes()
 
         -- Title
         crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-        crayon.graphics.drawText(labels[col], bx - 5, by + 100, 1.0)
+        crayon.graphics.drawText(labels[col], bx + 12, by + 100, 1.0)
 
         -- Active Blend Mode
         crayon.graphics.setBlendMode(modes[col])
 
-        -- Draw overlapping circles
         local t = timer * 2.0
         local ox1 = math.cos(t) * 6
         local oy1 = math.sin(t) * 6
@@ -248,30 +256,33 @@ function draw_blending_modes()
         crayon.graphics.drawCircle("fill", bx + 32, by + 55, 18)
     end
 
+    -- Restore default blend for the remaining draws
     crayon.graphics.setBlendMode("alpha")
     crayon.graphics.setColor(0.8, 0.85, 0.9, 1.0)
-    crayon.graphics.drawText("Set blend modes on the fly with crayon.graphics.setBlendMode()", 10, 190, 1.0)
+    crayon.graphics.drawText("crayon.graphics.setBlendMode(mode)", 10, 190, 1.0)
 end
 
+-- ---------------------------------------------------------------------------
+-- Page 4: Scissor Clipping
+-- ---------------------------------------------------------------------------
 function draw_scissor_clipping()
     crayon.graphics.setColor(0.9, 0.9, 0.9, 1.0)
-    crayon.graphics.drawText("Scissor Clipping Viewport (Use UP/DOWN or Scroll)", 15, 30, 1.0)
+    crayon.graphics.drawText("Scissor Viewport (UP/DOWN or Scroll)", 15, 30, 1.0)
 
-    -- Container Border
+    -- Viewport border
     local vx, vy, vw, vh = 30, 50, 260, 130
     crayon.graphics.setColor(0.2, 0.25, 0.35, 1.0)
     crayon.graphics.drawRect("fill", vx - 2, vy - 2, vw + 4, vh + 4)
     crayon.graphics.setColor(0.5, 0.7, 1.0, 1.0)
     crayon.graphics.drawRect("line", vx - 2, vy - 2, vw + 4, vh + 4)
 
-    -- Apply Scissor Rect!
+    -- Clip everything drawn until resetScissor
     crayon.graphics.setScissor(vx, vy, vw, vh)
 
-    -- Draw scrollable list inside scissor
+    -- Scrollable list
     local content_y = vy + 10 - clip_scroll_y
     for i = 1, 15 do
         local item_y = content_y + (i - 1) * 22
-        -- Alternating item backgrounds
         if i % 2 == 0 then
             crayon.graphics.setColor(0.12, 0.16, 0.25, 0.9)
         else
@@ -283,10 +294,11 @@ function draw_scissor_clipping()
         crayon.graphics.drawCircle("fill", vx + 16, item_y + 9, 4)
 
         crayon.graphics.setColor(0.95, 0.95, 0.95, 1.0)
-        crayon.graphics.drawText("Inventory Item #" .. i .. " - Crystal Shard x" .. (i * 3), vx + 28, item_y + 4, 1.0)
+        crayon.graphics.drawText("Item #" .. i .. " - Crystal Shard x" .. (i * 3),
+                                 vx + 28, item_y + 4, 1.0)
     end
 
-    -- Draw a big rotating star that clips through viewport edge
+    -- Big rotating star clipped by viewport edge
     local star_cx, star_cy = vx + vw - 20, vy + vh / 2
     local star_pts = {}
     for i = 0, 9 do
@@ -299,7 +311,7 @@ function draw_scissor_clipping()
     crayon.graphics.setColor(1.0, 1.0, 0.6, 1.0)
     crayon.graphics.drawPolygon("line", star_pts)
 
-    -- Reset Scissor
+    -- Reset clip rect
     crayon.graphics.resetScissor()
 
     -- Scrollbar indicator
@@ -311,5 +323,5 @@ function draw_scissor_clipping()
     crayon.graphics.drawRoundedRect("fill", vx + vw - 5, thumb_y, 4, thumb_h, 2)
 
     crayon.graphics.setColor(0.6, 0.7, 0.85, 1.0)
-    crayon.graphics.drawText("Notice all rendering outside the box is clipped automatically!", 15, 195, 1.0)
+    crayon.graphics.drawText("Rendering is clipped to the viewport.", 15, 195, 1.0)
 end

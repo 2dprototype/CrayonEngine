@@ -110,6 +110,12 @@ void LuaRuntime::register_modules(const ModulesConfig& modules) {
         register_disabled_stub(m_L, "physics3d");
     }
 
+    if (modules.physics2d) {
+        register_physics2d_bindings(m_L);
+    } else {
+        register_disabled_stub(m_L, "physics2d");
+    }
+
     if (modules.particles) {
         register_particle_bindings(m_L);
     } else {
@@ -179,6 +185,8 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_newtable(m_L);
     lua_pushboolean(m_L, config.modules.physics);
     lua_setfield(m_L, -2, "physics");
+    lua_pushboolean(m_L, config.modules.physics2d);
+    lua_setfield(m_L, -2, "physics2d");
     lua_pushboolean(m_L, config.modules.audio);
     lua_setfield(m_L, -2, "audio");
     lua_pushboolean(m_L, config.modules.mesh3d);
@@ -334,6 +342,10 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     if (lua_istable(m_L, -1)) {
         lua_getfield(m_L, -1, "physics");
         if (lua_isboolean(m_L, -1)) config.modules.physics = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "physics2d");
+        if (lua_isboolean(m_L, -1)) config.modules.physics2d = lua_toboolean(m_L, -1);
         lua_pop(m_L, 1);
 
         lua_getfield(m_L, -1, "audio");
@@ -834,6 +846,69 @@ void LuaRuntime::call_trigger_exit(uint32_t sensor_id, uint32_t other_body_id) {
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
             CRAYON_LOG_ERROR("Error in crayon.onTriggerExit():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_collision2d_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float impulse) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "collision2dEnter") || get_crayon_func(m_L, "onCollision2dEnter")) {
+        lua_pushinteger(m_L, body_a);
+        lua_pushinteger(m_L, body_b);
+        lua_pushnumber(m_L, nx);
+        lua_pushnumber(m_L, ny);
+        lua_pushnumber(m_L, impulse);
+        if (lua_pcall(m_L, 5, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.collision2dEnter():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_collision2d_exit(uint32_t body_a, uint32_t body_b) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "collision2dExit") || get_crayon_func(m_L, "onCollision2dExit")) {
+        lua_pushinteger(m_L, body_a);
+        lua_pushinteger(m_L, body_b);
+        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.collision2dExit():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_trigger2d_enter(uint32_t sensor_id, uint32_t other_body_id) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "trigger2dEnter") || get_crayon_func(m_L, "onTrigger2dEnter")) {
+        lua_pushinteger(m_L, sensor_id);
+        lua_pushinteger(m_L, other_body_id);
+        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.trigger2dEnter():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_trigger2d_exit(uint32_t sensor_id, uint32_t other_body_id) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "trigger2dExit") || get_crayon_func(m_L, "onTrigger2dExit")) {
+        lua_pushinteger(m_L, sensor_id);
+        lua_pushinteger(m_L, other_body_id);
+        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.trigger2dExit():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }

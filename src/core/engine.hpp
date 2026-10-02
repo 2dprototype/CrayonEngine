@@ -21,6 +21,7 @@ namespace crayon {
 
 class LuaRuntime;
 class PhysicsSystem;
+class Physics2DSystem;
 class Model3D;
 
 class Engine {
@@ -50,6 +51,8 @@ public:
     LuaRuntime& get_lua_runtime() { return *m_lua_runtime; }
     bool has_physics() const { return m_physics != nullptr; }
     PhysicsSystem& get_physics() { return *m_physics; }
+    bool has_physics2d() const { return m_physics2d != nullptr; }
+    Physics2DSystem& get_physics2d() { return *m_physics2d; }
     PostProcessChain& get_post_process_chain() { return m_post_process_chain; }
     const EngineConfig& get_config() const { return m_config; }
     EngineConfig& get_config() { return m_config; }
@@ -96,6 +99,8 @@ private:
     std::unique_ptr<LuaRuntime> m_lua_runtime;
     std::unique_ptr<PhysicsSystem> m_physics;
     float m_physics_accumulator = 0.0f;
+    std::unique_ptr<Physics2DSystem> m_physics2d;
+    float m_physics2d_accumulator = 0.0f;
 
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_texture_cache;
     std::unordered_map<GLuint, std::pair<int, int>> m_texture_sizes;

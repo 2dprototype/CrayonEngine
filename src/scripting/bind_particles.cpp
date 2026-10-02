@@ -9,17 +9,6 @@ struct LuaParticleEmitter {
     std::shared_ptr<ParticleEmitter> emitter;
 };
 
-[[maybe_unused]] static void* test_particle_udata(lua_State* L, int idx, const char* tname) {
-    if (!lua_isuserdata(L, idx)) return nullptr;
-    if (lua_getmetatable(L, idx)) {
-        luaL_getmetatable(L, tname);
-        bool match = lua_rawequal(L, -1, -2);
-        lua_pop(L, 2);
-        if (match) return lua_touserdata(L, idx);
-    }
-    return nullptr;
-}
-
 static std::shared_ptr<ParticleEmitter> check_emitter(lua_State* L, int idx) {
     auto* e = static_cast<LuaParticleEmitter*>(luaL_checkudata(L, idx, "Particles.Emitter"));
     if (!e || !e->emitter) {

@@ -35,14 +35,20 @@ include_directories(
     vendor/tinyobj/include
     vendor/tinygltf/include
     vendor/JoltPhysics
+    vendor/box2d/include
     vendor/imgui
     vendor/imgui/backends
+)
+
+file(GLOB_RECURSE BOX2D_SOURCES
+    "vendor/box2d/src/*.cpp"
 )
 
 # Core Engine source files (shared between engine player and editor)
 set(ENGINE_SOURCES
     vendor/glad/src/glad.c
     vendor/tinygltf/src/tiny_gltf_v3.c
+    ${BOX2D_SOURCES}
     src/core/window.cpp
     src/core/input.cpp
     src/core/audio_system.cpp
@@ -62,6 +68,7 @@ set(ENGINE_SOURCES
     src/graphics/post_process_chain.cpp
     src/graphics/rich_text.cpp
     src/physics/physics_system.cpp
+    src/physics/physics2d_system.cpp
     src/scripting/lua_runtime.cpp
     src/scripting/bind_window.cpp
     src/scripting/bind_graphics.cpp
@@ -69,6 +76,7 @@ set(ENGINE_SOURCES
     src/scripting/bind_time.cpp
     src/scripting/bind_audio.cpp
     src/scripting/bind_physics3d.cpp
+    src/scripting/bind_physics2d.cpp
     src/scripting/bind_particles.cpp
     src/scripting/bind_math.cpp
     src/scripting/bind_fs.cpp

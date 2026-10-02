@@ -31,7 +31,7 @@ local coins = {
 local player = {
     x = 1.5,
     z = 1.5,
-    angle = 0.0,
+    angle = 0.0,   -- degrees, wrapped to [0, 360)
     score = 0
 }
 
@@ -42,13 +42,19 @@ local tex_crate = 0
 local tex_coin = 0
 local timer = 0
 
-function is_wall(x, z)
+-- ---------------------------------------------------------------------------
+-- Map helpers
+-- ---------------------------------------------------------------------------
+local function is_wall(x, z)
     local gx = math.floor(x)
     local gz = math.floor(z)
     if gx < 0 or gx >= MAP_W or gz < 0 or gz >= MAP_H then return true end
     return map[gz * MAP_W + gx + 1] == 1
 end
 
+-- ---------------------------------------------------------------------------
+-- Lifecycle
+-- ---------------------------------------------------------------------------
 function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("Crayon Engine - Retro 3D Dungeon Crawler")
@@ -67,55 +73,65 @@ function crayon.init()
         fog = { startDist = 3, endDist = 9, color = {0.04, 0.04, 0.08} }
     })
 
+    -- Directional light: warm key from above-left, cool ambient fill
     crayon.graphics.setLight(0.3, -1.0, 0.5, 1.0, 0.9, 0.7, 0.35, 0.3, 0.4)
 end
 
 function crayon.update(dt)
     timer = timer + dt
 
-    -- Turn Left / Right
+    -- -----------------------------------------------------------------------
+    -- Turning
+    -- -----------------------------------------------------------------------
     local turn_spd = 110.0 * dt
-    if crayon.input.isDown("left") or crayon.input.isDown("a") then
+    if crayon.key.isDown("left") or crayon.key.isDown("a") then
         player.angle = player.angle - turn_spd
     end
-    if crayon.input.isDown("right") or crayon.input.isDown("d") then
+    if crayon.key.isDown("right") or crayon.key.isDown("d") then
         player.angle = player.angle + turn_spd
     end
+    -- Wrap angle to keep it bounded
+    player.angle = player.angle % 360.0
 
-    -- Move Forward / Backward
+    -- -----------------------------------------------------------------------
+    -- Movement
+    -- -----------------------------------------------------------------------
     local move_spd = 2.8 * dt
     local rad = math.rad(player.angle)
     local fwd_x = math.cos(rad)
     local fwd_z = math.sin(rad)
 
     local move_x, move_z = 0, 0
-    if crayon.input.isDown("up") or crayon.input.isDown("w") then
+    if crayon.key.isDown("up") or crayon.key.isDown("w") then
         move_x = move_x + fwd_x * move_spd
         move_z = move_z + fwd_z * move_spd
     end
-    if crayon.input.isDown("down") or crayon.input.isDown("s") then
+    if crayon.key.isDown("down") or crayon.key.isDown("s") then
         move_x = move_x - fwd_x * move_spd
         move_z = move_z - fwd_z * move_spd
     end
 
-    -- Simple collision detection
+    -- Per-axis collision so sliding along walls still works
     local new_x = player.x + move_x
     local new_z = player.z + move_z
     if not is_wall(new_x, player.z) then player.x = new_x end
     if not is_wall(player.x, new_z) then player.z = new_z end
 
-    -- Check Coin Collection
+    -- -----------------------------------------------------------------------
+    -- Coin pickup
+    -- -----------------------------------------------------------------------
     for _, c in ipairs(coins) do
         if not c.collected then
-            local dist = math.sqrt((player.x - c.x)^2 + (player.z - c.z)^2)
-            if dist < 0.6 then
+            local dx = player.x - c.x
+            local dz = player.z - c.z
+            if dx * dx + dz * dz < 0.6 * 0.6 then
                 c.collected = true
                 player.score = player.score + 100
             end
         end
     end
 
-    if crayon.input.isPressed("escape") then
+    if crayon.key.isPressed("escape") then
         crayon.window.quit()
     end
 end
@@ -123,46 +139,59 @@ end
 function crayon.draw()
     crayon.graphics.clear(0.04, 0.04, 0.08)
 
-    -- 1. Setup Camera at Player Eye Level (Y = 0.5)
+    -- -----------------------------------------------------------------------
+    -- 3D WORLD
+    -- -----------------------------------------------------------------------
     local rad = math.rad(player.angle)
     local tx = player.x + math.cos(rad)
     local tz = player.z + math.sin(rad)
 
     crayon.graphics.setCamera3d({
         position = {player.x, 0.5, player.z},
-        target = {tx, 0.5, tz},
-        up = {0, 1, 0},
-        fov = 65.0,
-        near = 0.1,
-        far = 20.0
+        target   = {tx, 0.5, tz},
+        up       = {0, 1, 0},
+        fov      = 65.0,
+        near     = 0.1,
+        far      = 20.0
     })
 
-    -- 2. Draw Floor & Ceiling Planes
-    -- drawPlane(x, y, z, w, d, tex, rx, ry, rz)
-    crayon.graphics.drawPlane(5, 0, 5, 20, 20, tex_crate, 0, 0, 0)
-    crayon.graphics.drawPlane(5, 1.0, 5, 20, 20, tex_crate, math.pi * 0.5, 0, 0)
+    -- Floor (facing +Y) and Ceiling (rotated 180° around X so its normal faces -Y)
+    crayon.graphics.drawPlane(5, 0.0, 5, 20, 20, tex_crate, 0, 0, 0)
+    crayon.graphics.drawPlane(5, 1.0, 5, 20, 20, tex_crate, math.pi, 0, 0)
 
-    -- 3. Draw Dungeon Walls
-    -- drawCube(x, y, z, sx, sy, sz, tex, rx, ry, rz)
+    -- Dungeon walls (one cube per wall tile)
     for gz = 0, MAP_H - 1 do
         for gx = 0, MAP_W - 1 do
             if map[gz * MAP_W + gx + 1] == 1 then
-                crayon.graphics.drawCube(gx + 0.5, 0.5, gz + 0.5, 1.0, 1.0, 1.0, tex_brick, 0, 0, 0)
+                crayon.graphics.drawCube(
+                    gx + 0.5, 0.5, gz + 0.5,
+                    1.0, 1.0, 1.0,
+                    tex_brick, 0, 0, 0
+                )
             end
         end
     end
 
-    -- 4. Draw Collectible Coins (floating and rotating)
+    -- Collectible coins (bob + spin)
     for _, c in ipairs(coins) do
         if not c.collected then
-            local bob = 0.4 + math.sin(timer * 4.0) * 0.08
+            local bob = 0.45 + math.sin(timer * 4.0) * 0.08
             local coin_rot = timer * 3.0
-            crayon.graphics.drawCube(c.x, bob, c.z, 0.25, 0.25, 0.05, tex_coin, 0, coin_rot, 0)
+            crayon.graphics.drawCube(
+                c.x, bob, c.z,
+                0.25, 0.25, 0.05,
+                tex_coin, 0, coin_rot, 0
+            )
         end
     end
 
-    -- 5. 2D HUD & Mini-Map
-    -- Top Score Bar
+    -- -----------------------------------------------------------------------
+    -- 2D HUD OVERLAY
+    -- -----------------------------------------------------------------------
+    -- Depth test off so HUD always renders on top of 3D content
+    crayon.graphics.setDepthTest(false)
+
+    -- Top score bar
     crayon.graphics.setColor(0.05, 0.05, 0.1, 0.8)
     crayon.graphics.drawRect("fill", 5, 5, 310, 20)
     crayon.graphics.setColor(0.4, 0.5, 0.8, 1.0)
@@ -172,9 +201,10 @@ function crayon.draw()
     crayon.graphics.drawText("GOLD: " .. player.score, 12, 11, 1.0)
 
     crayon.graphics.setColor(0.8, 0.8, 0.8, 1.0)
-    crayon.graphics.drawText("FPS: " .. math.floor(crayon.window.getFps() + 0.5), 260, 11, 1.0)
+    local fps = math.floor(crayon.time.getFps() + 0.5)
+    crayon.graphics.drawText("FPS: " .. fps, 255, 11, 1.0)
 
-    -- Mini-map (Bottom Left)
+    -- Mini-map (bottom-left)
     local mm_size = 5
     local mm_x = 10
     local mm_y = 175
@@ -184,30 +214,42 @@ function crayon.draw()
 
     for gz = 0, MAP_H - 1 do
         for gx = 0, MAP_W - 1 do
-            local cell = map[gz * MAP_W + gx + 1]
-            if cell == 1 then
+            if map[gz * MAP_W + gx + 1] == 1 then
                 crayon.graphics.setColor(0.4, 0.4, 0.5, 0.9)
-                crayon.graphics.drawRect("fill", mm_x + gx * mm_size, mm_y + gz * mm_size, mm_size, mm_size)
+                crayon.graphics.drawRect(
+                    "fill",
+                    mm_x + gx * mm_size,
+                    mm_y + gz * mm_size,
+                    mm_size, mm_size
+                )
             end
         end
     end
 
-    -- Coins on mini-map
+    -- Coin markers
+    crayon.graphics.setColor(1.0, 0.85, 0.2, 1.0)
     for _, c in ipairs(coins) do
         if not c.collected then
-            crayon.graphics.setColor(1.0, 0.85, 0.2, 1.0)
-            crayon.graphics.drawRect("fill", mm_x + c.x * mm_size - 1, mm_y + c.z * mm_size - 1, 2, 2)
+            crayon.graphics.drawRect(
+                "fill",
+                mm_x + c.x * mm_size - 1,
+                mm_y + c.z * mm_size - 1,
+                2, 2
+            )
         end
     end
 
-    -- Player dot & view line on mini-map
-    crayon.graphics.setColor(1.0, 0.2, 0.2, 1.0)
+    -- Player dot + facing line
     local px = mm_x + player.x * mm_size
     local pz = mm_y + player.z * mm_size
+    crayon.graphics.setColor(1.0, 0.2, 0.2, 1.0)
     crayon.graphics.drawCircle("fill", px, pz, 2)
     crayon.graphics.drawLine(px, pz, px + math.cos(rad) * 6, pz + math.sin(rad) * 6, 1.0)
 
-    -- Bottom controls hint
+    -- Controls hint
     crayon.graphics.setColor(0.7, 0.8, 0.9, 1.0)
     crayon.graphics.drawText("Arrows/WASD: Move & Turn", 70, 220, 1.0)
+
+    -- Restore depth test for the next frame's 3D pass
+    crayon.graphics.setDepthTest(true)
 end

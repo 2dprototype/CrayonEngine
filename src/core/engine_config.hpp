@@ -23,7 +23,8 @@ struct WindowConfig {
 };
 
 struct ModulesConfig {
-    bool physics = true;    // Jolt 3D & 2D physics subsystem
+    bool physics = true;    // Jolt 3D physics subsystem
+    bool physics2d = true;  // Box2D 2D physics subsystem
     bool audio = true;      // MiniAudio audio playback/spatial subsystem
     bool mesh3d = true;     // 3D mesh & model renderer subsystem
     bool particles = true;  // Particle emitters

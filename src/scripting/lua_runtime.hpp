@@ -45,11 +45,17 @@ public:
     void call_focus_changed(bool focused);
     void call_quit();
 
-    // Physics Callbacks
+    // Physics Callbacks (3D)
     void call_collision_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float nz, float impulse);
     void call_collision_exit(uint32_t body_a, uint32_t body_b);
     void call_trigger_enter(uint32_t sensor_id, uint32_t other_body_id);
     void call_trigger_exit(uint32_t sensor_id, uint32_t other_body_id);
+
+    // Physics Callbacks (2D)
+    void call_collision2d_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float impulse);
+    void call_collision2d_exit(uint32_t body_a, uint32_t body_b);
+    void call_trigger2d_enter(uint32_t sensor_id, uint32_t other_body_id);
+    void call_trigger2d_exit(uint32_t sensor_id, uint32_t other_body_id);
 
     bool run_config_phase(const std::string& filepath, struct EngineConfig& config);
 
@@ -71,6 +77,7 @@ void register_input_bindings(lua_State* L);
 void register_time_bindings(lua_State* L);
 void register_audio_bindings(lua_State* L);
 void register_physics3d_bindings(lua_State* L);
+void register_physics2d_bindings(lua_State* L);
 void register_particle_bindings(lua_State* L);
 void register_math_bindings(lua_State* L);
 void register_fs_bindings(lua_State* L);
