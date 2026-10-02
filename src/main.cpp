@@ -33,7 +33,7 @@ int main(int argc, char* argv[]) {
             print_help();
             return 0;
         } else if (arg == "--version" || arg == "-v") {
-            std::cout << "Crayon Engine version 1.0.0\n";
+            std::cout << "Crayon Engine version 0.0.1\n";
             return 0;
         } else if ((arg == "--game" || arg == "-g") && i + 1 < argc) {
             target_input = argv[++i];
