@@ -3790,8 +3790,6 @@ void register_graphics_bindings(lua_State* L) {
     lua_setfield(L, -2, "setCullFace");
 
     lua_pushcfunction(L, l_graphics_draw_sky_gradient);
-    lua_setfield(L, -2, "setSkyGradient");
-    lua_pushcfunction(L, l_graphics_draw_sky_gradient);
     lua_setfield(L, -2, "drawSkyGradient");
 
     // Textures & Models
@@ -3868,8 +3866,6 @@ void register_graphics_bindings(lua_State* L) {
     // 2D Rendering
     lua_pushcfunction(L, l_graphics_draw_sprite);
     lua_setfield(L, -2, "drawSprite");
-    lua_pushcfunction(L, l_graphics_draw_sprite);
-    lua_setfield(L, -2, "drawTexture");
 
     lua_pushcfunction(L, l_graphics_draw_sprite_part);
     lua_setfield(L, -2, "drawSpritePart");
@@ -4034,7 +4030,7 @@ void register_graphics_bindings(lua_State* L) {
 
     // Camera2D Object
     lua_pushcfunction(L, l_graphics_new_camera2d);
-    lua_setfield(L, -2, "newCamera2D");
+    lua_setfield(L, -2, "newCamera2d");
 
     // Post-Process Chain
     lua_pushcfunction(L, l_graphics_push_effect);

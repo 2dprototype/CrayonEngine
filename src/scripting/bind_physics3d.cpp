@@ -3855,9 +3855,6 @@ void register_physics3d_bindings(lua_State* L) {
     lua_pushcfunction(L, l_body_set_planar_lock);
     lua_setfield(L, -2, "setPlanarLock");
 
-    lua_pushvalue(L, -1);
-    lua_setfield(L, -3, "physics"); // Primary unified namespace: crayon.physics
-
     lua_setfield(L, -2, "physics3d"); // Backward-compatible alias
     lua_pop(L, 1);
 }
