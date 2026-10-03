@@ -54,7 +54,19 @@ inline void set_log_sink(LogSinkFn sink) {
 // Global switch driven by `t.console` in crayon.config(). When false, log
 // output is still delivered to the sink (e.g. an in-game console) but is
 // not written to stdout.
-inline void set_console_enabled(bool enabled) { s_console_enabled = enabled; }
+inline void set_console_enabled(bool enabled) {
+    s_console_enabled = enabled;
+
+#ifdef _WIN32
+    // The terminal window is owned by *our process* on Windows (conhost.exe
+    // spawned it when crayon.exe started). Hide/show it in lockstep with the
+    // console flag. SDL/glad/Lua logging all route through this switch.
+    if (HWND hwnd = GetConsoleWindow()) {
+        ShowWindow(hwnd, enabled ? SW_SHOW : SW_HIDE);
+    }
+#endif
+}
+
 inline bool is_console_enabled() { return s_console_enabled; }
 
 inline void log_message(LogLevel level, const std::string& message) {
