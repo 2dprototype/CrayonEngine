@@ -544,6 +544,26 @@ void Engine::run() {
                     if (event.text.text) {
                         m_lua_runtime->call_text_input(event.text.text);
                     }
+                                } else if (event.type == SDL_EVENT_DROP_BEGIN) {
+                    float vx = 0.0f, vy = 0.0f;
+                    m_window.window_to_virtual(event.drop.x, event.drop.y, vx, vy);
+                    m_lua_runtime->call_drop_begin(vx, vy);
+                } else if (event.type == SDL_EVENT_DROP_FILE) {
+                    float vx = 0.0f, vy = 0.0f;
+                    m_window.window_to_virtual(event.drop.x, event.drop.y, vx, vy);
+                    std::string path = event.drop.data ? event.drop.data : "";
+                    m_lua_runtime->call_drop_file(path, vx, vy);
+                } else if (event.type == SDL_EVENT_DROP_TEXT) {
+                    float vx = 0.0f, vy = 0.0f;
+                    m_window.window_to_virtual(event.drop.x, event.drop.y, vx, vy);
+                    std::string txt = event.drop.data ? event.drop.data : "";
+                    m_lua_runtime->call_drop_text(txt, vx, vy);
+                } else if (event.type == SDL_EVENT_DROP_POSITION) {
+                    float vx = 0.0f, vy = 0.0f;
+                    m_window.window_to_virtual(event.drop.x, event.drop.y, vx, vy);
+                    m_lua_runtime->call_drop_position(vx, vy);
+                } else if (event.type == SDL_EVENT_DROP_COMPLETE) {
+                    m_lua_runtime->call_drop_complete();
                 } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_DOWN) {
                     m_lua_runtime->call_gamepad_down(event.gbutton.button);
                 } else if (event.type == SDL_EVENT_GAMEPAD_BUTTON_UP) {

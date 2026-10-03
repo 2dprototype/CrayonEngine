@@ -922,4 +922,93 @@ void LuaRuntime::call_trigger2d_exit(uint32_t sensor_id, uint32_t other_body_id)
     lua_pop(m_L, 1);
 }
 
+// ============================================================================
+// Drag & Drop Callbacks
+// ============================================================================
+
+void LuaRuntime::call_drop_begin(float x, float y) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "dropbegin")
+     || get_crayon_func(m_L, "dropBegin")
+     || get_crayon_func(m_L, "dropenter")) {
+        lua_pushnumber(m_L, x);
+        lua_pushnumber(m_L, y);
+        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.dropbegin():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_drop_file(const std::string& path, float x, float y) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "dropfile")
+     || get_crayon_func(m_L, "dropFile")
+     || get_crayon_func(m_L, "filedropped")
+     || get_crayon_func(m_L, "fileDropped")) {
+        lua_pushstring(m_L, path.c_str());
+        lua_pushnumber(m_L, x);
+        lua_pushnumber(m_L, y);
+        if (lua_pcall(m_L, 3, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.dropfile():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_drop_text(const std::string& text, float x, float y) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "droptext")
+     || get_crayon_func(m_L, "dropText")) {
+        lua_pushstring(m_L, text.c_str());
+        lua_pushnumber(m_L, x);
+        lua_pushnumber(m_L, y);
+        if (lua_pcall(m_L, 3, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.droptext():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_drop_position(float x, float y) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "dropposition")
+     || get_crayon_func(m_L, "dropPosition")
+     || get_crayon_func(m_L, "dropmove")) {
+        lua_pushnumber(m_L, x);
+        lua_pushnumber(m_L, y);
+        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.dropposition():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_drop_complete() {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "dropcomplete")
+     || get_crayon_func(m_L, "dropComplete")
+     || get_crayon_func(m_L, "dropleave")) {
+        if (lua_pcall(m_L, 0, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.dropcomplete():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
 } // namespace crayon

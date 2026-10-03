@@ -44,6 +44,13 @@ public:
     void call_window_resized(int w, int h);
     void call_focus_changed(bool focused);
     void call_quit();
+    
+    // Drag & Drop Callbacks
+    void call_drop_begin(float x, float y);
+    void call_drop_file(const std::string& path, float x, float y);
+    void call_drop_text(const std::string& text, float x, float y);
+    void call_drop_position(float x, float y);
+    void call_drop_complete();
 
     // Physics Callbacks (3D)
     void call_collision_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float nz, float impulse);
@@ -58,6 +65,7 @@ public:
     void call_trigger2d_exit(uint32_t sensor_id, uint32_t other_body_id);
 
     bool run_config_phase(const std::string& filepath, struct EngineConfig& config);
+    
 
     lua_State* get_state() const { return m_L; }
 
