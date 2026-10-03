@@ -181,6 +181,14 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_setfield(m_L, -2, "clickThrough");
     lua_pushstring(m_L, config.window.scaling.c_str());
     lua_setfield(m_L, -2, "scaling");
+    lua_pushnumber(m_L, config.window.opacity);
+    lua_setfield(m_L, -2, "opacity");
+    lua_pushboolean(m_L, config.window.skip_taskbar);
+    lua_setfield(m_L, -2, "skipTaskbar");
+    lua_pushboolean(m_L, config.window.not_focusable);
+    lua_setfield(m_L, -2, "notFocusable");
+    lua_pushboolean(m_L, config.window.utility_window);
+    lua_setfield(m_L, -2, "utilityWindow");
     lua_setfield(m_L, -2, "window");
 
     // t.modules (camelCase)
@@ -340,9 +348,30 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
         lua_getfield(m_L, -1, "scaling");
         if (lua_isstring(m_L, -1)) config.window.scaling = lua_tostring(m_L, -1);
         lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "opacity");
+        if (lua_isnumber(m_L, -1)) {
+            float op = static_cast<float>(lua_tonumber(m_L, -1));
+            if (op < 0.0f) op = 0.0f;
+            if (op > 1.0f) op = 1.0f;
+            config.window.opacity = op;
+        }
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "skipTaskbar");
+        if (lua_isboolean(m_L, -1)) config.window.skip_taskbar = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "notFocusable");
+        if (lua_isboolean(m_L, -1)) config.window.not_focusable = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "utilityWindow");
+        if (lua_isboolean(m_L, -1)) config.window.utility_window = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
     }
     lua_pop(m_L, 1); // pop t.window
-
+    
     // Read t.modules (strict camelCase)
     lua_getfield(m_L, -1, "modules");
     if (lua_istable(m_L, -1)) {
@@ -625,7 +654,7 @@ void LuaRuntime::call_mouse_down(float x, float y, int button) {
             const char* err = lua_tostring(m_L, -1);
             CRAYON_LOG_ERROR("Error in {}():\n{}", func_name, err ? err : "unknown error");
             lua_pop(m_L, 1);
-        }
+            }
     }
     lua_pop(m_L, 1);
 }

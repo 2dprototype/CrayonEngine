@@ -34,6 +34,7 @@ function crayon.config(t)
     t.modules.particles    = false
     t.modules.physics3d    = false
     t.modules.physics2d    = false
+    t.window.opacity       = 1
 end
 
 -- ---------------------------------------------------------------------------

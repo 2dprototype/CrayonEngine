@@ -24,19 +24,24 @@ Window::~Window() {
     shutdown();
 }
 
-bool Window::init(const std::string& title, int window_w, int window_h, int virtual_w, int virtual_h, bool transparent) {
-    m_window_w = window_w;
-    m_window_h = window_h;
-    m_virtual_w = virtual_w;
-    m_virtual_h = virtual_h;
-    m_transparent = transparent;
+bool Window::init(const WindowCreateInfo& info) {
+    m_window_w        = info.window_width;
+    m_window_h        = info.window_height;
+    m_virtual_w       = info.virtual_width;
+    m_virtual_h       = info.virtual_height;
+    m_transparent     = info.transparent;
+    m_click_through   = info.click_through;
+    m_skip_taskbar    = info.skip_taskbar;
+    m_not_focusable   = info.not_focusable;
+    m_utility_window  = info.utility_window;
+    m_title           = info.title;
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         CRAYON_LOG_ERROR("Failed to initialize SDL3: {}", SDL_GetError());
         return false;
     }
 
-    // Configure OpenGL 3.3 Core Profile
+    // OpenGL 3.3 Core Profile
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
@@ -46,32 +51,68 @@ bool Window::init(const std::string& title, int window_w, int window_h, int virt
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
 
     SDL_PropertiesID props = SDL_CreateProperties();
-    SDL_SetStringProperty(props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, title.c_str());
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, m_window_w);
-    SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, m_window_h);
+    SDL_SetStringProperty (props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, info.title.c_str());
+    SDL_SetNumberProperty (props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER,  m_window_w);
+    SDL_SetNumberProperty (props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, m_window_h);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
-    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
-    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, info.resizable);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, info.high_dpi);
 
-    // Transparency MUST be requested at creation time.
-    if (m_transparent) {
-        SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, true);
-    }
+    // *** All pop-in-sensitive flags are creation properties ***
+    if (info.transparent)     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN,   true);
+    if (info.borderless)      SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_BORDERLESS_BOOLEAN,    true);
+    if (info.always_on_top)   SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_ALWAYS_ON_TOP_BOOLEAN, true);
+    if (info.utility_window)  SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_UTILITY_BOOLEAN,       true);
+    if (info.not_focusable)   SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FOCUSABLE_BOOLEAN,     false);
+    if (info.hidden_at_start) SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIDDEN_BOOLEAN,        true);
 
     m_window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
 
     if (!m_window) {
-        // Fallback path (properties call failed for some reason) — use flags.
-        SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
-        if (m_transparent) {
-            flags |= SDL_WINDOW_TRANSPARENT;
-        }
-        m_window = SDL_CreateWindow(title.c_str(), m_window_w, m_window_h, flags);
+        // Fallback path with raw flags
+        SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        if (info.resizable)       flags |= SDL_WINDOW_RESIZABLE;
+        if (info.transparent)     flags |= SDL_WINDOW_TRANSPARENT;
+        if (info.borderless)      flags |= SDL_WINDOW_BORDERLESS;
+        if (info.always_on_top)   flags |= SDL_WINDOW_ALWAYS_ON_TOP;
+        if (info.utility_window)  flags |= SDL_WINDOW_UTILITY;
+        if (info.not_focusable)   flags |= SDL_WINDOW_NOT_FOCUSABLE;
+        if (info.hidden_at_start) flags |= SDL_WINDOW_HIDDEN;
+        m_window = SDL_CreateWindow(info.title.c_str(), m_window_w, m_window_h, flags);
     }
     if (!m_window) {
         CRAYON_LOG_ERROR("Failed to create SDL3 window: {}", SDL_GetError());
         return false;
+    }
+
+    // Opacity — safe to set on a hidden/unmapped window, no flash.
+    if (info.opacity < 1.0f) {
+        float op = info.opacity;
+        if (op < 0.0f) op = 0.0f;
+        if (op > 1.0f) op = 1.0f;
+        SDL_SetWindowOpacity(m_window, op);
+    }
+
+    // Windows-specific: SDL_WINDOW_UTILITY is only partly wired on Win32.
+    // Apply WS_EX_TOOLWINDOW directly so the window truly skips the taskbar.
+#if defined(_WIN32)
+    if (info.skip_taskbar || info.utility_window) {
+        HWND hwnd = (HWND)SDL_GetPointerProperty(
+            SDL_GetWindowProperties(m_window),
+            SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+        if (hwnd) {
+            LONG_PTR ex = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+            ex |=  WS_EX_TOOLWINDOW;
+            ex &= ~WS_EX_APPWINDOW;
+            SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex);
+        }
+    }
+#endif
+
+    // Click-through must also be applied before show.
+    if (info.click_through) {
+        set_click_through(true);
     }
 
     if (m_transparent) {
@@ -244,6 +285,62 @@ bool Window::is_focused() const {
         return (SDL_GetWindowFlags(m_window) & SDL_WINDOW_INPUT_FOCUS) != 0;
     }
     return false;
+}
+
+// -----------------------------------------------------------------------------
+// Visibility
+// -----------------------------------------------------------------------------
+void Window::show() {
+    if (m_window) SDL_ShowWindow(m_window);
+}
+
+void Window::hide() {
+    if (m_window) SDL_HideWindow(m_window);
+}
+
+bool Window::is_visible() const {
+    if (m_window) {
+        return (SDL_GetWindowFlags(m_window) & SDL_WINDOW_HIDDEN) == 0;
+    }
+    return false;
+}
+
+// -----------------------------------------------------------------------------
+// Overlay window flags (runtime)
+// -----------------------------------------------------------------------------
+void Window::set_skip_taskbar(bool skip) {
+    m_skip_taskbar = skip;
+#if defined(_WIN32)
+    if (!m_window) return;
+    HWND hwnd = (HWND)SDL_GetPointerProperty(
+        SDL_GetWindowProperties(m_window),
+        SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    if (!hwnd) return;
+    LONG_PTR ex = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    if (skip) {
+        ex |=  WS_EX_TOOLWINDOW;
+        ex &= ~WS_EX_APPWINDOW;
+    } else {
+        ex &= ~WS_EX_TOOLWINDOW;
+        ex |=  WS_EX_APPWINDOW;
+    }
+    SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex);
+#else
+    (void)skip; // Only reliably supported on Windows; on macOS use utility_window.
+#endif
+}
+
+void Window::set_not_focusable(bool not_focusable) {
+    m_not_focusable = not_focusable;
+    if (m_window) {
+        SDL_SetWindowFocusable(m_window, !not_focusable);
+    }
+}
+
+void Window::set_utility_window(bool utility) {
+    // SDL3 has no runtime setter for SDL_WINDOW_UTILITY; store the intent so
+    // is_utility_window() stays consistent. Actual effect is creation-time.
+    m_utility_window = utility;
 }
 
 void Window::set_opacity(float opacity) {

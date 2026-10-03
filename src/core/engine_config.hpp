@@ -20,17 +20,24 @@ struct WindowConfig {
     bool borderless = false;
     bool always_on_top = false;
     bool click_through = false;
+
+    // ---- Overlay / screenpet flags (all applied at window creation) ----
+    bool  skip_taskbar   = false;  // hide from taskbar / Alt+Tab (Windows: WS_EX_TOOLWINDOW)
+    bool  not_focusable  = false;  // never steal focus from the user's real work
+    bool  utility_window = false;  // system utility chrome; on macOS also hides from Dock
+    float opacity        = 1.0f;   // 0.0 – 1.0, applied before the window is shown
+
     std::string scaling = "integer"; // "integer", "aspect", "stretch", "center"
 };
 
 struct ModulesConfig {
-    bool physics3d = true;  // Jolt 3D physics subsystem
-    bool physics2d = true;  // Box2D 2D physics subsystem
-    bool audio = true;      // MiniAudio audio playback/spatial subsystem
-    bool mesh3d = true;     // 3D mesh & model renderer subsystem
-    bool particles = true;  // Particle emitters
-    bool input = true;      // Input handling
-    bool fs = true;         // Virtual/physical filesystem
+    bool physics3d = true;
+    bool physics2d = true;
+    bool audio = true;
+    bool mesh3d = true;
+    bool particles = true;
+    bool input = true;
+    bool fs = true;
 };
 
 struct GraphicsConfig {
@@ -46,7 +53,7 @@ struct EngineConfig {
     WindowConfig window;
     ModulesConfig modules;
     GraphicsConfig graphics;
-    int fps_limit = 0; // 0 = uncapped / vsync
+    int fps_limit = 0;
     bool console = true;
 };
 

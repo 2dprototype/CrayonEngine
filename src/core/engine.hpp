@@ -122,6 +122,7 @@ private:
     bool m_hot_reload_requested = false;
     bool m_running = false;
     bool m_paused = false;
+    bool m_first_present_done = false;
 };
 
 } // namespace crayon

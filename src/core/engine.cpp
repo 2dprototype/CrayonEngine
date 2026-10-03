@@ -52,21 +52,42 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
         }
     }
 
-    // 4. Initialize Window with configured properties
-    if (!m_window.init(m_config.window.title, m_config.window.width, m_config.window.height,
-                       m_config.window.virtual_width, m_config.window.virtual_height,
-                       m_config.window.transparent)) {
+    // 4. Initialize Window with ALL overlay flags set at creation time.
+    //    This avoids the "opaque borderless-to-be" window flashing for one
+    //    or two frames before the transparency/borderless settings apply.
+    WindowCreateInfo win_info;
+    win_info.title          = m_config.window.title;
+    win_info.window_width   = m_config.window.width;
+    win_info.window_height  = m_config.window.height;
+    win_info.virtual_width  = m_config.window.virtual_width;
+    win_info.virtual_height = m_config.window.virtual_height;
+    win_info.resizable      = m_config.window.resizable;
+    win_info.transparent    = m_config.window.transparent;
+    win_info.borderless     = m_config.window.borderless;
+    win_info.always_on_top  = m_config.window.always_on_top;
+    win_info.click_through  = m_config.window.click_through;
+    win_info.skip_taskbar   = m_config.window.skip_taskbar;
+    win_info.not_focusable  = m_config.window.not_focusable;
+    win_info.utility_window = m_config.window.utility_window;
+    win_info.opacity        = m_config.window.opacity;
+
+    // Overlay-style windows must not be mapped until the first correct frame
+    // is ready — otherwise the OS shows an opaque/bordered placeholder.
+    win_info.hidden_at_start =
+        m_config.window.transparent ||
+        m_config.window.borderless  ||
+        m_config.window.click_through ||
+        m_config.window.opacity < 1.0f;
+
+    if (!m_window.init(win_info)) {
         CRAYON_LOG_ERROR("Engine failed to initialize Window");
         return false;
     }
 
-    m_window.set_resizable(m_config.window.resizable);
+    // Runtime-only settings (need GL context / scaling table).
     m_window.set_fullscreen(m_config.window.fullscreen);
     m_window.set_vsync(m_config.window.vsync);
     m_window.set_scaling_mode_string(m_config.window.scaling);
-    m_window.set_bordered(!m_config.window.borderless);
-    m_window.set_always_on_top(m_config.window.always_on_top);
-    m_window.set_click_through(m_config.window.click_through);
     if (m_config.window.min_width > 1 || m_config.window.min_height > 1) {
         m_window.set_window_min_size(m_config.window.min_width, m_config.window.min_height);
     }
@@ -603,6 +624,14 @@ void Engine::run() {
 
         // Render Virtual Canvas & Blit
         render_frame();
+
+        // Reveal the window only after the first fully-prepared frame has
+        // been presented — this is what eliminates the transparent/borderless
+        // "pop-in" flash.
+        if (!m_first_present_done) {
+            m_first_present_done = true;
+            m_window.show();
+        }
 
         // FPS limiting if configured
         if (m_config.fps_limit > 0) {

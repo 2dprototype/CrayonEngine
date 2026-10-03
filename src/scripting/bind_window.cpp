@@ -331,6 +331,56 @@ static int l_window_get_virtual_desktop_bounds(lua_State* L) {
     return 4;
 }
 
+static int l_window_show(lua_State* L) {
+    (void)L;
+    Engine::get().get_window().show();
+    return 0;
+}
+
+static int l_window_hide(lua_State* L) {
+    (void)L;
+    Engine::get().get_window().hide();
+    return 0;
+}
+
+static int l_window_is_visible(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_window().is_visible());
+    return 1;
+}
+
+static int l_window_set_skip_taskbar(lua_State* L) {
+    bool skip = lua_toboolean(L, 1);
+    Engine::get().get_window().set_skip_taskbar(skip);
+    return 0;
+}
+
+static int l_window_is_skip_taskbar(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_window().is_skip_taskbar());
+    return 1;
+}
+
+static int l_window_set_not_focusable(lua_State* L) {
+    bool nf = lua_toboolean(L, 1);
+    Engine::get().get_window().set_not_focusable(nf);
+    return 0;
+}
+
+static int l_window_is_not_focusable(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_window().is_not_focusable());
+    return 1;
+}
+
+static int l_window_set_utility_window(lua_State* L) {
+    bool util = lua_toboolean(L, 1);
+    Engine::get().get_window().set_utility_window(util);
+    return 0;
+}
+
+static int l_window_is_utility_window(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_window().is_utility_window());
+    return 1;
+}
+
 static int l_window_get_usable_bounds(lua_State* L) {
     SDL_DisplayID disp = SDL_GetPrimaryDisplay();
     SDL_Rect r{0, 0, 1920, 1080};
@@ -495,6 +545,35 @@ void register_window_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_window_get_virtual_desktop_bounds);
     lua_setfield(L, -2, "getVirtualDesktopBounds");
+    
+    // ---- Visibility ----
+    lua_pushcfunction(L, l_window_show);
+    lua_setfield(L, -2, "show");
+
+    lua_pushcfunction(L, l_window_hide);
+    lua_setfield(L, -2, "hide");
+
+    lua_pushcfunction(L, l_window_is_visible);
+    lua_setfield(L, -2, "isVisible");
+
+    // ---- Overlay window flags ----
+    lua_pushcfunction(L, l_window_set_skip_taskbar);
+    lua_setfield(L, -2, "setSkipTaskbar");
+
+    lua_pushcfunction(L, l_window_is_skip_taskbar);
+    lua_setfield(L, -2, "isSkipTaskbar");
+
+    lua_pushcfunction(L, l_window_set_not_focusable);
+    lua_setfield(L, -2, "setNotFocusable");
+
+    lua_pushcfunction(L, l_window_is_not_focusable);
+    lua_setfield(L, -2, "isNotFocusable");
+
+    lua_pushcfunction(L, l_window_set_utility_window);
+    lua_setfield(L, -2, "setUtilityWindow");
+
+    lua_pushcfunction(L, l_window_is_utility_window);
+    lua_setfield(L, -2, "isUtilityWindow");
 
     lua_setfield(L, -2, "window");
     lua_pop(L, 1);

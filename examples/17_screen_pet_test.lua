@@ -17,6 +17,7 @@ function crayon.config(t)
     t.modules.particles    = false
     t.modules.physics3d    = false
     t.modules.physics2d    = false    -- hand-rolled integration below
+    t.window.opacity       = 1
 end
 
 -- ---- Tunables ----------------------------------------------------------
