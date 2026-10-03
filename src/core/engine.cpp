@@ -66,6 +66,7 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
     m_window.set_scaling_mode_string(m_config.window.scaling);
     m_window.set_bordered(!m_config.window.borderless);
     m_window.set_always_on_top(m_config.window.always_on_top);
+    m_window.set_click_through(m_config.window.click_through);
     if (m_config.window.min_width > 1 || m_config.window.min_height > 1) {
         m_window.set_window_min_size(m_config.window.min_width, m_config.window.min_height);
     }
@@ -333,7 +334,7 @@ void Engine::render_to_fbo() {
     } else {
         m_lua_runtime->call_draw();
     }
-
+    
     m_batch2d.end();
     if (m_config.modules.mesh3d) {
         m_mesh_renderer.end();

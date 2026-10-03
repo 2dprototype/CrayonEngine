@@ -1,3 +1,16 @@
+#if defined(_WIN32)
+    #define WIN32_LEAN_AND_MEAN
+    #define NOMINMAX
+    #include <windows.h>
+#elif defined(__APPLE__)
+    #include <objc/message.h>
+    #include <objc/runtime.h>
+#elif defined(__linux__) && defined(SDL_VIDEO_DRIVER_X11)
+    #include <X11/Xlib.h>
+    #include <X11/extensions/shape.h>
+    #define CRAYON_HAS_X11_SHAPE 1
+#endif
+
 #include "window.hpp"
 #include "log.hpp"
 #include <glad/glad.h>
@@ -252,6 +265,62 @@ void Window::set_always_on_top(bool on_top) {
     if (m_window) {
         SDL_SetWindowAlwaysOnTop(m_window, on_top);
     }
+}
+
+void Window::set_click_through(bool enabled) {
+    m_click_through = enabled;
+    if (!m_window) return;
+
+    SDL_PropertiesID props = SDL_GetWindowProperties(m_window);
+
+#if defined(_WIN32)
+    HWND hwnd = (HWND)SDL_GetPointerProperty(
+        props, SDL_PROP_WINDOW_WIN32_HWND_POINTER, nullptr);
+    if (!hwnd) {
+        CRAYON_LOG_WARN("set_click_through: no HWND available");
+        return;
+    }
+    LONG_PTR ex = GetWindowLongPtr(hwnd, GWL_EXSTYLE);
+    if (enabled) {
+        ex |= (WS_EX_LAYERED | WS_EX_TRANSPARENT);
+    } else {
+        ex &= ~(WS_EX_LAYERED | WS_EX_TRANSPARENT);
+    }
+    SetWindowLongPtr(hwnd, GWL_EXSTYLE, ex);
+
+#elif defined(__APPLE__)
+    id ns_window = (id)SDL_GetPointerProperty(
+        props, SDL_PROP_WINDOW_COCOA_WINDOW_POINTER, nullptr);
+    if (!ns_window) {
+        CRAYON_LOG_WARN("set_click_through: no NSWindow available");
+        return;
+    }
+    SEL sel = sel_registerName("setIgnoresMouseEvents:");
+    ((void (*)(id, SEL, BOOL))objc_msgSend)(ns_window, sel, (BOOL)enabled);
+
+#elif defined(CRAYON_HAS_X11_SHAPE)
+    Display* display = (Display*)SDL_GetPointerProperty(
+        props, SDL_PROP_WINDOW_X11_DISPLAY_POINTER, nullptr);
+    ::Window xwin = (::Window)SDL_GetNumberProperty(
+        props, SDL_PROP_WINDOW_X11_WINDOW_NUMBER, 0);
+    if (display && xwin) {
+        if (enabled) {
+            // Empty input region = all clicks pass through
+            XShapeCombineRectangles(display, xwin, ShapeInput,
+                                    0, 0, nullptr, 0, ShapeSet, Unsorted);
+        } else {
+            // Reset input region to the window's default shape
+            XShapeCombineMask(display, xwin, ShapeInput,
+                              0, 0, None, ShapeSet);
+        }
+        XFlush(display);
+    } else {
+        CRAYON_LOG_WARN("set_click_through: X11 display or window unavailable");
+    }
+
+#else
+    CRAYON_LOG_WARN("set_click_through: not supported on this platform/build");
+#endif
 }
 
 bool Window::is_always_on_top() const {

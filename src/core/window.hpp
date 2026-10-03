@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <SDL3/SDL.h>
 
 namespace crayon {
@@ -83,6 +84,8 @@ public:
     bool is_mouse_grabbed() const;
 
     bool is_transparent() const { return m_transparent; }
+    void set_click_through(bool enabled);
+    bool is_click_through() const { return m_click_through; }
 
     // Scaling Modes
     void set_scaling_mode(ScalingMode mode);
@@ -130,6 +133,7 @@ private:
     bool m_vsync = true;
     bool m_should_close = false;
     bool m_transparent = false;
+    bool m_click_through = false;
 
     ScalingMode m_scaling_mode = ScalingMode::Integer;
     ViewportInfo m_viewport;

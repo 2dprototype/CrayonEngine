@@ -177,6 +177,8 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_setfield(m_L, -2, "borderless");
     lua_pushboolean(m_L, config.window.always_on_top);
     lua_setfield(m_L, -2, "alwaysOnTop");
+    lua_pushboolean(m_L, config.window.click_through);
+    lua_setfield(m_L, -2, "clickThrough");
     lua_pushstring(m_L, config.window.scaling.c_str());
     lua_setfield(m_L, -2, "scaling");
     lua_setfield(m_L, -2, "window");
@@ -329,6 +331,10 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
 
         lua_getfield(m_L, -1, "alwaysOnTop");
         if (lua_isboolean(m_L, -1)) config.window.always_on_top = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "clickThrough");
+        if (lua_isboolean(m_L, -1)) config.window.click_through = lua_toboolean(m_L, -1);
         lua_pop(m_L, 1);
 
         lua_getfield(m_L, -1, "scaling");

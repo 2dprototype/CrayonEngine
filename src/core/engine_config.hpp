@@ -19,6 +19,7 @@ struct WindowConfig {
     bool transparent = false;
     bool borderless = false;
     bool always_on_top = false;
+    bool click_through = false;
     std::string scaling = "integer"; // "integer", "aspect", "stretch", "center"
 };
 

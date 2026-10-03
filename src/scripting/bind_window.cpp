@@ -1,3 +1,5 @@
+#include <climits>
+
 #include "lua_runtime.hpp"
 #include "../core/engine.hpp"
 
@@ -264,6 +266,71 @@ static int l_window_is_transparent(lua_State* L) {
     return 1;
 }
 
+static int l_window_set_click_through(lua_State* L) {
+    bool enabled = lua_toboolean(L, 1);
+    Engine::get().get_window().set_click_through(enabled);
+    return 0;
+}
+
+static int l_window_is_click_through(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_window().is_click_through());
+    return 1;
+}
+
+static int l_window_get_displays(lua_State* L) {
+    int count = 0;
+    SDL_DisplayID* ids = SDL_GetDisplays(&count);
+    if (!ids || count == 0) {
+        lua_newtable(L);
+        if (ids) SDL_free(ids);
+        return 1;
+    }
+    SDL_DisplayID primary = SDL_GetPrimaryDisplay();
+    lua_createtable(L, count, 0);
+    int n = 0;
+    for (int i = 0; i < count; ++i) {
+        SDL_Rect r;
+        if (!SDL_GetDisplayBounds(ids[i], &r)) continue;
+        lua_createtable(L, 0, 5);
+        lua_pushinteger(L, r.x); lua_setfield(L, -2, "x");
+        lua_pushinteger(L, r.y); lua_setfield(L, -2, "y");
+        lua_pushinteger(L, r.w); lua_setfield(L, -2, "w");
+        lua_pushinteger(L, r.h); lua_setfield(L, -2, "h");
+        lua_pushboolean(L, ids[i] == primary); lua_setfield(L, -2, "primary");
+        lua_rawseti(L, -2, ++n);
+    }
+    SDL_free(ids);
+    return 1;
+}
+
+static int l_window_get_virtual_desktop_bounds(lua_State* L) {
+    int count = 0;
+    SDL_DisplayID* ids = SDL_GetDisplays(&count);
+    if (!ids || count == 0) {
+        lua_pushinteger(L, 0);    lua_pushinteger(L, 0);
+        lua_pushinteger(L, 1920); lua_pushinteger(L, 1080);
+        if (ids) SDL_free(ids);
+        return 4;
+    }
+    int x0 = INT_MAX, y0 = INT_MAX, x1 = INT_MIN, y1 = INT_MIN;
+    for (int i = 0; i < count; ++i) {
+        SDL_Rect r;
+        if (SDL_GetDisplayBounds(ids[i], &r)) {
+            if (r.x          < x0) x0 = r.x;
+            if (r.y          < y0) y0 = r.y;
+            if (r.x + r.w    > x1) x1 = r.x + r.w;
+            if (r.y + r.h    > y1) y1 = r.y + r.h;
+        }
+    }
+    SDL_free(ids);
+    if (x0 == INT_MAX) { x0 = 0; y0 = 0; x1 = 1920; y1 = 1080; }
+    lua_pushinteger(L, x0);
+    lua_pushinteger(L, y0);
+    lua_pushinteger(L, x1 - x0);
+    lua_pushinteger(L, y1 - y0);
+    return 4;
+}
+
 void register_window_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
@@ -399,6 +466,18 @@ void register_window_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_window_is_transparent);
     lua_setfield(L, -2, "isTransparent");
+    
+    lua_pushcfunction(L, l_window_set_click_through);
+    lua_setfield(L, -2, "setClickThrough");
+
+    lua_pushcfunction(L, l_window_is_click_through);
+    lua_setfield(L, -2, "isClickThrough");
+
+    lua_pushcfunction(L, l_window_get_displays);
+    lua_setfield(L, -2, "getDisplays");
+
+    lua_pushcfunction(L, l_window_get_virtual_desktop_bounds);
+    lua_setfield(L, -2, "getVirtualDesktopBounds");
 
     lua_setfield(L, -2, "window");
     lua_pop(L, 1);

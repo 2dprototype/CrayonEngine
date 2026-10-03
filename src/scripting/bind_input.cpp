@@ -332,6 +332,14 @@ static int l_mouse_is_relative_mode(lua_State* L) {
     return 1;
 }
 
+static int l_mouse_get_global_position(lua_State* L) {
+    float x = 0.0f, y = 0.0f;
+    SDL_GetGlobalMouseState(&x, &y);
+    lua_pushnumber(L, x);
+    lua_pushnumber(L, y);
+    return 2;
+}
+
 // ============================================================================
 // crayon.gamepad Bindings
 // ============================================================================
@@ -494,6 +502,8 @@ void register_input_bindings(lua_State* L) {
     lua_setfield(L, -2, "setRelativeMode");
     lua_pushcfunction(L, l_mouse_is_relative_mode);
     lua_setfield(L, -2, "isRelativeMode");
+    lua_pushcfunction(L, l_mouse_get_global_position);
+    lua_setfield(L, -2, "getGlobalPosition");
     lua_setfield(L, -2, "mouse");
 
     // 3. crayon.gamepad
@@ -538,6 +548,8 @@ void register_input_bindings(lua_State* L) {
     lua_setfield(L, -2, "getMouseDelta");
     lua_pushcfunction(L, l_mouse_get_wheel);
     lua_setfield(L, -2, "getMouseWheel");
+    lua_pushcfunction(L, l_mouse_get_global_position);
+    lua_setfield(L, -2, "getGlobalMousePosition");
     lua_pushcfunction(L, l_mouse_set_visible);
     lua_setfield(L, -2, "setMouseVisible");
     lua_pushcfunction(L, l_mouse_set_grabbed);
