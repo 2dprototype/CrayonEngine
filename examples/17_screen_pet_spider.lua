@@ -1,19 +1,22 @@
 -- Spider screenpet, rendered as a flat black shadow. Eight legs, tetrapod
 -- gait, chases the cursor and keeps a comfort distance. Click to startle.
 --
--- The creature is drawn as a single flat black silhouette: no eyes, no
--- highlights, no markings, no drop shadow. Only the outline reads.
+-- Rendered as a single flat black silhouette: no eyes, no highlights, no
+-- internal markings, no drop shadow. Only the outline reads.
 --
--- This revision reworks the shapes for a more realistic spider:
---   * Cephalothorax is a shield-shaped polygon, not a circle.
---   * Abdomen is a teardrop polygon tapering to a rear point.
---   * A narrow pedicel joins them, instead of the two shapes overlapping.
---   * Legs have three segments with two subtle bends (femur, tibia, tarsus)
---     and taper from thick at the base to thin at the tip.
---   * Eight leg anchors spread along the cephalothorax rim, and rest
---     positions fan from ~20 degrees (front) to ~115 degrees (rear), which
---     is how spiders actually sprawl.
---   * Small pedipalps and chelicerae are added at the front.
+-- Realism rework:
+--   * Body shrunk relative to the legs. A real spider's leg span is 3-4x
+--     its body length; earlier versions had near-equal proportions and
+--     read as a cartoon.
+--   * Body assembled from three shapes: rounded cephalothorax, tiny
+--     pedicel disc, pointed oval abdomen.
+--   * Legs taper from 2.2 px at the femur to 0.4 px at the tarsus tip,
+--     drawn as tapered quads so the silhouette narrows continuously.
+--   * Two visible joint kinks per leg. The femur-patella joint carries
+--     most of the bend, the tibia-metatarsus joint adds a subtle second
+--     bend. This double-kink is what reads as "spider" from above.
+--   * Legs sprawl in a wide radial fan from ~30 degrees (front pair) to
+--     ~120 degrees (rear pair) off the body axis.
 
 function crayon.config(t)
     t.window.transparent   = true
@@ -45,69 +48,88 @@ local TURN_BLEND    = 9.0
 local APPROACH_DIST = 80
 local RETREAT_DIST  = 55
 local EDGE_MARGIN   = 50
+local CLICK_RADIUS  = 22
 
--- Body geometry (body-local: +X forward, +Y toward the spider's right).
-local CEPH_POLY = {
-    { 14,  0.0 },   -- front tip (between the chelicerae)
-    { 11,  4.0 },   -- front-right shoulder
-    {  6,  7.0 },   -- widest right
-    {  1,  7.0 },   -- rear-widest right
-    { -3,  3.5 },   -- rear-right corner (where the pedicel attaches)
-    { -3, -3.5 },   -- rear-left corner
-    {  1, -7.0 },   -- rear-widest left
-    {  6, -7.0 },   -- widest left
-    { 11, -4.0 },   -- front-left shoulder
-}
-
--- Teardrop abdomen, pointing back. Front edge meets the pedicel at x=-3.
-local ABD_POLY = {
-    { -3,   0.0 },  -- front (pedicel)
-    { -6,   5.0 },  -- front-right
-    {-11,  10.0 },  -- widest right
-    {-16,   9.0 },  -- back-right
-    {-22,   0.0 },  -- rear point
-    {-16,  -9.0 },  -- back-left
-    {-11, -10.0 },  -- widest left
-    { -6,  -5.0 },  -- front-left
-}
-
--- Pedicel: narrow waist between cephalothorax and abdomen.
-local PEDICEL_X, PEDICEL_R = -3, 3.2
-
--- Pedipalps: small forward leg-like appendages.
-local PEDIPALP_ANCHOR_R = { 10.5,  2.5 }   -- right
-local PEDIPALP_REST_R   = { 17.0,  6.5 }
-local PEDIPALP_ANCHOR_L = { 10.5, -2.5 }   -- left
-local PEDIPALP_REST_L   = { 17.0, -6.5 }
-
--- Chelicerae (fang bases) at the very front.
-local CHELICERA_R = { 14.5,  1.6, 1.5 }
-local CHELICERA_L = { 14.5, -1.6, 1.5 }
-
--- Gait tuning ---------------------------------------------------------------
-local STEP_DUR       = 0.12
-local STEP_THRESHOLD = 14
+-- Gait
+local STEP_DUR         = 0.12
+local STEP_THRESHOLD   = 14
 local DUR_SCALE_MIN    = 0.35
 local THRESH_SCALE_MIN = 0.55
 local URGENT_MULT      = 2.5
 local MAX_PRED_LEAD    = 60
 local MAX_STEP_TIME    = 0.45
 
+-- Leg segment tuning. Knee at 40% along the anchor-foot line, offset out
+-- by 9% of leg length. Second bend at 72% along, offset 3%.
+local KNEE_T   = 0.40
+local KNEE_OUT = 0.09
+local BEND_T   = 0.72
+local BEND_OUT = 0.03
+
 -- ---------------------------------------------------------------------------
--- Legs — tetrapod gait. Anchors spread along the cephalothorax rim; rests
--- fan from forward-outward (front legs) to backward-outward (rear legs).
+-- Body geometry (body-local: +X forward, +Y to the spider's right)
+-- ---------------------------------------------------------------------------
+local CEPH_POLY = {
+    { 6.0,  0.0 },
+    { 5.5,  3.0 },
+    { 4.0,  5.0 },
+    { 1.5,  6.5 },
+    {-1.5,  6.5 },
+    {-4.0,  5.0 },
+    {-5.0,  2.5 },
+    {-5.0,  0.0 },
+    {-5.0, -2.5 },
+    {-4.0, -5.0 },
+    {-1.5, -6.5 },
+    { 1.5, -6.5 },
+    { 4.0, -5.0 },
+    { 5.5, -3.0 },
+}
+
+local ABD_POLY = {
+    {-5.0,  1.0 },
+    {-5.5,  4.0 },
+    {-7.0,  7.0 },
+    {-10.0, 8.5 },
+    {-13.0, 9.0 },
+    {-16.5, 8.5 },
+    {-20.0, 7.0 },
+    {-23.0, 4.5 },
+    {-26.0, 0.0 },
+    {-23.0,-4.5 },
+    {-20.0,-7.0 },
+    {-16.5,-8.5 },
+    {-13.0,-9.0 },
+    {-10.0,-8.5 },
+    {-7.0, -7.0 },
+    {-5.5, -4.0 },
+    {-5.0, -1.0 },
+}
+
+local PEDICEL_X, PEDICEL_R = -5.0, 2.5
+
+-- Small nubs at the front of the cephalothorax (fang bases).
+local CHELICERA_R = { 7.0,  1.3, 1.4 }
+local CHELICERA_L = { 7.0, -1.3, 1.4 }
+
+-- Pedipalps: short thin appendages pointing forward-out.
+local PEDIPALP_R_ANCHOR = { 5.5,  2.5 }
+local PEDIPALP_R_REST   = { 16.0, 7.0 }
+local PEDIPALP_L_ANCHOR = { 5.5, -2.5 }
+local PEDIPALP_L_REST   = { 16.0,-7.0 }
+
+-- ---------------------------------------------------------------------------
+-- Legs — anchors sit just inside the cephalothorax rim; rests fan widely.
 -- ---------------------------------------------------------------------------
 local LEG_DEFS = {
-    -- Right side (spider's right = +y in body-local space)
-    { anchor = {10,  4.0}, rest = { 38,  14}, group = "a" }, -- R1 front
-    { anchor = { 7,  6.0}, rest = { 28,  32}, group = "b" }, -- R2
-    { anchor = { 2,  7.0}, rest = {  6,  40}, group = "a" }, -- R3
-    { anchor = {-2,  4.0}, rest = {-14,  34}, group = "b" }, -- R4 rear
-    -- Left side
-    { anchor = {10, -4.0}, rest = { 38, -14}, group = "b" }, -- L1
-    { anchor = { 7, -6.0}, rest = { 28, -32}, group = "a" }, -- L2
-    { anchor = { 2, -7.0}, rest = {  6, -40}, group = "b" }, -- L3
-    { anchor = {-2, -4.0}, rest = {-14, -34}, group = "a" }, -- L4
+    { anchor = { 3.5,  3.5 }, rest = { 38,  22 }, group = "a" }, -- R1 front
+    { anchor = { 0.5,  5.0 }, rest = { 34,  40 }, group = "b" }, -- R2
+    { anchor = {-2.0,  5.0 }, rest = { 10,  48 }, group = "a" }, -- R3
+    { anchor = {-4.5,  3.5 }, rest = {-24,  38 }, group = "b" }, -- R4 rear
+    { anchor = { 3.5, -3.5 }, rest = { 38, -22 }, group = "b" }, -- L1
+    { anchor = { 0.5, -5.0 }, rest = { 34, -40 }, group = "a" }, -- L2
+    { anchor = {-2.0, -5.0 }, rest = { 10, -48 }, group = "b" }, -- L3
+    { anchor = {-4.5, -3.5 }, rest = {-24, -38 }, group = "a" }, -- L4
 }
 
 -- ---------------------------------------------------------------------------
@@ -387,12 +409,9 @@ function crayon.update(dt)
 
     local gx, gy = cursor_global()
     local dx, dy = gx - pet.x, gy - pet.y
-    local over = (dx * dx + dy * dy) <= (CEPH_R_click()) ^ 2
+    local over = (dx * dx + dy * dy) <= CLICK_RADIUS * CLICK_RADIUS
     crayon.window.setClickThrough(not over)
 end
-
--- Helper kept small so the click radius lives in one place.
-function CEPH_R_click() return 20 end
 
 function crayon.mousedown(x, y, button)
     if button ~= 1 then return end
@@ -400,7 +419,7 @@ function crayon.mousedown(x, y, button)
     local wx, wy = crayon.window.getPosition()
     local gx, gy = wx + x, wy + y
     local dx, dy = gx - pet.x, gy - pet.y
-    if (dx * dx + dy * dy) > 20 * 20 then return end
+    if (dx * dx + dy * dy) > CLICK_RADIUS * CLICK_RADIUS then return end
 
     startle = 0.85
     local d = math.sqrt(dx * dx + dy * dy)
@@ -415,29 +434,47 @@ function crayon.mousedown(x, y, button)
 end
 
 -- ---------------------------------------------------------------------------
--- Rendering — pure black silhouette, built from polygons and tapered lines.
+-- Rendering
 -- ---------------------------------------------------------------------------
-local function world_to_screen(wx, wy)
-    return CX + (wx - pet.x), CY + (wy - pet.y)
+
+-- Draw a segment as a tapered quadrilateral, so the leg silhouette narrows
+-- continuously rather than stepping at joint boundaries.
+local function draw_tapered_segment(x1, y1, x2, y2, w1, w2)
+    local dx = x2 - x1
+    local dy = y2 - y1
+    local len = math.sqrt(dx * dx + dy * dy)
+    if len < 0.001 then return end
+    local px = -dy / len
+    local py =  dx / len
+    local h1 = w1 * 0.5
+    local h2 = w2 * 0.5
+    crayon.graphics.drawPolygon("fill", {
+        { x1 + px * h1, y1 + py * h1 },
+        { x2 + px * h2, y2 + py * h2 },
+        { x2 - px * h2, y2 - py * h2 },
+        { x1 - px * h1, y1 - py * h1 },
+    })
 end
 
--- Transform a body-local point to window-space using the current body angle.
-local function body_to_window(lx, ly, c, s)
-    return CX + lx * c - ly * s, CY + lx * s + ly * c
-end
-
--- Draw a body-local polygon.
-local function fill_polygon(poly, c, s)
+local function body_poly_to_window(poly, breathe, c, s)
     local pts = {}
     for i = 1, #poly do
-        local wx, wy = body_to_window(poly[i][1], poly[i][2], c, s)
-        pts[i] = {wx, wy}
+        local lx = poly[i][1] * breathe
+        local ly = poly[i][2] * breathe
+        pts[i] = { CX + lx * c - ly * s, CY + lx * s + ly * c }
     end
-    crayon.graphics.drawPolygon("fill", pts)
+    return pts
 end
 
 -- ---------------------------------------------------------------------------
--- Legs — three segments with two subtle bends.
+-- Legs: two visible kinks per limb.
+--   A  = anchor on the body
+--   J1 = femur-patella joint (the big outward knee)
+--   J2 = tibia-metatarsus joint (a much subtler second bend)
+--   F  = foot tip
+-- J1 and J2 are found by taking a point along A->F and pushing it outward,
+-- perpendicular to the leg direction. The sign of the push is chosen so it
+-- points away from the body centre, which gives each leg its outward bow.
 -- ---------------------------------------------------------------------------
 local function draw_leg(leg)
     local a = body_angle()
@@ -446,120 +483,101 @@ local function draw_leg(leg)
     local ax = pet.x + leg.anchor[1] * c - leg.anchor[2] * s
     local ay = pet.y + leg.anchor[1] * s + leg.anchor[2] * c
 
-    -- Foreshorten the foot toward the anchor while lifted.
     local pull = leg.lift * 0.30
     local fx = leg.foot_x + (ax - leg.foot_x) * pull
     local fy = leg.foot_y + (ay - leg.foot_y) * pull
 
-    -- First joint (patella): midpoint of anchor-foot, pushed outward from
-    -- the body along a perpendicular to the anchor-foot line.
-    local adx, ady = fx - ax, fy - ay
-    local alen = math.sqrt(adx * adx + ady * ady)
-    if alen < 0.001 then alen = 0.001 end
+    local dx = fx - ax
+    local dy = fy - ay
+    local L = math.sqrt(dx * dx + dy * dy)
+    if L < 0.001 then return end
+    local ux, uy = dx / L, dy / L
 
-    local j1x = (ax + fx) * 0.5
-    local j1y = (ay + fy) * 0.5
-    local px1, py1 = -ady / alen, adx / alen
-    local toward_x, toward_y = j1x - pet.x, j1y - pet.y
-    if px1 * toward_x + py1 * toward_y < 0 then
-        px1, py1 = -px1, -py1
+    -- Perpendicular to leg direction, signed outward
+    local pxp, pyp = -uy, ux
+    local mx = (ax + fx) * 0.5
+    local my = (ay + fy) * 0.5
+    local ox, oy = mx - pet.x, my - pet.y
+    if pxp * ox + pyp * oy < 0 then
+        pxp, pyp = -pxp, -pyp
     end
-    local push1 = math.min(alen * 0.30, 13) + leg.lift * 4.0
-    j1x = j1x + px1 * push1
-    j1y = j1y + py1 * push1
 
-    -- Second joint (metatarsus): midpoint of joint1-foot, pushed outward
-    -- again but much less, giving the leg its subtle double-arc curvature.
-    local j1dx, j1dy = fx - j1x, fy - j1y
-    local j1len = math.sqrt(j1dx * j1dx + j1dy * j1dy)
-    if j1len < 0.001 then j1len = 0.001 end
-    local j2x = (j1x + fx) * 0.5
-    local j2y = (j1y + fy) * 0.5
-    local px2, py2 = -j1dy / j1len, j1dx / j1len
-    local toward2_x, toward2_y = j2x - pet.x, j2y - pet.y
-    if px2 * toward2_x + py2 * toward2_y < 0 then
-        px2, py2 = -px2, -py2
-    end
-    local push2 = math.min(j1len * 0.18, 5) + leg.lift * 1.5
-    j2x = j2x + px2 * push2
-    j2y = j2y + py2 * push2
+    -- Joint 1: the knee
+    local j1x = ax + ux * L * KNEE_T + pxp * L * KNEE_OUT
+    local j1y = ay + uy * L * KNEE_T + pyp * L * KNEE_OUT
 
-    -- Project to window space
-    local sax, say = world_to_screen(ax, ay)
-    local sj1x, sj1y = world_to_screen(j1x, j1y)
-    local sj2x, sj2y = world_to_screen(j2x, j2y)
-    local sfx, sfy = world_to_screen(fx, fy)
+    -- Joint 2: subtle second bend along J1->F
+    local j1dx = fx - j1x
+    local j1dy = fy - j1y
+    local j2x = j1x + j1dx * ((BEND_T - KNEE_T) / (1 - KNEE_T))
+                     + pxp * L * BEND_OUT
+    local j2y = j1y + j1dy * ((BEND_T - KNEE_T) / (1 - KNEE_T))
+                     + pyp * L * BEND_OUT
 
-    -- Three tapered segments: femur thick, tibia medium, tarsus thin.
-    crayon.graphics.drawLine(sax, say, sj1x, sj1y, 3.4)
-    crayon.graphics.drawLine(sj1x, sj1y, sj2x, sj2y, 2.3)
-    crayon.graphics.drawLine(sj2x, sj2y, sfx, sfy, 1.4)
+    local sax, say   = to_screen(ax,  ay)
+    local sj1x, sj1y = to_screen(j1x, j1y)
+    local sj2x, sj2y = to_screen(j2x, j2y)
+    local sfx, sfy   = to_screen(fx,  fy)
 
-    -- Joint fillers, so the segments read as one continuous limb.
-    crayon.graphics.drawCircle("fill", sj1x, sj1y, 1.9, 10)
-    crayon.graphics.drawCircle("fill", sj2x, sj2y, 1.2, 8)
-    crayon.graphics.drawCircle("fill", sfx, sfy, 0.9, 8)
+    -- Three tapered segments: femur, tibia, metatarsus+tarsus. Widths fall
+    -- from 2.2 at the base to 0.4 at the tip, matching a real spider's
+    -- gradual taper down the limb.
+    draw_tapered_segment(sax,  say,  sj1x, sj1y, 2.2, 1.5)
+    draw_tapered_segment(sj1x, sj1y, sj2x, sj2y, 1.5, 0.9)
+    draw_tapered_segment(sj2x, sj2y, sfx,  sfy,  0.9, 0.4)
+
+    -- Tiny joint dots, just enough to smooth the transitions.
+    crayon.graphics.drawCircle("fill", sj1x, sj1y, 0.8, 8)
+    crayon.graphics.drawCircle("fill", sj2x, sj2y, 0.5, 6)
 end
 
--- ---------------------------------------------------------------------------
--- Pedipalps — short, thin, two-segment appendages at the front.
--- ---------------------------------------------------------------------------
-local function draw_pedipalp(anchor, rest, lift_phase)
+local function draw_pedipalp(anchor, rest, phase)
     local a = body_angle()
     local c, s = math.cos(a), math.sin(a)
 
     local ax = pet.x + anchor[1] * c - anchor[2] * s
     local ay = pet.y + anchor[1] * s + anchor[2] * c
-    local fx = pet.x + rest[1] * c - rest[2] * s
-    local fy = pet.y + rest[1] * s + rest[2] * c
 
-    -- Small bob so the pedipalps aren't perfectly static.
-    local bob = math.sin(time * 6 + lift_phase) * 1.2
-    fx = fx + bob * c * 0.2
-    fy = fy + bob * s * 0.2
+    local bob = math.sin(time * 6 + phase) * 0.8
+    local fx = pet.x + rest[1] * c - rest[2] * s + bob * c
+    local fy = pet.y + rest[1] * s + rest[2] * c + bob * s
 
     local mx = (ax + fx) * 0.5
     local my = (ay + fy) * 0.5
 
-    local sax, say = world_to_screen(ax, ay)
-    local smx, smy = world_to_screen(mx, my)
-    local sfx, sfy = world_to_screen(fx, fy)
+    local sax, say = to_screen(ax, ay)
+    local smx, smy = to_screen(mx, my)
+    local sfx, sfy = to_screen(fx, fy)
 
-    crayon.graphics.drawLine(sax, say, smx, smy, 2.2)
-    crayon.graphics.drawLine(smx, smy, sfx, sfy, 1.3)
-    crayon.graphics.drawCircle("fill", smx, smy, 1.3, 8)
+    draw_tapered_segment(sax, say, smx, smy, 1.3, 0.9)
+    draw_tapered_segment(smx, smy, sfx, sfy, 0.9, 0.4)
+    crayon.graphics.drawCircle("fill", smx, smy, 0.5, 6)
 end
 
--- ---------------------------------------------------------------------------
--- Body — shield cephalothorax + teardrop abdomen + pedicel + chelicerae.
--- ---------------------------------------------------------------------------
 local function draw_body()
     local breathe = 1 + math.sin(time * 2.4) * 0.02
     local a = body_angle()
     local c, s = math.cos(a), math.sin(a)
 
-    -- Apply a gentle breathing scale to the polygon vertices.
-    local function scaled(poly)
-        local out = {}
-        for i = 1, #poly do
-            out[i] = { poly[i][1] * breathe, poly[i][2] * breathe }
-        end
-        return out
-    end
+    -- Pedicel first: it sits behind the two big body shapes.
+    local pcx = CX + PEDICEL_X * c
+    local pcy = CY + PEDICEL_X * s
+    crayon.graphics.drawCircle("fill", pcx, pcy, PEDICEL_R, 12)
 
-    -- Pedicel: a small filled disc bridging the two body segments.
-    local px, py = body_to_window(PEDICEL_X, 0, c, s)
-    crayon.graphics.drawCircle("fill", px, py, PEDICEL_R, 12)
+    -- Abdomen
+    crayon.graphics.drawPolygon("fill",
+        body_poly_to_window(ABD_POLY, breathe, c, s))
 
-    -- Abdomen (teardrop, pointing back).
-    fill_polygon(scaled(ABD_POLY), c, s)
+    -- Cephalothorax
+    crayon.graphics.drawPolygon("fill",
+        body_poly_to_window(CEPH_POLY, breathe, c, s))
 
-    -- Cephalothorax (shield shape).
-    fill_polygon(scaled(CEPH_POLY), c, s)
-
-    -- Chelicerae: two small nubs at the very front.
+    -- Chelicerae (fang bases) at the front
     for _, ch in ipairs({CHELICERA_R, CHELICERA_L}) do
-        local chx, chy = body_to_window(ch[1] * breathe, ch[2] * breathe, c, s)
+        local lx = ch[1] * breathe
+        local ly = ch[2] * breathe
+        local chx = CX + lx * c - ly * s
+        local chy = CY + lx * s + ly * c
         crayon.graphics.drawCircle("fill", chx, chy, ch[3], 10)
     end
 end
@@ -568,14 +586,11 @@ function crayon.draw()
     crayon.graphics.setColor(0, 0, 0, 1)
     crayon.graphics.pushScissor(0, 0, WIN_W, WIN_H)
 
-    -- Legs first, then pedipalps, then the body which covers the attachment
-    -- points. Order doesn't affect the silhouette, but it keeps things
-    -- easy to reason about if the design is later extended.
     for _, leg in ipairs(legs) do
         draw_leg(leg)
     end
-    draw_pedipalp(PEDIPALP_ANCHOR_R, PEDIPALP_REST_R, 0.0)
-    draw_pedipalp(PEDIPALP_ANCHOR_L, PEDIPALP_REST_L, 1.7)
+    draw_pedipalp(PEDIPALP_R_ANCHOR, PEDIPALP_R_REST, 0.0)
+    draw_pedipalp(PEDIPALP_L_ANCHOR, PEDIPALP_L_REST, 1.7)
     draw_body()
 
     crayon.graphics.popScissor()
