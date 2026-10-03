@@ -603,18 +603,6 @@ The runtime invokes these optional `crayon.*` functions if they are defined:
 | stb_image | Latest | Texture loading |
 | tinyobjloader | Latest | OBJ model loading |
 
-## Building
-
-```bash
-# Configure
-cmake -B build -DCMAKE_BUILD_TYPE=Release
-
-# Build
-cmake --build build --config Release
-
-# Run
-./build/crayon game/main.lua
-```
 
 ## License
 

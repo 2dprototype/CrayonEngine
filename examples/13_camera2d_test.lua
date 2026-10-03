@@ -24,7 +24,7 @@ local worldWidth = 800
 local worldHeight = 600
 
 function crayon.init()
-    cam = crayon.graphics.newCamera2D(player.x, player.y, 1.0)
+    cam = crayon.graphics.newCamera2d(player.x, player.y, 1.0)
     cam:setTarget(player.x, player.y)
     cam:setBounds(0, 0, worldWidth, worldHeight)
     cam:setDeadzone(40, 30)
