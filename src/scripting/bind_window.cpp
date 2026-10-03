@@ -331,6 +331,20 @@ static int l_window_get_virtual_desktop_bounds(lua_State* L) {
     return 4;
 }
 
+static int l_window_get_usable_bounds(lua_State* L) {
+    SDL_DisplayID disp = SDL_GetPrimaryDisplay();
+    SDL_Rect r{0, 0, 1920, 1080};
+    if (disp == 0 || !SDL_GetDisplayUsableBounds(disp, &r)) {
+        // fall back to full bounds
+        if (disp != 0) SDL_GetDisplayBounds(disp, &r);
+    }
+    lua_pushinteger(L, r.x);
+    lua_pushinteger(L, r.y);
+    lua_pushinteger(L, r.w);
+    lua_pushinteger(L, r.h);
+    return 4;
+}
+
 void register_window_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
@@ -430,6 +444,9 @@ void register_window_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_window_get_display_size);
     lua_setfield(L, -2, "getDisplaySize");
+    
+    lua_pushcfunction(L, l_window_get_usable_bounds);
+    lua_setfield(L, -2, "getUsableBounds");
     
     lua_pushcfunction(L, l_window_get_fps);
     lua_setfield(L, -2, "getFps");

@@ -1,162 +1,179 @@
--- Smooth click-to-jump screenpet ball
--- Motion model: velocity steering (not forces). Feels snappy, no jitter.
+-- Small floating-window screenpet ball.
+-- The window follows the pet's desktop-space position every frame.
 
 function crayon.config(t)
-    -- t.window.transparent  = true
-    -- t.window.borderless   = true
-    t.window.clickThrough = false
-    t.window.resizable    = false
-    t.graphics.clearColor = {0, 0, 0, 0}
-    t.modules.mesh3D      = false
-    t.modules.physics3d   = false
-    t.modules.audio       = false
-    t.modules.particles   = false
+    t.window.transparent   = true
+    t.window.borderless    = true
+    t.window.clickThrough  = true    -- start fully click-through
+    t.window.resizable     = false
+    t.window.alwaysOnTop   = true
+    t.window.width         = 140
+    t.window.height        = 140
+    t.window.virtualWidth  = 140
+    t.window.virtualHeight = 140
+    t.graphics.clearColor  = {0, 0, 0, 0}
+    t.modules.mesh3D       = false
+    t.modules.audio        = false
+    t.modules.particles    = false
+    t.modules.physics3d    = false
+    t.modules.physics2d    = false    -- hand-rolled integration below
 end
 
--- Tunables
-local PET_RADIUS   = 26
-local GRAVITY_Y    = 100      -- m/s^2 (window y is down)
-local JUMP_VEL     = -1800    -- px/s upward
-local MAX_H_SPEED  = 700      -- px/s
-local CHASE_BLEND  = 8.0      -- how quickly velocity approaches target (1/s)
-local DEAD_ZONE    = 4        -- px -- don't jitter when nearly aligned
-local GROUND_TOL   = 250      -- |vy| below this = considered grounded
+-- ---- Tunables ----------------------------------------------------------
+local WIN_W, WIN_H   = 140, 140
+local PET_R          = 30
+local GRAVITY_Y      = 2400     -- px/s², +y is down
+local JUMP_VEL       = -1050    -- px/s (negative = up)
+local MAX_H_SPEED    = 700      -- px/s
+local CHASE_BLEND    = 6.0      -- 1/s, higher = snappier chase
+local RESTITUTION    = 0.5      -- bounciness off walls
+local GROUND_VY_TOL  = 60       -- |vy| below this when touching floor = resting
 
-local pet
-local W, H
+-- ---- State -------------------------------------------------------------
+local pet    = { x = 0, y = 0, vx = 0, vy = 0 }
+local bounds = { x0 = 0, y0 = 0, x1 = 0, y1 = 0 }
 
-function crayon.init()
-    local vx, vy, vw, vh = crayon.window.getVirtualDesktopBounds()
-    crayon.window.setPosition(vx, vy)
-    crayon.window.setWindowSize(vw, vh)
-    crayon.window.setResolution(vw, vh)
-    crayon.window.setScalingMode("center")
-    W, H = vw, vh
+local function sync_window()
+    crayon.window.setPosition(
+        math.floor(pet.x - WIN_W * 0.5),
+        math.floor(pet.y - WIN_H * 0.5))
+end
 
-    crayon.physics2d.setMeterScale(50)
-    crayon.physics2d.setGravity(0, GRAVITY_Y)
+local function cursor_global()
+    return crayon.mouse.getGlobalPosition()
+end
 
-    -- Static walls -- thicker than the ball so fast jumps can't tunnel
-    local t = 24
-    local walls = {
-        { -t, -t, vw + 2*t, t  },   -- top
-        { -t, vh, vw + 2*t, t  },   -- bottom
-        { -t, -t, t, vh + 2*t  },   -- left
-        { vw, -t, t, vh + 2*t  },   -- right
-    }
-    for _, w in ipairs(walls) do
-        local b = crayon.physics2d.createBody("static", w[1] + w[3]/2, w[2] + w[4]/2)
-        b:addBox(w[3], w[4])
+local function cursor_over_pet()
+    local gx, gy = cursor_global()
+    local dx, dy = gx - pet.x, gy - pet.y
+    local r = PET_R + 6
+    return (dx * dx + dy * dy) <= r * r
+end
+
+local function grounded()
+    return pet.y + PET_R >= bounds.y1 - 1.5 and math.abs(pet.vy) < GROUND_VY_TOL
+end
+
+-- ---- Integration -------------------------------------------------------
+local function integrate(dt)
+    -- Gravity
+    pet.vy = pet.vy + GRAVITY_Y * dt
+
+    -- Horizontal steering toward cursor (blended for smoothness)
+    local gx = cursor_global()
+    local dx = gx - pet.x
+    local target_vx = 0
+    if math.abs(dx) > 4 then
+        target_vx = math.max(-MAX_H_SPEED, math.min(MAX_H_SPEED, dx * 4))
     end
+    local blend = 1.0 - math.exp(-CHASE_BLEND * dt)
+    pet.vx = pet.vx + (target_vx - pet.vx) * blend
 
-    -- The ball
-    pet = crayon.physics2d.createBody("dynamic", vw/2, vh/2, {
-        fixedRotation = true,
-        linearDamping = 0.0,   -- we control velocity directly
-        gravityScale  = 1.0,
-        bullet        = true,  -- CCD, prevents tunneling on jumps
-        allowSleep    = false, -- always active so chase stays responsive
-    })
-    pet:addCircle(PET_RADIUS, 0, 0, 1.0, 0.0, 0.1)
+    -- Integrate positions
+    pet.x = pet.x + pet.vx * dt
+    pet.y = pet.y + pet.vy * dt
 
-    crayon.window.setClickThrough(true)
+    -- Wall collisions in desktop space
+    if pet.x - PET_R < bounds.x0 then
+        pet.x = bounds.x0 + PET_R
+        pet.vx = -pet.vx * RESTITUTION
+    end
+    if pet.x + PET_R > bounds.x1 then
+        pet.x = bounds.x1 - PET_R
+        pet.vx = -pet.vx * RESTITUTION
+    end
+    if pet.y - PET_R < bounds.y0 then
+        pet.y = bounds.y0 + PET_R
+        pet.vy = -pet.vy * RESTITUTION
+    end
+    if pet.y + PET_R > bounds.y1 then
+        pet.y = bounds.y1 - PET_R
+        if math.abs(pet.vy) < GROUND_VY_TOL then
+            pet.vy = 0
+        else
+            pet.vy = -pet.vy * RESTITUTION
+        end
+    end
 end
 
--- Cursor in window-local coords
-local function cursor_local()
-    local wx, wy = crayon.window.getPosition()
-    local gx, gy = crayon.mouse.getGlobalPosition()
-    return gx - wx, gy - wy
-end
+-- ---- Lifecycle ---------------------------------------------------------
+function crayon.init()
+    -- Window stays at the 140x140 size from config. Do NOT resize it.
 
-local function is_over_pet()
-    local px, py = pet:getPosition()
-    local tx, ty = cursor_local()
-    local dx, dy = tx - px, ty - py
-    local r = PET_RADIUS + 6
-    return (dx*dx + dy*dy) <= r*r
-end
+    -- Full desktop (includes taskbar area) -- only used for spawn point
+    local vx, vy, vw, vh = crayon.window.getVirtualDesktopBounds()
 
-local function is_grounded()
-    local _, vy = pet:getLinearVelocity()
-    return math.abs(vy) < GROUND_TOL
+    -- Usable area (excludes taskbar / dock / panels)
+    local ux, uy, uw, uh = crayon.window.getUsableBounds()
+
+    -- Physics bounds = usable area, not full desktop
+    bounds.x0, bounds.y0 = ux, uy
+    bounds.x1, bounds.y1 = ux + uw, uy + uh
+
+    -- Start the pet horizontally centered, a third down the screen
+    pet.x = ux + uw * 0.5
+    pet.y = uy + uh * 0.33
+
+    sync_window()
 end
 
 function crayon.update(dt)
-    local px = pet:getPosition()
-    local vx, vy = pet:getLinearVelocity()
-    local tx = cursor_local()
+    integrate(dt)
+    sync_window()
 
-    -- Horizontal steering: blend velocity toward target
-    local dx = tx - px
-    local target_vx = 0
-    if math.abs(dx) > DEAD_ZONE then
-        target_vx = math.max(-MAX_H_SPEED, math.min(MAX_H_SPEED, dx * 5))
-    end
-
-    -- frame-rate-independent blend
-    local blend = 1.0 - math.exp(-CHASE_BLEND * dt)
-    local nvx = vx + (target_vx - vx) * blend
-
-    -- Vertical velocity is untouched here -- gravity owns it,
-    -- and jumps are set once in mousedown. We pass current vy back.
-    pet:setLinearVelocity(nvx, vy)
-
-    -- Click-through management
-    crayon.window.setClickThrough(not is_over_pet())
+    -- Click-through only when cursor is off the pet
+    crayon.window.setClickThrough(not cursor_over_pet())
 end
 
 function crayon.mousedown(x, y, button)
     if button ~= 1 then return end
 
-    -- Was the click on the ball?
-    local px, py = pet:getPosition()
-    local dx, dy = x - px, y - py
-    local r = PET_RADIUS + 6
-    if (dx*dx + dy*dy) > r*r then return end
+    -- Convert window-local to desktop coords for the hit test
+    local wx, wy = crayon.window.getPosition()
+    local dx = (wx + x) - pet.x
+    local dy = (wy + y) - pet.y
+    if (dx * dx + dy * dy) > (PET_R + 6) ^ 2 then return end
 
-    -- Only jump when grounded
-    if not is_grounded() then return end
-
-    local vx = pet:getLinearVelocity()
-    pet:setLinearVelocity(vx, JUMP_VEL)
+    if not grounded() then return end
+    pet.vy = JUMP_VEL
 end
 
--- Bonus: space also jumps
 function crayon.keydown(key, is_repeat)
     if key ~= "space" or is_repeat then return end
-    if not is_grounded() then return end
-    local vx = pet:getLinearVelocity()
-    pet:setLinearVelocity(vx, JUMP_VEL)
+    if not grounded() then return end
+    pet.vy = JUMP_VEL
 end
 
+-- ---- Rendering ---------------------------------------------------------
 function crayon.draw()
-    local px, py = pet:getPosition()
+    -- Always draw the pet at the window's center
+    local cx = WIN_W * 0.5
+    local cy = WIN_H * 0.5
 
-    -- Outer soft glow
-    crayon.graphics.setColor(1.0, 0.45, 0.15, 0.12)
-    crayon.graphics.drawCircle("fill", px, py, PET_RADIUS + 12)
-    crayon.graphics.setColor(1.0, 0.45, 0.15, 0.22)
-    crayon.graphics.drawCircle("fill", px, py, PET_RADIUS + 5)
+    -- Soft outer glow
+    crayon.graphics.setColor(1.0, 0.45, 0.15, 0.10)
+    crayon.graphics.drawCircle("fill", cx, cy, PET_R + 14)
+    crayon.graphics.setColor(1.0, 0.45, 0.15, 0.20)
+    crayon.graphics.drawCircle("fill", cx, cy, PET_R + 6)
 
     -- Body
     crayon.graphics.setColor(1.0, 0.35, 0.15, 1.0)
-    crayon.graphics.drawCircle("fill", px, py, PET_RADIUS)
+    crayon.graphics.drawCircle("fill", cx, cy, PET_R)
 
-    -- Lighter inner disc for volume
+    -- Inner disc for shading
     crayon.graphics.setColor(1.0, 0.55, 0.30, 1.0)
-    crayon.graphics.drawCircle("fill", px - 4, py - 4, PET_RADIUS - 5)
+    crayon.graphics.drawCircle("fill", cx - 4, cy - 4, PET_R - 5)
 
     -- Specular highlight
     crayon.graphics.setColor(1.0, 0.95, 0.85, 0.9)
-    crayon.graphics.drawCircle("fill", px - 9, py - 10, 5)
+    crayon.graphics.drawCircle("fill", cx - 9, cy - 10, 5)
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-    crayon.graphics.drawCircle("fill", px - 9, py - 10, 2)
+    crayon.graphics.drawCircle("fill", cx - 9, cy - 10, 2)
 
-    -- Eyes track the cursor
-    local tx, ty = cursor_local()
-    local edx, edy = tx - px, ty - py
-    local elen = math.sqrt(edx*edx + edy*edy)
+    -- Eyes track the global cursor
+    local gx, gy = cursor_global()
+    local edx, edy = gx - pet.x, gy - pet.y
+    local elen = math.sqrt(edx * edx + edy * edy)
     local lx, ly = 0, 0
     if elen > 1 then
         lx = (edx / elen) * 3
@@ -166,11 +183,10 @@ function crayon.draw()
     local eye_dx = 7
     local eye_y  = -1
     crayon.graphics.setColor(0.05, 0.05, 0.10, 1.0)
-    crayon.graphics.drawCircle("fill", px - eye_dx + lx, py + eye_y + ly, 3)
-    crayon.graphics.drawCircle("fill", px + eye_dx + lx, py + eye_y + ly, 3)
+    crayon.graphics.drawCircle("fill", cx - eye_dx + lx, cy + eye_y + ly, 3)
+    crayon.graphics.drawCircle("fill", cx + eye_dx + lx, cy + eye_y + ly, 3)
 
-    -- Pupils catch light
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)
-    crayon.graphics.drawCircle("fill", px - eye_dx + lx - 1, py + eye_y + ly - 1, 1)
-    crayon.graphics.drawCircle("fill", px + eye_dx + lx - 1, py + eye_y + ly - 1, 1)
+    crayon.graphics.drawCircle("fill", cx - eye_dx + lx - 1, cy + eye_y + ly - 1, 1)
+    crayon.graphics.drawCircle("fill", cx + eye_dx + lx - 1, cy + eye_y + ly - 1, 1)
 end
