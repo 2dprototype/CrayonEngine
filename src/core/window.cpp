@@ -11,11 +11,12 @@ Window::~Window() {
     shutdown();
 }
 
-bool Window::init(const std::string& title, int window_w, int window_h, int virtual_w, int virtual_h) {
+bool Window::init(const std::string& title, int window_w, int window_h, int virtual_w, int virtual_h, bool transparent) {
     m_window_w = window_w;
     m_window_h = window_h;
     m_virtual_w = virtual_w;
     m_virtual_h = virtual_h;
+    m_transparent = transparent;
 
     if (!SDL_Init(SDL_INIT_VIDEO | SDL_INIT_GAMEPAD)) {
         CRAYON_LOG_ERROR("Failed to initialize SDL3: {}", SDL_GetError());
@@ -38,16 +39,30 @@ bool Window::init(const std::string& title, int window_w, int window_h, int virt
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, true);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, true);
+
+    // Transparency MUST be requested at creation time.
+    if (m_transparent) {
+        SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, true);
+    }
+
     m_window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
 
     if (!m_window) {
+        // Fallback path (properties call failed for some reason) — use flags.
         SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_RESIZABLE | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        if (m_transparent) {
+            flags |= SDL_WINDOW_TRANSPARENT;
+        }
         m_window = SDL_CreateWindow(title.c_str(), m_window_w, m_window_h, flags);
     }
     if (!m_window) {
         CRAYON_LOG_ERROR("Failed to create SDL3 window: {}", SDL_GetError());
         return false;
+    }
+
+    if (m_transparent) {
+        CRAYON_LOG_INFO("Window created with transparency enabled (screenpet mode)");
     }
 
     m_gl_context = SDL_GL_CreateContext(m_window);
@@ -275,14 +290,6 @@ bool Window::is_mouse_grabbed() const {
         return SDL_GetWindowMouseGrab(m_window);
     }
     return false;
-}
-
-void Window::set_transparent(bool transparent) {
-    m_transparent = transparent;
-    if (m_window) {
-        SDL_PropertiesID props = SDL_GetWindowProperties(m_window);
-        SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN, transparent);
-    }
 }
 
 void Window::set_scaling_mode(ScalingMode mode) {

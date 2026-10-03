@@ -259,12 +259,6 @@ static int l_window_is_mouse_grabbed(lua_State* L) {
     return 1;
 }
 
-static int l_window_set_transparent(lua_State* L) {
-    bool trans = lua_toboolean(L, 1);
-    Engine::get().get_window().set_transparent(trans);
-    return 0;
-}
-
 static int l_window_is_transparent(lua_State* L) {
     lua_pushboolean(L, Engine::get().get_window().is_transparent());
     return 1;
@@ -403,8 +397,6 @@ void register_window_bindings(lua_State* L) {
     lua_pushcfunction(L, l_window_is_mouse_grabbed);
     lua_setfield(L, -2, "isMouseGrabbed");
 
-    lua_pushcfunction(L, l_window_set_transparent);
-    lua_setfield(L, -2, "setTransparent");
     lua_pushcfunction(L, l_window_is_transparent);
     lua_setfield(L, -2, "isTransparent");
 

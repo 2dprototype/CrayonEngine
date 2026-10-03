@@ -54,7 +54,8 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
 
     // 4. Initialize Window with configured properties
     if (!m_window.init(m_config.window.title, m_config.window.width, m_config.window.height,
-                       m_config.window.virtual_width, m_config.window.virtual_height)) {
+                       m_config.window.virtual_width, m_config.window.virtual_height,
+                       m_config.window.transparent)) {
         CRAYON_LOG_ERROR("Engine failed to initialize Window");
         return false;
     }
@@ -62,7 +63,6 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
     m_window.set_resizable(m_config.window.resizable);
     m_window.set_fullscreen(m_config.window.fullscreen);
     m_window.set_vsync(m_config.window.vsync);
-    m_window.set_transparent(m_config.window.transparent);
     m_window.set_scaling_mode_string(m_config.window.scaling);
     m_window.set_bordered(!m_config.window.borderless);
     m_window.set_always_on_top(m_config.window.always_on_top);

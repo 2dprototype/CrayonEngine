@@ -25,7 +25,7 @@ public:
     Window();
     ~Window();
 
-    bool init(const std::string& title, int window_w, int window_h, int virtual_w, int virtual_h);
+    bool init(const std::string& title, int window_w, int window_h, int virtual_w, int virtual_h, bool transparent = false);
     void shutdown();
 
     // Virtual Resolution
@@ -82,7 +82,6 @@ public:
     void set_mouse_grab(bool grabbed);
     bool is_mouse_grabbed() const;
 
-    void set_transparent(bool transparent);
     bool is_transparent() const { return m_transparent; }
 
     // Scaling Modes
