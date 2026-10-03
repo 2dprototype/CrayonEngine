@@ -42,6 +42,7 @@ function crayon.config(t)
     t.modules.physics3d    = false
     t.modules.physics2d    = false
     t.window.opacity       = 1
+    t.window.notFocusable  = true
 end
 
 -- ---------------------------------------------------------------------------
@@ -388,7 +389,7 @@ local function update_body(dt)
     if dist > 4 then
         target_angle = atan2(dy, dx)
     else
-        local sp = math.sqrt(pet.vx * pet.vx + pet.vy * pet.vy)
+    local sp = math.sqrt(pet.vx * pet.vx + pet.vy * pet.vy)
         if sp > 8 then target_angle = atan2(pet.vy, pet.vx) end
     end
     local da = target_angle - pet.angle

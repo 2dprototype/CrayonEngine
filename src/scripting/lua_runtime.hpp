@@ -89,5 +89,6 @@ void register_physics2d_bindings(lua_State* L);
 void register_particle_bindings(lua_State* L);
 void register_math_bindings(lua_State* L);
 void register_fs_bindings(lua_State* L);
+void register_print_bindings(lua_State* L);
 
 } // namespace crayon

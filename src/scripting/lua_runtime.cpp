@@ -90,6 +90,7 @@ void LuaRuntime::register_modules(const ModulesConfig& modules) {
     register_graphics_bindings(m_L);
     register_time_bindings(m_L);
     register_math_bindings(m_L);
+    register_print_bindings(m_L);
 
     if (modules.input) {
         register_input_bindings(m_L);
@@ -482,7 +483,6 @@ bool LuaRuntime::load_script(const std::string& filepath) {
 
     lua_pop(m_L, 1); // pop error handler
 
-    call_init();
     return true;
 }
 

@@ -37,17 +37,25 @@ enum class LogLevel {
     Debug,
     Info,
     Warn,
-    Error
+    Error,
+    Raw        // output with no prefix; used by crayon.print()
 };
 
 using LogSinkFn = std::function<void(LogLevel, const std::string&)>;
 inline LogSinkFn s_log_sink = nullptr;
 inline std::mutex s_log_mutex;
+inline bool s_console_enabled = true;
 
 inline void set_log_sink(LogSinkFn sink) {
     std::lock_guard<std::mutex> lock(s_log_mutex);
     s_log_sink = sink;
 }
+
+// Global switch driven by `t.console` in crayon.config(). When false, log
+// output is still delivered to the sink (e.g. an in-game console) but is
+// not written to stdout.
+inline void set_console_enabled(bool enabled) { s_console_enabled = enabled; }
+inline bool is_console_enabled() { return s_console_enabled; }
 
 inline void log_message(LogLevel level, const std::string& message) {
     {
@@ -57,30 +65,32 @@ inline void log_message(LogLevel level, const std::string& message) {
         }
     }
 
+    if (!s_console_enabled) return;
+
 #ifdef _WIN32
     enable_windows_ansi();
 #endif
 
+    // Raw messages bypass prefix and colour entirely.
+    if (level == LogLevel::Raw) {
+        std::cout << message << '\n';
+        return;
+    }
+
     const char* prefix = "[INFO]";
-    const char* color = "\033[0m"; // Reset
+    const char* color = "\033[0m";
 
     switch (level) {
         case LogLevel::Debug:
-            prefix = "[DEBUG]";
-            color = "\033[36m"; // Cyan
-            break;
+            prefix = "[DEBUG]"; color = "\033[36m"; break;
         case LogLevel::Info:
-            prefix = "[INFO] ";
-            color = "\033[32m"; // Green
-            break;
+            prefix = "[INFO] "; color = "\033[32m"; break;
         case LogLevel::Warn:
-            prefix = "[WARN] ";
-            color = "\033[33m"; // Yellow
-            break;
+            prefix = "[WARN] "; color = "\033[33m"; break;
         case LogLevel::Error:
-            prefix = "[ERROR]";
-            color = "\033[31m"; // Red
-            break;
+            prefix = "[ERROR]"; color = "\033[31m"; break;
+        case LogLevel::Raw:
+            break; // unreachable — handled above
     }
 
     std::cout << color << prefix << " " << message << "\033[0m\n";

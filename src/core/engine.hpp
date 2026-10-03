@@ -35,6 +35,7 @@ public:
     void shutdown();
 
     void run();
+    void soft_restart();
 
     // Hot Reloading
     void request_hot_reload();
@@ -85,6 +86,16 @@ public:
 
 private:
     void render_frame();
+    
+    // --- Remembers CLI overrides so soft_restart() can re-apply them ---
+    int         m_cli_window_w  = 0;
+    int         m_cli_window_h  = 0;
+    int         m_cli_virtual_w = 0;
+    int         m_cli_virtual_h = 0;
+    std::string m_cli_title;
+
+    // --- Tracks whether MeshRenderer3D is currently initialized ---
+    bool m_mesh_renderer_initialized = false;
 
     EngineConfig m_config;
     Window m_window;

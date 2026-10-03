@@ -83,6 +83,7 @@ set(ENGINE_SOURCES
     src/scripting/bind_particles.cpp
     src/scripting/bind_math.cpp
     src/scripting/bind_fs.cpp
+    src/scripting/bind_print.cpp
 )
 
 set_source_files_properties(vendor/tinygltf/src/tiny_gltf_v3.c PROPERTIES

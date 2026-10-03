@@ -27,6 +27,13 @@ Engine::~Engine() {
 }
 
 bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, const std::string& title) {
+    // Remember CLI overrides for soft_restart()
+    m_cli_window_w  = window_w;
+    m_cli_window_h  = window_h;
+    m_cli_virtual_w = virtual_w;
+    m_cli_virtual_h = virtual_h;
+    m_cli_title     = title;
+
     // 1. Populate default configuration (only override if explicitly provided)
     if (!title.empty()) m_config.window.title = title;
     if (window_w > 0) m_config.window.width = window_w;
@@ -51,6 +58,9 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
             CRAYON_LOG_WARN("Game entry script not found: {}", m_game_script_path);
         }
     }
+    
+    // Apply the console flag from crayon.config() now that it's been read.
+    set_console_enabled(m_config.console);
 
     // 4. Initialize Window with ALL overlay flags set at creation time.
     //    This avoids the "opaque borderless-to-be" window flashing for one
@@ -110,11 +120,10 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
 
     // 6. Conditionally initialize MeshRenderer3D
     if (m_config.modules.mesh3d) {
-        if (!m_mesh_renderer.init()) {
-            CRAYON_LOG_ERROR("Engine failed to initialize MeshRenderer3D");
-            return false;
-        }
+        m_mesh_renderer.shutdown();
+        m_mesh_renderer_initialized = false;
     }
+    m_post_process_chain.shutdown();
 
     // 7. Initialize post-processing shader
     m_post_shader = std::make_unique<Shader>();
@@ -313,6 +322,204 @@ bool Engine::check_hot_reload() {
     return false;
 }
 
+void Engine::soft_restart() {
+    if (m_game_script_path.empty()) return;
+    if (!std::filesystem::exists(m_game_script_path)) {
+        CRAYON_LOG_WARN("soft_restart: script no longer exists: {}", m_game_script_path);
+        return;
+    }
+
+    CRAYON_LOG_INFO("Soft restart: reloading '{}'", m_game_script_path);
+
+    // ---------------------------------------------------------------
+    // 1. Snapshot old config so we can warn about non-reloadable fields.
+    // ---------------------------------------------------------------
+    const EngineConfig old_config = m_config;
+
+    // ---------------------------------------------------------------
+    // 2. Clear resource caches so edited textures/meshes/models reload.
+    // ---------------------------------------------------------------
+    m_texture_cache.clear();
+    m_texture_sizes.clear();
+    m_mesh_cache.clear();
+    m_model_cache.clear();
+
+    // ---------------------------------------------------------------
+    // 3. Tear down everything that owns runtime state.
+    //    Lua first (so user cleanup runs), then subsystems.
+    //    The SDL window + GL context stay alive.
+    // ---------------------------------------------------------------
+    if (m_lua_runtime) {
+        m_lua_runtime->shutdown();
+        m_lua_runtime.reset();
+    }
+
+    if (m_physics)   { m_physics->shutdown();   m_physics.reset();   }
+    if (m_physics2d) { m_physics2d->shutdown(); m_physics2d.reset(); }
+
+    // Audio: only shut down if it was actually running.
+    if (old_config.modules.audio) {
+        m_audio.shutdown();
+    }
+
+    m_physics_accumulator   = 0.0f;
+    m_physics2d_accumulator = 0.0f;
+
+    // ---------------------------------------------------------------
+    // 4. Reset config to defaults, re-apply CLI overrides, re-run
+    //    crayon.config() on a fresh Lua state.
+    // ---------------------------------------------------------------
+    m_config = EngineConfig{};
+
+    if (!m_cli_title.empty())    m_config.window.title          = m_cli_title;
+    if (m_cli_window_w  > 0)     m_config.window.width          = m_cli_window_w;
+    if (m_cli_window_h  > 0)     m_config.window.height         = m_cli_window_h;
+    if (m_cli_virtual_w > 0)     m_config.window.virtual_width  = m_cli_virtual_w;
+    if (m_cli_virtual_h > 0)     m_config.window.virtual_height = m_cli_virtual_h;
+
+    m_lua_runtime = std::make_unique<LuaRuntime>();
+    if (!m_lua_runtime->init()) {
+        CRAYON_LOG_ERROR("soft_restart: failed to re-create LuaRuntime");
+        return;
+    }
+
+    // run_config_phase loads AND executes the script chunk, then reads back t.*
+    if (!m_lua_runtime->run_config_phase(m_game_script_path, m_config)) {
+        CRAYON_LOG_ERROR("soft_restart: config phase failed — aborting");
+        return;
+    }
+    
+    // Apply the (possibly changed) console flag.
+    set_console_enabled(m_config.console);
+
+    // ---------------------------------------------------------------
+    // 5. Warn about fields that can only take effect on a full restart.
+    // ---------------------------------------------------------------
+    if (m_config.window.transparent != old_config.window.transparent) {
+        CRAYON_LOG_WARN("soft_restart: 'transparent' changed — requires full restart");
+    }
+    if (m_config.window.utility_window != old_config.window.utility_window) {
+        CRAYON_LOG_WARN("soft_restart: 'utilityWindow' changed — requires full restart");
+    }
+    if (m_config.window.skip_taskbar != old_config.window.skip_taskbar) {
+        CRAYON_LOG_WARN("soft_restart: 'skipTaskbar' changed — requires full restart");
+    }
+    if (m_config.window.not_focusable != old_config.window.not_focusable) {
+        CRAYON_LOG_WARN("soft_restart: 'notFocusable' changed — requires full restart");
+    }
+
+    // ---------------------------------------------------------------
+    // 6. Apply runtime-safe window settings.
+    // ---------------------------------------------------------------
+    if (m_config.window.virtual_width > 0 && m_config.window.virtual_height > 0) {
+        m_window.set_resolution(m_config.window.virtual_width,
+                                m_config.window.virtual_height);
+    }
+    if (m_config.window.width > 0 && m_config.window.height > 0) {
+        m_window.set_window_size(m_config.window.width, m_config.window.height);
+    }
+    m_window.set_scaling_mode_string(m_config.window.scaling);
+    m_window.set_title(m_config.window.title);
+    m_window.set_resizable(m_config.window.resizable);
+    m_window.set_bordered(!m_config.window.borderless);
+    m_window.set_always_on_top(m_config.window.always_on_top);
+    m_window.set_click_through(m_config.window.click_through);
+    m_window.set_skip_taskbar(m_config.window.skip_taskbar);
+    m_window.set_not_focusable(m_config.window.not_focusable);
+    m_window.set_opacity(m_config.window.opacity);
+
+    if (m_config.window.min_width > 1 || m_config.window.min_height > 1) {
+        m_window.set_window_min_size(m_config.window.min_width,
+                                     m_config.window.min_height);
+    }
+
+    // ---------------------------------------------------------------
+    // 7. Rebuild FBO + post-process chain for the (possibly new) virtual size.
+    // ---------------------------------------------------------------
+    m_fbo.shutdown();
+    if (!m_fbo.init(m_config.window.virtual_width, m_config.window.virtual_height)) {
+        CRAYON_LOG_ERROR("soft_restart: failed to re-init FBO");
+        return;
+    }
+
+    m_post_process_chain.shutdown();
+    if (!m_post_process_chain.init(m_config.window.virtual_width,
+                                   m_config.window.virtual_height)) {
+        CRAYON_LOG_ERROR("soft_restart: failed to re-init PostProcessChain");
+        return;
+    }
+
+    // ---------------------------------------------------------------
+    // 8. MeshRenderer3D: init if newly enabled, shutdown if newly disabled.
+    // ---------------------------------------------------------------
+    if (m_config.modules.mesh3d && !m_mesh_renderer_initialized) {
+        if (!m_mesh_renderer.init()) {
+            CRAYON_LOG_ERROR("soft_restart: failed to re-init MeshRenderer3D");
+            return;
+        }
+        m_mesh_renderer_initialized = true;
+    } else if (!m_config.modules.mesh3d && m_mesh_renderer_initialized) {
+        m_mesh_renderer.shutdown();
+        m_mesh_renderer_initialized = false;
+    }
+
+    // ---------------------------------------------------------------
+    // 9. Physics 3D / 2D / audio: rebuild per the new config.
+    // ---------------------------------------------------------------
+    if (m_config.modules.physics3d) {
+        m_physics = std::make_unique<PhysicsSystem>();
+        if (!m_physics->init()) {
+            CRAYON_LOG_ERROR("soft_restart: failed to re-init PhysicsSystem");
+            m_physics.reset();
+        }
+    }
+
+    if (m_config.modules.physics2d) {
+        m_physics2d = std::make_unique<Physics2DSystem>();
+        if (!m_physics2d->init()) {
+            CRAYON_LOG_ERROR("soft_restart: failed to re-init Physics2DSystem");
+            m_physics2d.reset();
+        }
+    }
+
+    if (m_config.modules.audio) {
+        if (!m_audio.init()) {
+            CRAYON_LOG_WARN("soft_restart: audio init failed (continuing without)");
+        }
+    }
+
+    // ---------------------------------------------------------------
+    // 10. Re-apply graphics config.
+    // ---------------------------------------------------------------
+    set_clear_color(m_config.graphics.clear_color.r,
+                    m_config.graphics.clear_color.g,
+                    m_config.graphics.clear_color.b,
+                    m_config.graphics.clear_color.a);
+
+    if (m_config.modules.mesh3d && m_mesh_renderer_initialized) {
+        auto retro = m_mesh_renderer.get_retro_effects();
+        retro.dither_enabled = m_config.graphics.dither;
+        retro.crt_scanlines  = m_config.graphics.crt;
+        retro.vignette       = m_config.graphics.vignette;
+        m_mesh_renderer.set_retro_effects(retro);
+    }
+
+    // ---------------------------------------------------------------
+    // 11. Register Lua modules for the new config, then run crayon.init().
+    //     (run_config_phase already executed the top-level chunk.)
+    // ---------------------------------------------------------------
+    m_lua_runtime->register_modules(m_config.modules);
+    m_lua_runtime->call_init();
+
+    // ---------------------------------------------------------------
+    // 12. Remember the new mtime and clear the pending flag.
+    // ---------------------------------------------------------------
+    m_last_script_write_time = std::filesystem::last_write_time(m_game_script_path);
+    m_hot_reload_requested   = false;
+
+    CRAYON_LOG_INFO("Soft restart complete");
+}
+
 void Engine::render_to_fbo() {
     // If virtual resolution was changed in Window, resize FBO
     int virt_w = m_window.get_virtual_width();
@@ -496,10 +703,10 @@ void Engine::run() {
             m_fps_timer = 0.0;
         }
 
-        // Hot Reload check
+        // Hot Reload check — full soft restart so config, caches,
+        // and subsystem state are all rebuilt.
         if (check_hot_reload()) {
-            CRAYON_LOG_INFO("Hot-reloading script: {}", m_game_script_path);
-            m_lua_runtime->reload_script(m_game_script_path);
+            soft_restart();
         }
 
         // Process Input and Window Events
