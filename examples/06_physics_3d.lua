@@ -20,7 +20,7 @@ function crayon.init()
     })
 
     -- Static floor: half-extents (15, 0.5, 15) centered at y = -0.5
-    floor = crayon.physics.createBox(0, -0.5, 0, 15, 0.5, 15, "static", 0.6, 0.2)
+    floor = crayon.physics3d.createBox(0, -0.5, 0, 15, 0.5, 15, "static", 0.6, 0.2)
 
     -- A few starter bodies
     spawn( 0.0, 5.0,  0.0)
@@ -29,7 +29,7 @@ function crayon.init()
 end
 
 function spawn(x, y, z)
-    local b = crayon.physics.createBox(x, y, z, 0.5, 0.5, 0.5, "dynamic", 0.5, 0.3, 800.0)
+    local b = crayon.physics3d.createBox(x, y, z, 0.5, 0.5, 0.5, "dynamic", 0.5, 0.3, 800.0)
     if b then table.insert(bodies, b) end
 end
 
