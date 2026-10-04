@@ -51,8 +51,8 @@ local function reset_game()
     dynamic_cubes = {}
 
     -- 1. Load glTF Level Model
-    level_model = crayon.graphics.loadModel("game/assets/models/cube_gltf/Cube.gltf")
-    prop_model  = crayon.graphics.loadModel("game/assets/models/box01.glb")
+    level_model = crayon.graphics.loadModel("../assets/models/cube_gltf/Cube.gltf")
+    prop_model  = crayon.graphics.loadModel("../assets/models/box01.glb")
 
     -- 2. Build Level from glTF using createMeshBody
     -- Platform 1: Main Arena (scaled glTF mesh collider)

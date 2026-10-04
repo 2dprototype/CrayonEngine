@@ -62,9 +62,9 @@ function crayon.init()
     cube_model  = crayon.graphics.loadModel("cube")
     plane_model = crayon.graphics.loadModel("plane")
 
-    tex_brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
-    tex_crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    tex_coin  = crayon.graphics.loadTexture("game/assets/textures/coin.bmp")
+    tex_brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
+    tex_crate = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    tex_coin  = crayon.graphics.loadTexture("../assets/textures/coin.bmp")
 
     crayon.graphics.setRetroEffects({
         jitterResolution = {160, 120},

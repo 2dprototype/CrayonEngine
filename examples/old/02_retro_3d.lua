@@ -19,8 +19,8 @@ function crayon.init()
     sphere_model = crayon.graphics.loadModel("sphere")
     cyl_model    = crayon.graphics.loadModel("cylinder")
 
-    crate_tex = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    brick_tex = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
+    crate_tex = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    brick_tex = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
 
     crayon.graphics.setRetroEffects({
         jitterResolution = {160, 120},

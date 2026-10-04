@@ -43,12 +43,15 @@ local cursor_timer = 0
 local cube_model = nil
 local rot_3D = 0.0
 
+function crayon.config(t)
+    t.window.transparent = true
+end
+
 function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("Crayon Engine - Desktop Screenpet & Input Showcase")
 
     -- Enable transparent window mode and always-on-top
-    crayon.window.setTransparent(is_transparent_mode)
     crayon.window.setOpacity(window_opacity)
     crayon.window.setAlwaysOnTop(always_on_top)
 

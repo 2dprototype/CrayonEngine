@@ -6,14 +6,14 @@
 local model_files = {
     { 
         name = "Box 01 (Binary GLB)", 
-        path = "game/assets/models/box01.glb", 
+        path = "../assets/models/box01.glb", 
         scale = 1.0, 
         y_offset = 0.0,
         desc = "Single-file binary glTF with embedded meshes & buffers"
     },
     { 
         name = "PBR Cube (glTF + Texture)", 
-        path = "game/assets/models/cube_gltf/Cube.gltf", 
+        path = "../assets/models/cube_gltf/Cube.gltf", 
         scale = 1.5, 
         y_offset = 0.0,
         desc = "glTF separate file structure (.gltf + .bin + PNG textures)"
@@ -125,9 +125,9 @@ function crayon.init()
     crayon.window.setTitle("18 - 3D glTF/GLB Inspector [TAB: Model, 1: Shading, 2: Texture, B: Bounds]")
 
     textures.none  = 0
-    textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
-    textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
+    textures.crate = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    textures.brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
+    textures.grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
     tex_list = {
         { name = "Default (glTF Mat)", id = 0 },
         { name = "Crate Override",    id = textures.crate },

@@ -26,9 +26,9 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("04 - 3D Billboards & Particles [Arrows: Orbit, Space: Burst]")
 
-    tex_coin  = crayon.graphics.loadTexture("game/assets/textures/coin.bmp")
-    tex_grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
-    tex_brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
+    tex_coin  = crayon.graphics.loadTexture("../assets/textures/coin.bmp")
+    tex_grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
+    tex_brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
 
     crayon.graphics.setRetroEffects({
         jitterResolution = {240, 160},

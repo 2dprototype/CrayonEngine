@@ -90,7 +90,7 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("09 - Custom Procedural Mesh [SPACE: Animate, 1: Tex]")
 
-    tex_grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
+    tex_grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
 
     crayon.graphics.setRetroEffects({
         jitterResolution = {240, 160},

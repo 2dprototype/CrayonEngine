@@ -162,8 +162,8 @@ function crayon.init()
     models.capsule  = crayon.graphics.loadModel("capsule")
     models.plane    = crayon.graphics.loadModel("plane")
 
-    textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
-    textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
+    textures.grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
+    textures.brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
 
     crayon.graphics.setRetroEffects({
         jitterResolution = {160, 120},

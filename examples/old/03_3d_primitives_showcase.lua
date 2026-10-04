@@ -85,10 +85,10 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("03 - 3D Primitives Gallery [1: Shading, 2: Textures]")
 
-    textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
-    textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
-    textures.coin  = crayon.graphics.loadTexture("game/assets/textures/coin.bmp")
+    textures.crate = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    textures.brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
+    textures.grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
+    textures.coin  = crayon.graphics.loadTexture("../assets/textures/coin.bmp")
 
     crayon.graphics.setRetroEffects({
         jitterResolution = {240, 160},

@@ -11,7 +11,7 @@ local particles = {}
 function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("Crayon Engine - 2D Primitives & Sprites")
-    tex_coin = crayon.graphics.loadTexture("game/assets/textures/coin.bmp")
+    tex_coin = crayon.graphics.loadTexture("../assets/textures/coin.bmp")
 
     -- Demonstrate Love2D-style texture userdata introspection methods
     local w, h = tex_coin:getSize()

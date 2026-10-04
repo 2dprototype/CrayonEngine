@@ -291,7 +291,7 @@ function crayon.draw()
         crayon.graphics.drawText("[M] Upper-Body Masking: " .. (upper_body_mask_enabled and "ENABLED" or "DISABLED"), 15, 95, 1)
         crayon.graphics.drawText("[SPACE] Toggle Ragdoll Physics Pose: " .. (physics_ragdoll_active and "ACTIVE" or "ANIMATED"), 15, 110, 1)
     else
-        crayon.graphics.drawText("Status: Procedural Animation Demo Mode (place rigged glTF in game/assets/models/)", 15, 50, 1)
+        crayon.graphics.drawText("Status: Procedural Animation Demo Mode (place rigged glTF in ../assets/models/)", 15, 50, 1)
     end
 
     crayon.graphics.drawText("[F1] Retro Shader Effects: " .. (retro_enabled and "ON" or "OFF"), 15, 130, 1)

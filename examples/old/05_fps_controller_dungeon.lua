@@ -80,9 +80,9 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("05 - FPS Dungeon [WASD: Move, Mouse: Look, M: Mouse Lock]")
 
-    textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
-    textures.coin  = crayon.graphics.loadTexture("game/assets/textures/coin.bmp")
+    textures.crate = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    textures.brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
+    textures.coin  = crayon.graphics.loadTexture("../assets/textures/coin.bmp")
 
     crayon.graphics.setRetroEffects({
         jitterResolution = {160, 120},

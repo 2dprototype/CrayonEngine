@@ -111,9 +111,9 @@ function crayon.init()
     -- 2. Load Soldier.glb Character Model
     local model_paths = {
         "models/Soldier.glb",
-        "game/assets/models/Soldier.glb",
-        "game/assets/models/character.glb",
-        "game/assets/models/box01.glb"
+        "../assets/models/Soldier.glb",
+        "../assets/models/character.glb",
+        "../assets/models/box01.glb"
     }
 
     for _, p in ipairs(model_paths) do

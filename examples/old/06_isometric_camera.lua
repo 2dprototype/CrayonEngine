@@ -32,9 +32,9 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("06 - Isometric Ortho 3D [Arrows: Move Cursor, SPACE: Build, Q/E: Rotate]")
 
-    textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
-    textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
+    textures.crate = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    textures.brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
+    textures.grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
 
     crayon.graphics.setRetroEffects({
         jitterResolution = {240, 160},

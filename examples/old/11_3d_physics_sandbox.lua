@@ -88,8 +88,8 @@ function crayon.init()
     models.sphere = crayon.graphics.loadModel("sphere")
     models.plane  = crayon.graphics.loadModel("plane")
 
-    textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
+    textures.crate = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    textures.grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
 
     -- Introspection test
     local cw, ch = textures.crate:getSize()

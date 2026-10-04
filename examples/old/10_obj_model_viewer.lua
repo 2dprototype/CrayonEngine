@@ -4,9 +4,9 @@
 -- ============================================================================
 
 local model_files = {
-    { name = "Suzanne (Monkey)", path = "game/assets/models/monkey.obj", scale = 1.0, y_offset = 0.0 },
-    { name = "Cube (OBJ)",        path = "game/assets/models/cube.obj",   scale = 1.0, y_offset = 0.0 },
-    { name = "Model",             path = "game/assets/models/model.obj",  scale = 1.0, y_offset = 0.0 }
+    { name = "Suzanne (Monkey)", path = "../assets/models/monkey.obj", scale = 1.0, y_offset = 0.0 },
+    { name = "Cube (OBJ)",        path = "../assets/models/cube.obj",   scale = 1.0, y_offset = 0.0 },
+    { name = "Model",             path = "../assets/models/model.obj",  scale = 1.0, y_offset = 0.0 }
 }
 
 local loaded_models = {}
@@ -37,9 +37,9 @@ function crayon.init()
 
     -- Load textures
     textures.none  = 0
-    textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
-    textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
+    textures.crate = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    textures.brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
+    textures.grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
     tex_list = {
         { name = "None (Color)", id = 0 },
         { name = "Crate", id = textures.crate },

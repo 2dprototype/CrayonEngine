@@ -23,9 +23,9 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("07 - Retro Shader Controls [1-7: Toggle Effects]")
 
-    textures.crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    textures.brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
-    textures.grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
+    textures.crate = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    textures.brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
+    textures.grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
 
     crayon.graphics.setLight(
         -0.5, -0.9, -0.4,
