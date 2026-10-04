@@ -32,8 +32,8 @@ function crayon.config(t)
     t.modules.mesh3D       = false
     t.modules.audio        = false
     t.modules.particles    = false
-    t.modules.physics3d    = false
-    t.modules.physics2d    = false
+    t.modules.physics3D    = false
+    t.modules.physics2D    = false
     t.window.opacity       = 1
 end
 

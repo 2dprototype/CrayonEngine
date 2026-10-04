@@ -95,7 +95,9 @@ void LuaRuntime::register_modules(const ModulesConfig& modules) {
     if (modules.input) {
         register_input_bindings(m_L);
     } else {
-        register_disabled_stub(m_L, "input");
+        register_disabled_stub(m_L, "key");
+        register_disabled_stub(m_L, "mouse");
+        register_disabled_stub(m_L, "gamepad");
     }
 
     if (modules.audio) {
@@ -107,20 +109,19 @@ void LuaRuntime::register_modules(const ModulesConfig& modules) {
     if (modules.physics3d) {
         register_physics3d_bindings(m_L);
     } else {
-        register_disabled_stub(m_L, "physics");
-        register_disabled_stub(m_L, "physics3d");
+        register_disabled_stub(m_L, "physics3D");
     }
 
     if (modules.physics2d) {
         register_physics2d_bindings(m_L);
     } else {
-        register_disabled_stub(m_L, "physics2d");
+        register_disabled_stub(m_L, "physics2D");
     }
 
     if (modules.particles) {
         register_particle_bindings(m_L);
     } else {
-        register_disabled_stub(m_L, "particle");
+        register_disabled_stub(m_L, "particles");
     }
 
     if (modules.fs) {
@@ -195,9 +196,9 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     // t.modules (camelCase)
     lua_newtable(m_L);
     lua_pushboolean(m_L, config.modules.physics3d);
-    lua_setfield(m_L, -2, "physics3d");
+    lua_setfield(m_L, -2, "physics3D");
     lua_pushboolean(m_L, config.modules.physics2d);
-    lua_setfield(m_L, -2, "physics2d");
+    lua_setfield(m_L, -2, "physics2D");
     lua_pushboolean(m_L, config.modules.audio);
     lua_setfield(m_L, -2, "audio");
     lua_pushboolean(m_L, config.modules.mesh3d);
@@ -254,11 +255,13 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
         lua_getfield(m_L, -1, "config");
         if (lua_isfunction(m_L, -1)) {
             has_config = true;
+            lua_remove(m_L, -2);   // pop crayon, leaving config_func on top
         } else {
-            lua_pop(m_L, 1);
+            lua_pop(m_L, 2);       // pop non-function "config" and the crayon table
         }
+    } else {
+        lua_pop(m_L, 1);           // crayon wasn't a table (defensive)
     }
-    lua_remove(m_L, -2); // remove crayon table, leaving function (if found) at top
 
     if (has_config) {
         // Stack: err_func, table t, config_func
@@ -376,11 +379,11 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     // Read t.modules (strict camelCase)
     lua_getfield(m_L, -1, "modules");
     if (lua_istable(m_L, -1)) {
-        lua_getfield(m_L, -1, "physics3d");
+        lua_getfield(m_L, -1, "physics3D");
         if (lua_isboolean(m_L, -1)) config.modules.physics3d = lua_toboolean(m_L, -1);
         lua_pop(m_L, 1);
 
-        lua_getfield(m_L, -1, "physics2d");
+        lua_getfield(m_L, -1, "physics2D");
         if (lua_isboolean(m_L, -1)) config.modules.physics2d = lua_toboolean(m_L, -1);
         lua_pop(m_L, 1);
 
@@ -599,18 +602,12 @@ static bool get_crayon_func(lua_State* L, const char* name) {
 void LuaRuntime::call_key_down(const std::string& key, bool is_repeat) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    const char* func_name = nullptr;
     if (get_crayon_func(m_L, "keydown")) {
-        func_name = "crayon.keydown";
-    } else if (get_crayon_func(m_L, "keypressed")) {
-        func_name = "crayon.keypressed";
-    }
-    if (func_name) {
         lua_pushstring(m_L, key.c_str());
         lua_pushboolean(m_L, is_repeat);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in {}():\n{}", func_name, err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.keydown():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -620,17 +617,11 @@ void LuaRuntime::call_key_down(const std::string& key, bool is_repeat) {
 void LuaRuntime::call_key_up(const std::string& key) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    const char* func_name = nullptr;
     if (get_crayon_func(m_L, "keyup")) {
-        func_name = "crayon.keyup";
-    } else if (get_crayon_func(m_L, "keyreleased")) {
-        func_name = "crayon.keyreleased";
-    }
-    if (func_name) {
         lua_pushstring(m_L, key.c_str());
         if (lua_pcall(m_L, 1, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in {}():\n{}", func_name, err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.keyup():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -640,21 +631,15 @@ void LuaRuntime::call_key_up(const std::string& key) {
 void LuaRuntime::call_mouse_down(float x, float y, int button) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    const char* func_name = nullptr;
     if (get_crayon_func(m_L, "mousedown")) {
-        func_name = "crayon.mousedown";
-    } else if (get_crayon_func(m_L, "mousepressed")) {
-        func_name = "crayon.mousepressed";
-    }
-    if (func_name) {
         lua_pushnumber(m_L, x);
         lua_pushnumber(m_L, y);
         lua_pushinteger(m_L, button);
         if (lua_pcall(m_L, 3, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in {}():\n{}", func_name, err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.mousedown():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
-            }
+        }
     }
     lua_pop(m_L, 1);
 }
@@ -662,19 +647,13 @@ void LuaRuntime::call_mouse_down(float x, float y, int button) {
 void LuaRuntime::call_mouse_up(float x, float y, int button) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    const char* func_name = nullptr;
     if (get_crayon_func(m_L, "mouseup")) {
-        func_name = "crayon.mouseup";
-    } else if (get_crayon_func(m_L, "mousereleased")) {
-        func_name = "crayon.mousereleased";
-    }
-    if (func_name) {
         lua_pushnumber(m_L, x);
         lua_pushnumber(m_L, y);
         lua_pushinteger(m_L, button);
         if (lua_pcall(m_L, 3, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in {}():\n{}", func_name, err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.mouseup():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -730,17 +709,11 @@ void LuaRuntime::call_text_input(const std::string& text) {
 void LuaRuntime::call_gamepad_down(int button) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    const char* func_name = nullptr;
     if (get_crayon_func(m_L, "gamepaddown")) {
-        func_name = "crayon.gamepaddown";
-    } else if (get_crayon_func(m_L, "gamepadpressed")) {
-        func_name = "crayon.gamepadpressed";
-    }
-    if (func_name) {
         lua_pushinteger(m_L, button);
         if (lua_pcall(m_L, 1, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in {}():\n{}", func_name, err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.gamepaddown():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -750,17 +723,11 @@ void LuaRuntime::call_gamepad_down(int button) {
 void LuaRuntime::call_gamepad_up(int button) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    const char* func_name = nullptr;
     if (get_crayon_func(m_L, "gamepadup")) {
-        func_name = "crayon.gamepadup";
-    } else if (get_crayon_func(m_L, "gamepadreleased")) {
-        func_name = "crayon.gamepadreleased";
-    }
-    if (func_name) {
         lua_pushinteger(m_L, button);
         if (lua_pcall(m_L, 1, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in {}():\n{}", func_name, err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.gamepadup():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -785,7 +752,7 @@ void LuaRuntime::call_gamepad_axis(int axis, float value) {
 void LuaRuntime::call_window_resized(int w, int h) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "windowResized") || get_crayon_func(m_L, "resize")) {
+    if (get_crayon_func(m_L, "windowResized")) {
         lua_pushinteger(m_L, w);
         lua_pushinteger(m_L, h);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
@@ -800,7 +767,7 @@ void LuaRuntime::call_window_resized(int w, int h) {
 void LuaRuntime::call_focus_changed(bool focused) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "focusChanged") || get_crayon_func(m_L, "focus")) {
+    if (get_crayon_func(m_L, "focusChanged")) {
         lua_pushboolean(m_L, focused);
         if (lua_pcall(m_L, 1, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
@@ -827,7 +794,7 @@ void LuaRuntime::call_quit() {
 void LuaRuntime::call_collision_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float nz, float impulse) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "onCollisionEnter") || get_crayon_func(m_L, "collisionEnter")) {
+    if (get_crayon_func(m_L, "onCollisionEnter")) {
         lua_pushinteger(m_L, body_a);
         lua_pushinteger(m_L, body_b);
         lua_pushnumber(m_L, nx);
@@ -846,7 +813,7 @@ void LuaRuntime::call_collision_enter(uint32_t body_a, uint32_t body_b, float nx
 void LuaRuntime::call_collision_exit(uint32_t body_a, uint32_t body_b) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "onCollisionExit") || get_crayon_func(m_L, "collisionExit")) {
+    if (get_crayon_func(m_L, "onCollisionExit")) {
         lua_pushinteger(m_L, body_a);
         lua_pushinteger(m_L, body_b);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
@@ -861,7 +828,7 @@ void LuaRuntime::call_collision_exit(uint32_t body_a, uint32_t body_b) {
 void LuaRuntime::call_trigger_enter(uint32_t sensor_id, uint32_t other_body_id) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "onTriggerEnter") || get_crayon_func(m_L, "triggerEnter")) {
+    if (get_crayon_func(m_L, "onTriggerEnter")) {
         lua_pushinteger(m_L, sensor_id);
         lua_pushinteger(m_L, other_body_id);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
@@ -876,7 +843,7 @@ void LuaRuntime::call_trigger_enter(uint32_t sensor_id, uint32_t other_body_id) 
 void LuaRuntime::call_trigger_exit(uint32_t sensor_id, uint32_t other_body_id) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "onTriggerExit") || get_crayon_func(m_L, "triggerExit")) {
+    if (get_crayon_func(m_L, "onTriggerExit")) {
         lua_pushinteger(m_L, sensor_id);
         lua_pushinteger(m_L, other_body_id);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
@@ -891,7 +858,7 @@ void LuaRuntime::call_trigger_exit(uint32_t sensor_id, uint32_t other_body_id) {
 void LuaRuntime::call_collision2d_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float impulse) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "collision2dEnter") || get_crayon_func(m_L, "onCollision2dEnter")) {
+    if (get_crayon_func(m_L, "onCollision2DEnter")) {
         lua_pushinteger(m_L, body_a);
         lua_pushinteger(m_L, body_b);
         lua_pushnumber(m_L, nx);
@@ -899,7 +866,7 @@ void LuaRuntime::call_collision2d_enter(uint32_t body_a, uint32_t body_b, float 
         lua_pushnumber(m_L, impulse);
         if (lua_pcall(m_L, 5, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.collision2dEnter():\n{}", err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.onCollision2DEnter():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -909,12 +876,12 @@ void LuaRuntime::call_collision2d_enter(uint32_t body_a, uint32_t body_b, float 
 void LuaRuntime::call_collision2d_exit(uint32_t body_a, uint32_t body_b) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "collision2dExit") || get_crayon_func(m_L, "onCollision2dExit")) {
+    if (get_crayon_func(m_L, "onCollision2DExit")) {
         lua_pushinteger(m_L, body_a);
         lua_pushinteger(m_L, body_b);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.collision2dExit():\n{}", err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.onCollision2DExit():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -924,12 +891,12 @@ void LuaRuntime::call_collision2d_exit(uint32_t body_a, uint32_t body_b) {
 void LuaRuntime::call_trigger2d_enter(uint32_t sensor_id, uint32_t other_body_id) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "trigger2dEnter") || get_crayon_func(m_L, "onTrigger2dEnter")) {
+    if (get_crayon_func(m_L, "onTrigger2DEnter")) {
         lua_pushinteger(m_L, sensor_id);
         lua_pushinteger(m_L, other_body_id);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.trigger2dEnter():\n{}", err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.onTrigger2DEnter():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -939,33 +906,27 @@ void LuaRuntime::call_trigger2d_enter(uint32_t sensor_id, uint32_t other_body_id
 void LuaRuntime::call_trigger2d_exit(uint32_t sensor_id, uint32_t other_body_id) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "trigger2dExit") || get_crayon_func(m_L, "onTrigger2dExit")) {
+    if (get_crayon_func(m_L, "onTrigger2DExit")) {
         lua_pushinteger(m_L, sensor_id);
         lua_pushinteger(m_L, other_body_id);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.trigger2dExit():\n{}", err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.onTrigger2DExit():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
     lua_pop(m_L, 1);
 }
 
-// ============================================================================
-// Drag & Drop Callbacks
-// ============================================================================
-
 void LuaRuntime::call_drop_begin(float x, float y) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "dropbegin")
-     || get_crayon_func(m_L, "dropBegin")
-     || get_crayon_func(m_L, "dropenter")) {
+    if (get_crayon_func(m_L, "dropBegin")) {
         lua_pushnumber(m_L, x);
         lua_pushnumber(m_L, y);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.dropbegin():\n{}", err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.dropBegin():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -975,16 +936,13 @@ void LuaRuntime::call_drop_begin(float x, float y) {
 void LuaRuntime::call_drop_file(const std::string& path, float x, float y) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "dropfile")
-     || get_crayon_func(m_L, "dropFile")
-     || get_crayon_func(m_L, "filedropped")
-     || get_crayon_func(m_L, "fileDropped")) {
+    if (get_crayon_func(m_L, "dropFile")) {
         lua_pushstring(m_L, path.c_str());
         lua_pushnumber(m_L, x);
         lua_pushnumber(m_L, y);
         if (lua_pcall(m_L, 3, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.dropfile():\n{}", err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.dropFile():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -994,14 +952,13 @@ void LuaRuntime::call_drop_file(const std::string& path, float x, float y) {
 void LuaRuntime::call_drop_text(const std::string& text, float x, float y) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "droptext")
-     || get_crayon_func(m_L, "dropText")) {
+    if (get_crayon_func(m_L, "dropText")) {
         lua_pushstring(m_L, text.c_str());
         lua_pushnumber(m_L, x);
         lua_pushnumber(m_L, y);
         if (lua_pcall(m_L, 3, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.droptext():\n{}", err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.dropText():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -1011,14 +968,12 @@ void LuaRuntime::call_drop_text(const std::string& text, float x, float y) {
 void LuaRuntime::call_drop_position(float x, float y) {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "dropposition")
-     || get_crayon_func(m_L, "dropPosition")
-     || get_crayon_func(m_L, "dropmove")) {
+    if (get_crayon_func(m_L, "dropPosition")) {
         lua_pushnumber(m_L, x);
         lua_pushnumber(m_L, y);
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.dropposition():\n{}", err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.dropPosition():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }
@@ -1028,12 +983,10 @@ void LuaRuntime::call_drop_position(float x, float y) {
 void LuaRuntime::call_drop_complete() {
     if (!m_L) return;
     int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "dropcomplete")
-     || get_crayon_func(m_L, "dropComplete")
-     || get_crayon_func(m_L, "dropleave")) {
+    if (get_crayon_func(m_L, "dropComplete")) {
         if (lua_pcall(m_L, 0, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.dropcomplete():\n{}", err ? err : "unknown error");
+            CRAYON_LOG_ERROR("Error in crayon.dropComplete():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }

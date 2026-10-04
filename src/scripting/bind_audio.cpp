@@ -217,7 +217,7 @@ void register_audio_bindings(lua_State* L) {
     lua_setfield(L, -2, "playSound");
 
     lua_pushcfunction(L, l_audio_play_sound_3d);
-    lua_setfield(L, -2, "playSound3d");
+    lua_setfield(L, -2, "playSound3D");
 
     lua_pushcfunction(L, l_audio_stop_sound);
     lua_setfield(L, -2, "stopSound");

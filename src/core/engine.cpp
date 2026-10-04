@@ -120,10 +120,12 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
 
     // 6. Conditionally initialize MeshRenderer3D
     if (m_config.modules.mesh3d) {
-        m_mesh_renderer.shutdown();
-        m_mesh_renderer_initialized = false;
+        if (!m_mesh_renderer.init()) {
+            CRAYON_LOG_ERROR("Engine failed to initialize MeshRenderer3D");
+            return false;
+        }
+        m_mesh_renderer_initialized = true;
     }
-    m_post_process_chain.shutdown();
 
     // 7. Initialize post-processing shader
     m_post_shader = std::make_unique<Shader>();

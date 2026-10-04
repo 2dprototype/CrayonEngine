@@ -21,7 +21,7 @@ function crayon.config(c)
 
     -- 2D-only game: disable expensive modules
     c.modules.physics   = false
-    c.modules.physics2d = false
+    c.modules.physics2D = false
     c.modules.mesh3D    = false
     c.modules.audio     = false
 
@@ -688,8 +688,8 @@ function crayon.draw()
         sy = (math.random() - 0.5) * shake
     end
 
-    crayon.graphics.pushMatrix2d()
-    crayon.graphics.translate2d(sx, sy)
+    crayon.graphics.pushMatrix2D()
+    crayon.graphics.translate2D(sx, sy)
 
     -- Background gradient
     crayon.graphics.drawGradientV(0, 0, VW, VH,
@@ -718,7 +718,7 @@ function crayon.draw()
     -- Glitch overlays live in world space so they shake with the camera
     draw_glitch_world()
 
-    crayon.graphics.popMatrix2d()
+    crayon.graphics.popMatrix2D()
 
     -- Blood on the "lens" — screen space, unshaken
     draw_blood_drips()

@@ -3757,7 +3757,7 @@ void register_graphics_bindings(lua_State* L) {
 
     // Camera & Lighting
     lua_pushcfunction(L, l_graphics_set_camera3d);
-    lua_setfield(L, -2, "setCamera3d");
+    lua_setfield(L, -2, "setCamera3D");
 
     lua_pushcfunction(L, l_graphics_get_camera_ray);
     lua_setfield(L, -2, "getCameraRay");
@@ -3849,19 +3849,19 @@ void register_graphics_bindings(lua_State* L) {
     lua_setfield(L, -2, "drawBillboard");
 
     lua_pushcfunction(L, l_graphics_draw_line_3d);
-    lua_setfield(L, -2, "drawLine3d");
+    lua_setfield(L, -2, "drawLine3D");
 
     lua_pushcfunction(L, l_graphics_draw_lines_3d);
-    lua_setfield(L, -2, "drawLines3d");
+    lua_setfield(L, -2, "drawLines3D");
 
     lua_pushcfunction(L, l_graphics_draw_grid_3d);
-    lua_setfield(L, -2, "drawGrid3d");
+    lua_setfield(L, -2, "drawGrid3D");
 
     lua_pushcfunction(L, l_graphics_draw_triangle_3d);
-    lua_setfield(L, -2, "drawTriangle3d");
+    lua_setfield(L, -2, "drawTriangle3D");
 
     lua_pushcfunction(L, l_graphics_draw_quad_3d);
-    lua_setfield(L, -2, "drawQuad3d");
+    lua_setfield(L, -2, "drawQuad3D");
 
     // 2D Rendering
     lua_pushcfunction(L, l_graphics_draw_sprite);
@@ -3874,7 +3874,7 @@ void register_graphics_bindings(lua_State* L) {
     lua_setfield(L, -2, "drawSpriteTiled");
 
     lua_pushcfunction(L, l_graphics_draw_sprite_9slice);
-    lua_setfield(L, -2, "drawSprite9slice");
+    lua_setfield(L, -2, "drawSprite9Slice");
 
     lua_pushcfunction(L, l_graphics_draw_point);
     lua_setfield(L, -2, "drawPoint");
@@ -3928,10 +3928,10 @@ void register_graphics_bindings(lua_State* L) {
     lua_setfield(L, -2, "resetScissor");
 
     lua_pushcfunction(L, l_graphics_set_camera2d);
-    lua_setfield(L, -2, "setCamera2d");
+    lua_setfield(L, -2, "setCamera2D");
 
     lua_pushcfunction(L, l_graphics_reset_camera2d);
-    lua_setfield(L, -2, "resetCamera2d");
+    lua_setfield(L, -2, "resetCamera2D");
 
     // Transform Stack
     lua_pushcfunction(L, l_graphics_push_matrix);
@@ -3951,19 +3951,19 @@ void register_graphics_bindings(lua_State* L) {
 
     // 2D Matrix Stack
     lua_pushcfunction(L, l_graphics_push_matrix_2d);
-    lua_setfield(L, -2, "pushMatrix2d");
+    lua_setfield(L, -2, "pushMatrix2D");
     
     lua_pushcfunction(L, l_graphics_pop_matrix_2d);
-    lua_setfield(L, -2, "popMatrix2d");
+    lua_setfield(L, -2, "popMatrix2D");
 
     lua_pushcfunction(L, l_graphics_translate_2d);
-    lua_setfield(L, -2, "translate2d");
+    lua_setfield(L, -2, "translate2D");
 
     lua_pushcfunction(L, l_graphics_rotate_2d);
-    lua_setfield(L, -2, "rotate2d");
+    lua_setfield(L, -2, "rotate2D");
 
     lua_pushcfunction(L, l_graphics_scale_2d);
-    lua_setfield(L, -2, "scale2d");
+    lua_setfield(L, -2, "scale2D");
 
     // Scissor Stack
     lua_pushcfunction(L, l_graphics_push_scissor);
@@ -4002,7 +4002,7 @@ void register_graphics_bindings(lua_State* L) {
     lua_setfield(L, -2, "drawBillboardRot");
 
     lua_pushcfunction(L, l_graphics_draw_axes_3d);
-    lua_setfield(L, -2, "drawAxes3d");
+    lua_setfield(L, -2, "drawAxes3D");
 
     lua_pushcfunction(L, l_graphics_draw_cube_wires);
     lua_setfield(L, -2, "drawCubeWires");
@@ -4014,7 +4014,7 @@ void register_graphics_bindings(lua_State* L) {
     lua_setfield(L, -2, "drawCylinderWires");
 
     lua_pushcfunction(L, l_graphics_draw_ray_3d);
-    lua_setfield(L, -2, "drawRay3d");
+    lua_setfield(L, -2, "drawRay3D");
 
     lua_pushcfunction(L, l_graphics_draw_skeleton);
     lua_setfield(L, -2, "drawSkeleton");
@@ -4030,7 +4030,7 @@ void register_graphics_bindings(lua_State* L) {
 
     // Camera2D Object
     lua_pushcfunction(L, l_graphics_new_camera2d);
-    lua_setfield(L, -2, "newCamera2d");
+    lua_setfield(L, -2, "newCamera2D");
 
     // Post-Process Chain
     lua_pushcfunction(L, l_graphics_push_effect);

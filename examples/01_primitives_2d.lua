@@ -63,11 +63,11 @@ function crayon.draw()
     crayon.graphics.drawPolygon("fill", hexPoints)
 
     -- 6. Matrix Transformation Stack: Rotating Star / Cross
-    --    For 2D we must use the *2d variants.
-    crayon.graphics.pushMatrix2d()
-    crayon.graphics.translate2d(320, 280)
-    crayon.graphics.rotate2d(rotationAngle)
-    crayon.graphics.scale2d(pulseScale, pulseScale)
+    --    For 2D we must use the *2D variants.
+    crayon.graphics.pushMatrix2D()
+    crayon.graphics.translate2D(320, 280)
+    crayon.graphics.rotate2D(rotationAngle)
+    crayon.graphics.scale2D(pulseScale, pulseScale)
 
     -- Center core
     crayon.graphics.setColor(1.0, 0.4, 0.2, 0.9)
@@ -75,14 +75,14 @@ function crayon.draw()
 
     -- 4 Petals
     for i = 0, 3 do
-        crayon.graphics.pushMatrix2d()
-        crayon.graphics.rotate2d(i * 90)
+        crayon.graphics.pushMatrix2D()
+        crayon.graphics.rotate2D(i * 90)
         crayon.graphics.setColor(0.2, 0.8, 1.0, 0.8)
         crayon.graphics.drawTriangle("fill", -20, -40, 0, -85, 20, -40)
-        crayon.graphics.popMatrix2d()
+        crayon.graphics.popMatrix2D()
     end
 
-    crayon.graphics.popMatrix2d()
+    crayon.graphics.popMatrix2D()
 
     -- 7. Informational Overlay
     crayon.graphics.setColor(1.0, 1.0, 1.0, 1.0)

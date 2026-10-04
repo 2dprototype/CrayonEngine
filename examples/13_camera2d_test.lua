@@ -7,7 +7,7 @@ function crayon.config(config)
     config.window.height = 240
     config.window.virtualWidth = 320
     config.window.virtualHeight = 240
-    config.modules.physics3d = false
+    config.modules.physics3D = false
     config.modules.mesh3D = false
 end
 
@@ -24,7 +24,7 @@ local worldWidth = 800
 local worldHeight = 600
 
 function crayon.init()
-    cam = crayon.graphics.newCamera2d(player.x, player.y, 1.0)
+    cam = crayon.graphics.newCamera2D(player.x, player.y, 1.0)
     cam:setTarget(player.x, player.y)
     cam:setBounds(0, 0, worldWidth, worldHeight)
     cam:setDeadzone(40, 30)
@@ -109,7 +109,7 @@ function crayon.draw()
     crayon.graphics.drawRect("fill", player.x - player.w * 0.5, player.y - player.h * 0.5, player.w, player.h)
 
     -- Reset camera transform for UI overlay
-    crayon.graphics.resetCamera2d()
+    crayon.graphics.resetCamera2D()
 
     -- HUD Overlay
     local cx, cy = cam:getPosition()

@@ -20,7 +20,7 @@ function crayon.config(c)
     c.window.scaling = "integer"
 
     c.modules.physics   = false
-    c.modules.physics2d = false
+    c.modules.physics2D = false
     c.modules.mesh3D    = true      -- REQUIRED: we render the world in 3D
     c.modules.audio     = false
     c.modules.particles = false
@@ -621,7 +621,7 @@ local function draw_portal()
         local r0 = 0.35
         local r1 = 0.85
         crayon.graphics.setColor(0.7, 0.1, 0.1, 0.6)
-        crayon.graphics.drawLine3d(
+        crayon.graphics.drawLine3D(
             px + math.cos(ang) * r0, eyeY + math.sin(ang) * r0, pz - 0.55,
             px + math.cos(ang) * r1, eyeY + math.sin(ang) * r1, pz - 0.55
         )
@@ -664,7 +664,7 @@ local function draw_portal()
             -- color fades redder as the tendril reaches out
             local t = s / 5
             crayon.graphics.setColor(0.7 - t * 0.3, 0.05, 0.08, 1.0 - t * 0.6)
-            crayon.graphics.drawLine3d(px0, py0, pz0, nx, ny, nz)
+            crayon.graphics.drawLine3D(px0, py0, pz0, nx, ny, nz)
 
             px0, py0, pz0 = nx, ny, nz
         end
@@ -711,7 +711,7 @@ local function draw_player()
     local ax = player.x + player.aim.x * 1.2
     local az = player.z + player.aim.z * 1.2
     crayon.graphics.setColor(0.6, 0.9, 1.0, 0.9)
-    crayon.graphics.drawLine3d(player.x, 0.7, player.z, ax, 0.7, az)
+    crayon.graphics.drawLine3D(player.x, 0.7, player.z, ax, 0.7, az)
 
     -- Muzzle glow at wand tip
     billboard(ax, 0.7, az, 0.4, 0.4, 1.0, 0.9, 0.4, 0.8)
@@ -759,7 +759,7 @@ local function draw_bullets()
         local tx = b.x - b.vx * 0.02
         local tz = b.z - b.vz * 0.02
         crayon.graphics.setColor(1.0, 0.6, 0.2, 0.6)
-        crayon.graphics.drawLine3d(b.x, b.y, b.z, tx, b.y, tz)
+        crayon.graphics.drawLine3D(b.x, b.y, b.z, tx, b.y, tz)
     end
 end
 
@@ -923,7 +923,7 @@ function crayon.draw()
         shakeY = (math.random() - 0.5) * shake * 0.02
     end
 
-    crayon.graphics.setCamera3d({
+    crayon.graphics.setCamera3D({
         position = {
             camX + swayX + shakeX,
             8.0 + swayY + shakeY,

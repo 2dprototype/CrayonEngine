@@ -463,7 +463,7 @@ static int l_body_set_motion_quality(lua_State* L) {
         linear_cast = lua_toboolean(L, 2) != 0;
     } else if (lua_isstring(L, 2)) {
         std::string mode = lua_tostring(L, 2);
-        linear_cast = (mode == "linearCast" || mode == "linear_cast" || mode == "ccd");
+        linear_cast = mode == "linearCast";
     }
     b->physics->set_motion_quality(b->id, linear_cast);
     return 0;
@@ -3855,7 +3855,7 @@ void register_physics3d_bindings(lua_State* L) {
     lua_pushcfunction(L, l_body_set_planar_lock);
     lua_setfield(L, -2, "setPlanarLock");
 
-    lua_setfield(L, -2, "physics3d"); // Backward-compatible alias
+    lua_setfield(L, -2, "physics3D");
     lua_pop(L, 1);
 }
 

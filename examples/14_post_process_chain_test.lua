@@ -1,5 +1,5 @@
 -- Crayon Engine: 2D Post-Process Chain Test
--- Demonstrates stackable post-process effects: chromatic, vignette, vhs, bloom2d, pixelate, radialBlur, filmGrain
+-- Demonstrates stackable post-process effects: chromatic, vignette, vhs, bloom2D, pixelate, radialBlur, filmGrain
 
 function crayon.config(config)
     config.window.title = "Crayon Engine - Post-Process Chain Test"
@@ -7,7 +7,7 @@ function crayon.config(config)
     config.window.height = 240
     config.window.virtualWidth = 320
     config.window.virtualHeight = 240
-    config.modules.physics3d = false
+    config.modules.physics3D = false
     config.modules.mesh3D = false
 end
 
@@ -15,7 +15,7 @@ local effectsList = {
     { name = "chromatic",  label = "1: Chromatic Aberration", active = false },
     { name = "vignette",   label = "2: Vignette (Pulsing)",   active = false },
     { name = "vhs",        label = "3: VHS Tape Glitch",      active = false },
-    { name = "bloom2d",    label = "4: Bloom 2D",             active = false },
+    { name = "bloom2D",    label = "4: Bloom 2D",             active = false },
     { name = "pixelate",   label = "5: Pixelate",             active = false },
     { name = "radialBlur", label = "6: Radial Blur",          active = false },
     { name = "filmGrain",  label = "7: Film Grain",           active = false },

@@ -24,8 +24,8 @@ function crayon.config(t)
     t.modules.mesh3D       = false
     t.modules.audio        = false
     t.modules.particles    = false
-    t.modules.physics3d    = false
-    t.modules.physics2d    = false
+    t.modules.physics3D    = false
+    t.modules.physics2D    = false
 
     t.graphics.clearColor  = {0.06, 0.07, 0.10, 1.0}
 end

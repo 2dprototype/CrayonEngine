@@ -317,7 +317,7 @@ void PostProcessChain::initBuiltinShaders() {
     loadBuiltin("vignette", VIGNETTE_FS);
     loadBuiltin("dissolve", DISSOLVE_FS);
     loadBuiltin("vhs", VHS_FS);
-    loadBuiltin("bloom2d", BLOOM2D_FS);
+    loadBuiltin("bloom2D", BLOOM2D_FS);
     loadBuiltin("pixelate", PIXELATE_FS);
     loadBuiltin("radialBlur", RADIAL_BLUR_FS);
     loadBuiltin("filmGrain", FILM_GRAIN_FS);

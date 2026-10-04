@@ -115,7 +115,7 @@ static void register_emitter_metatable(lua_State* L) {
     lua_pushcfunction(L, l_emitter_draw);
     lua_setfield(L, -2, "draw");
     lua_pushcfunction(L, l_emitter_draw_3d);
-    lua_setfield(L, -2, "draw3d");
+    lua_setfield(L, -2, "draw3D");
     lua_pushcfunction(L, l_emitter_reset);
     lua_setfield(L, -2, "reset");
     lua_pushcfunction(L, l_emitter_set_position);

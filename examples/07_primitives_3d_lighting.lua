@@ -1,6 +1,6 @@
 -- ============================================================================
 -- Example 07: 3D Primitives, Lighting, Spotlights & Shading Modes
--- Demonstrates: setCamera3d, drawPlane, drawCube, drawSphere, drawCylinder,
+-- Demonstrates: setCamera3D, drawPlane, drawCube, drawSphere, drawCylinder,
 --               setLight (directional), setPointLight, setSpotLight,
 --               setShadingMode (flat/gouraud/unlit), depth-tested 3D pass.
 -- ============================================================================
@@ -11,7 +11,7 @@ function crayon.config(config)
     config.window.height = 480
     config.window.virtualWidth = 640
     config.window.virtualHeight = 480
-    config.modules.physics3d = false
+    config.modules.physics3D = false
     config.modules.mesh3D = true
 end
 
@@ -37,7 +37,7 @@ function crayon.update(dt)
     local camX = math.sin(rad) * Demo07.camDist
     local camZ = math.cos(rad) * Demo07.camDist
 
-    crayon.graphics.setCamera3d({
+    crayon.graphics.setCamera3D({
         position = { camX, 6.0, camZ },
         target   = { 0.0, 1.0, 0.0 },
         up       = { 0.0, 1.0, 0.0 },

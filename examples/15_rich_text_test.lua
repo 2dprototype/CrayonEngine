@@ -7,7 +7,7 @@ function crayon.config(config)
     config.window.height = 240
     config.window.virtualWidth = 320
     config.window.virtualHeight = 240
-    config.modules.physics3d = false
+    config.modules.physics3D = false
     config.modules.mesh3D = false
 end
 

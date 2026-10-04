@@ -15,9 +15,11 @@ function crayon.config(t)
     t.modules.mesh3D       = false
     t.modules.audio        = false
     t.modules.particles    = false
-    t.modules.physics3d    = false
-    t.modules.physics2d    = false    -- hand-rolled integration below
+    t.modules.physics3D    = false
+    t.modules.physics2D    = false    -- hand-rolled integration below
     t.window.opacity       = 1
+    t.window.notFocusable  = true
+    t.window.utilityWindow = true
 end
 
 -- ---- Tunables ----------------------------------------------------------

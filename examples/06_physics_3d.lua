@@ -12,7 +12,7 @@ function crayon.init()
     crayon.window.setTitle("06 - 3D Physics")
     crayon.window.setResolution(640, 480)
 
-    crayon.graphics.setCamera3d({
+    crayon.graphics.setCamera3D({
         position = { 0.0, 8.0, 14.0 },
         target   = { 0.0, 1.0, 0.0 },
         up       = { 0.0, 1.0, 0.0 },
@@ -20,7 +20,7 @@ function crayon.init()
     })
 
     -- Static floor: half-extents (15, 0.5, 15) centered at y = -0.5
-    floor = crayon.physics3d.createBox(0, -0.5, 0, 15, 0.5, 15, "static", 0.6, 0.2)
+    floor = crayon.physics3D.createBox(0, -0.5, 0, 15, 0.5, 15, "static", 0.6, 0.2)
 
     -- A few starter bodies
     spawn( 0.0, 5.0,  0.0)
@@ -29,7 +29,7 @@ function crayon.init()
 end
 
 function spawn(x, y, z)
-    local b = crayon.physics3d.createBox(x, y, z, 0.5, 0.5, 0.5, "dynamic", 0.5, 0.3, 800.0)
+    local b = crayon.physics3D.createBox(x, y, z, 0.5, 0.5, 0.5, "dynamic", 0.5, 0.3, 800.0)
     if b then table.insert(bodies, b) end
 end
 

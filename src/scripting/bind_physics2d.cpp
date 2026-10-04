@@ -795,7 +795,7 @@ void register_physics2d_bindings(lua_State* L) {
     lua_pushcfunction(L, l_physics2d_destroy_joint);
     lua_setfield(L, -2, "destroyJoint");
 
-    lua_setfield(L, -2, "physics2d");
+    lua_setfield(L, -2, "physics2D");
     lua_pop(L, 1);
 }
 

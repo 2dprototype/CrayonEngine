@@ -23,7 +23,7 @@ function crayon.config(t)
 
     -- 3. Module Optimization Settings (camelCase)
     -- Disable subsystems that are not needed to save memory and CPU cycles:
-    t.modules.physics3d = false        -- Jolt 3D physics disabled (no RAM allocations or physics threads)
+    t.modules.physics3D = false        -- Jolt 3D physics disabled (no RAM allocations or physics threads)
     t.modules.audio = false           -- MiniAudio disabled (no audio device opened)
     t.modules.mesh3D = false          -- 3D mesh renderer disabled
     t.modules.particles = true        -- 2D particle system remains active

@@ -1,4 +1,4 @@
--- Crayon Engine: Box2D 2D Physics System Test (crayon.physics2d)
+-- Crayon Engine: Box2D 2D Physics System Test (crayon.physics2D)
 -- Demonstrates static & dynamic bodies, circles, boxes, polygons, sensors, joints, raycasting, and debug drawing
 
 function crayon.config(config)
@@ -7,9 +7,9 @@ function crayon.config(config)
     config.window.height = 240
     config.window.virtualWidth = 320
     config.window.virtualHeight = 240
-    config.modules.physics3d = false    -- 3D Jolt disabled for 2D optimization
-    config.modules.physics2d = true   -- 2D Box2D enabled
-    config.modules.mesh3D = false     -- NOTE: key is mesh3D (capital D), not mesh3d
+    config.modules.physics3D = false    -- 3D Jolt disabled for 2D optimization
+    config.modules.physics2D = true   -- 2D Box2D enabled
+    config.modules.mesh3D = false     -- NOTE: key is mesh3D (capital D), not mesh3D
 end
 
 local spawnedBodies = {}
@@ -19,42 +19,42 @@ local rayHitInfo = nil
 
 function crayon.init()
     -- Set gravity (0, 18) — pixels per second squared in 2D pixel space
-    crayon.physics2d.setGravity(0, 18)
+    crayon.physics2D.setGravity(0, 18)
 
     -- 1. Static Floor & Walls
-    local floor = crayon.physics2d.createBody("static", 160, 235)
+    local floor = crayon.physics2D.createBody("static", 160, 235)
     floor:addBox(310, 10, 0, 0, 0, 0, 0.4, 0.2)
 
-    local leftWall = crayon.physics2d.createBody("static", 5, 120)
+    local leftWall = crayon.physics2D.createBody("static", 5, 120)
     leftWall:addBox(10, 240, 0, 0, 0, 0, 0.2, 0.3)
 
-    local rightWall = crayon.physics2d.createBody("static", 315, 120)
+    local rightWall = crayon.physics2D.createBody("static", 315, 120)
     rightWall:addBox(10, 240, 0, 0, 0, 0, 0.2, 0.3)
 
     -- 2. Angled Ramps
-    local rampLeft = crayon.physics2d.createBody("static", 60, 130)
+    local rampLeft = crayon.physics2D.createBody("static", 60, 130)
     rampLeft:addBox(90, 8, 0, 0, 0.35, 0, 0.2, 0.4)
 
-    local rampRight = crayon.physics2d.createBody("static", 260, 160)
+    local rampRight = crayon.physics2D.createBody("static", 260, 160)
     rampRight:addBox(90, 8, 0, 0, -0.3, 0, 0.2, 0.4)
 
     -- 3. Trigger / Sensor Area (Yellow box)
-    local sensor = crayon.physics2d.createBody("static", 160, 190)
+    local sensor = crayon.physics2D.createBody("static", 160, 190)
     sensor:addBox(40, 30, 0, 0, 0, 1.0, 0.0, 0.0, true) -- isSensor = true
 
     -- 4. Revolute Joint Pendulum
-    local pin = crayon.physics2d.createBody("static", 160, 60)
+    local pin = crayon.physics2D.createBody("static", 160, 60)
     pin:addCircle(4, 0, 0)
 
-    local bob = crayon.physics2d.createBody("dynamic", 200, 60, { linearDamping = 0.05 })
+    local bob = crayon.physics2D.createBody("dynamic", 200, 60, { linearDamping = 0.05 })
     bob:addCircle(10, 0, 0, 2.0, 0.3, 0.8) -- Bouncy bob
     table.insert(spawnedBodies, bob)
 
-    crayon.physics2d.createDistanceJoint(pin, bob, 160, 60, 200, 60, 40, 0.0, 0.0)
+    crayon.physics2D.createDistanceJoint(pin, bob, 160, 60, 200, 60, 40, 0.0, 0.0)
 
     -- 5. Spawn initial tumbling shapes
     for i = 1, 6 do
-        local b = crayon.physics2d.createBody("dynamic", 40 + i * 20, 30 + (i % 2) * 15)
+        local b = crayon.physics2D.createBody("dynamic", 40 + i * 20, 30 + (i % 2) * 15)
         if i % 2 == 0 then
             b:addBox(14, 14, 0, 0, 0.2, 1.0, 0.3, 0.4)
         else
@@ -70,7 +70,7 @@ function crayon.update(dt)
     --       or crayon.mouse.isPressed (mouse table).
     if crayon.input.isMousePressed(1) then
         local mx, my = crayon.input.getMousePosition()
-        local b = crayon.physics2d.createBody("dynamic", mx, my)
+        local b = crayon.physics2D.createBody("dynamic", mx, my)
         if math.random() > 0.5 then
             b:addBox(12, 12, 0, 0, math.random() * 3.14, 1.5, 0.3, 0.5)
         else
@@ -92,7 +92,7 @@ function crayon.update(dt)
 
     -- Raycast demo from mouse position down to floor
     local mx, my = crayon.input.getMousePosition()
-    local hit, hx, hy, nx, ny, frac, bodyId = crayon.physics2d.raycast(mx, my, mx, 235)
+    local hit, hx, hy, nx, ny, frac, bodyId = crayon.physics2D.raycast(mx, my, mx, 235)
     if hit then
         rayHitInfo = { x1 = mx, y1 = my, x2 = hx, y2 = hy, nx = nx, ny = ny, bodyId = bodyId }
     else
@@ -109,19 +109,19 @@ function crayon.update(dt)
 end
 
 -- Collision & Sensor Event Callbacks (2D)
-function crayon.collision2dEnter(bodyA, bodyB, nx, ny, impulse)
+function crayon.collision2DEnter(bodyA, bodyB, nx, ny, impulse)
     lastCollisionInfo = "Hit: #" .. bodyA .. " <-> #" .. bodyB .. string.format(" (Impulse: %.1f)", impulse)
 end
 
-function crayon.collision2dExit(bodyA, bodyB)
+function crayon.collision2DExit(bodyA, bodyB)
     -- collision ended
 end
 
-function crayon.trigger2dEnter(sensorBody, otherBody)
+function crayon.trigger2DEnter(sensorBody, otherBody)
     sensorTriggered = true
 end
 
-function crayon.trigger2dExit(sensorBody, otherBody)
+function crayon.trigger2DExit(sensorBody, otherBody)
     sensorTriggered = false
 end
 
@@ -129,7 +129,7 @@ function crayon.draw()
     crayon.graphics.clear(0.07, 0.08, 0.11, 1.0)
 
     -- Draw wireframe Box2D physics bodies & joints
-    crayon.physics2d.drawDebug()
+    crayon.physics2D.drawDebug()
 
     -- Raycast visualization
     if rayHitInfo then

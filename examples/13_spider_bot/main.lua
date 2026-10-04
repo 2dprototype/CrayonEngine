@@ -39,10 +39,11 @@ function crayon.config(t)
     t.modules.mesh3D       = false
     t.modules.audio        = false
     t.modules.particles    = false
-    t.modules.physics3d    = false
-    t.modules.physics2d    = false
-    t.window.opacity       = 1
+    t.modules.physics3D    = false
+    t.modules.physics2D    = false
+    t.window.opacity       = 0.5
     t.window.notFocusable  = true
+    t.console              = true
 end
 
 -- ---------------------------------------------------------------------------
@@ -454,6 +455,9 @@ function crayon.init()
     crayon.window.setPosition(
         math.floor(pet.x - WIN_W * 0.5),
         math.floor(pet.y - WIN_H * 0.5))
+        
+    print("Focusing....")
+    crayon.window.focus()
 end
 
 function crayon.update(dt)

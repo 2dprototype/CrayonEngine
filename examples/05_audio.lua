@@ -58,10 +58,10 @@ function crayon.update(dt)
     end
 
     -- Trigger 3D spatial sound attenuated by distance from listener.
-    -- NOTE: playSound3d(id, x, y, z, options) — distances live in the table,
+    -- NOTE: playSound3D(id, x, y, z, options) — distances live in the table,
     --       not as a positional argument.
     if crayon.input.isKeyPressed("p") and soundId > 0 then
-        crayon.audio.playSound3d(soundId, soundSourcePos.x, soundSourcePos.y, soundSourcePos.z, {
+        crayon.audio.playSound3D(soundId, soundSourcePos.x, soundSourcePos.y, soundSourcePos.z, {
             volume  = 1.0,
             minDist = 1.0,
             maxDist = 15.0,
