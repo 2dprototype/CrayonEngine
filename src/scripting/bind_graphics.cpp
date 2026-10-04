@@ -368,6 +368,8 @@ static int l_canvas_clear(lua_State* L) {
     float g = static_cast<float>(luaL_optnumber(L, 3, 0.0));
     float b = static_cast<float>(luaL_optnumber(L, 4, 0.0));
     float a = static_cast<float>(luaL_optnumber(L, 5, 1.0));
+    // Draw anything still queued to the *current* target before clearing.
+    Engine::get().get_batch2d().flush();
     c->clear(r, g, b, a);
     return 0;
 }
@@ -392,10 +394,13 @@ static int l_canvas_render_to(lua_State* L) {
     }
     glActiveTexture(GL_TEXTURE0);
 
+    // bind() remembers the currently active framebuffer (the engine's virtual
+    // FBO) and viewport; unbind() below restores them.
     c->bind();
     glViewport(0, 0, c->get_width(), c->get_height());
 
-    batch.push_projection(c->get_width(), c->get_height());
+    // flip_y: store the canvas in image orientation so drawSprite(canvas) isn't upside down.
+    batch.push_projection(c->get_width(), c->get_height(), true);
 
     lua_pushvalue(L, 2);
     if (lua_pcall(L, 0, 0, 0) != 0) {
@@ -409,6 +414,7 @@ static int l_canvas_render_to(lua_State* L) {
 
     batch.pop_projection();
 
+    // Restores the previous framebuffer + viewport (NOT framebuffer 0).
     c->unbind();
 
     // Same defensive unbind on the way out...
@@ -417,10 +423,6 @@ static int l_canvas_render_to(lua_State* L) {
         glBindTexture(GL_TEXTURE_2D, 0);
     }
     glActiveTexture(GL_TEXTURE0);
-
-    int vw = Engine::get().get_window().get_virtual_width();
-    int vh = Engine::get().get_window().get_virtual_height();
-    glViewport(0, 0, vw, vh);
 
     return 0;
 }
@@ -2789,10 +2791,8 @@ static int l_graphics_create_canvas(lua_State* L) {
 static int l_graphics_set_canvas(lua_State* L) {
     Engine::get().get_batch2d().flush();
     if (lua_isnoneornil(L, 1)) {
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
-        int vw = Engine::get().get_window().get_virtual_width();
-        int vh = Engine::get().get_window().get_virtual_height();
-        glViewport(0, 0, vw, vh);
+        // Back to the engine's virtual FBO (not the window's default framebuffer).
+        Engine::get().get_fbo().bind();
         return 0;
     }
     auto canvas = check_canvas(L, 1);

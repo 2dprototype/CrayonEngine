@@ -33,6 +33,14 @@ private:
     GLuint m_depth_stencil_rbo = 0;
     int m_width = 0;
     int m_height = 0;
+
+    // Framebuffer + viewport that were active before bind(); restored by
+    // unbind(). Without this, unbind() dropped to the default framebuffer (0)
+    // while the engine renders into its own virtual FBO, so everything drawn
+    // after canvas:renderTo() went to the wrong target (blank screen).
+    GLint m_prev_fbo = 0;
+    GLint m_prev_viewport[4] = {0, 0, 0, 0};
+    bool  m_has_prev = false;
 };
 
 } // namespace crayon

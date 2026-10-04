@@ -119,7 +119,10 @@ public:
     // Save/restore the 2D projection + virtual-size state. Used by
     // canvas:renderTo so the callback draws in canvas-space coordinates
     // instead of the (larger) virtual-screen space.
-    void push_projection(int w, int h);
+    // flip_y = true builds the projection with y pointing up (origin bottom-left in GL
+    // terms) so a render-target texture is stored top-row-at-v=0, i.e. the same
+    // orientation as loaded images and sampled correctly by drawSprite().
+    void push_projection(int w, int h, bool flip_y = false);
     void pop_projection();
     
     
@@ -161,7 +164,9 @@ private:
         glm::mat4 proj_view;
         int virtual_w;
         int virtual_h;
+        bool flip_y;
     };
+    bool m_flip_y = false;
     std::vector<ProjState> m_proj_stack;
 };
 

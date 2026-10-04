@@ -220,6 +220,7 @@ void Batch2D::shutdown() {
 void Batch2D::begin(int virtual_w, int virtual_h) {
     m_virtual_w = virtual_w;
     m_virtual_h = virtual_h;
+    m_flip_y = false;
     m_proj_matrix = glm::ortho(0.0f, static_cast<float>(virtual_w), static_cast<float>(virtual_h), 0.0f, -1.0f, 1.0f);
     m_model_matrix_2d = glm::mat4(1.0f);
     while (!m_matrix_stack_2d.empty()) m_matrix_stack_2d.pop();
@@ -265,7 +266,7 @@ void Batch2D::set_blend_mode(BlendMode mode) {
 void Batch2D::set_scissor(int x, int y, int w, int h) {
     flush();
     glEnable(GL_SCISSOR_TEST);
-    int gl_y = m_virtual_h - (y + h);
+    int gl_y = m_flip_y ? y : (m_virtual_h - (y + h));
     glScissor(x, gl_y, std::max(0, w), std::max(0, h));
     m_scissor_active = true;
 }
@@ -326,15 +327,21 @@ void Batch2D::pop_matrix_2d() {
     m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
 }
 
-void Batch2D::push_projection(int w, int h) {
+void Batch2D::push_projection(int w, int h, bool flip_y) {
     flush();   // submit anything queued under the old projection first
 
-    m_proj_stack.push_back({ m_proj_matrix, m_current_proj_view, m_virtual_w, m_virtual_h });
+    m_proj_stack.push_back({ m_proj_matrix, m_current_proj_view, m_virtual_w, m_virtual_h, m_flip_y });
 
     m_virtual_w = w;
     m_virtual_h = h;
-    m_proj_matrix = glm::ortho(0.0f, static_cast<float>(w),
-                               static_cast<float>(h), 0.0f, -1.0f, 1.0f);
+    m_flip_y = flip_y;
+    if (flip_y) {
+        m_proj_matrix = glm::ortho(0.0f, static_cast<float>(w),
+                                   0.0f, static_cast<float>(h), -1.0f, 1.0f);
+    } else {
+        m_proj_matrix = glm::ortho(0.0f, static_cast<float>(w),
+                                   static_cast<float>(h), 0.0f, -1.0f, 1.0f);
+    }
     m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
 
     // Reset any active scissor; the old rect is in the wrong space.
@@ -353,6 +360,7 @@ void Batch2D::pop_projection() {
         m_current_proj_view = s.proj_view;
         m_virtual_w        = s.virtual_w;
         m_virtual_h        = s.virtual_h;
+        m_flip_y           = s.flip_y;
         m_proj_stack.pop_back();
     }
     // else: unbalanced pop, leave current state alone.
