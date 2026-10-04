@@ -58,6 +58,19 @@ int main(int argc, char* argv[]) {
 
     std::string script_path = "";
 
+    // Helper: every entry point below funnels through this so that all
+    // runtime asset paths (textures, models, fonts, shaders, audio, Lua
+    // require() ...) resolve relative to the project root, never to the
+    // shell's working directory.
+    auto set_project_root = [](const std::filesystem::path& dir) {
+        std::error_code ec;
+        std::filesystem::current_path(dir, ec);
+        if (ec) {
+            CRAYON_LOG_WARN("Could not chdir to project root '{}': {}",
+                            dir.string(), ec.message());
+        }
+    };
+
     // 1. If target_input is empty or ".", check current working directory for .crayonproj
     if (target_input.empty() || target_input == ".") {
         std::filesystem::path local_manifest = std::filesystem::absolute(".crayonproj").lexically_normal();
@@ -65,6 +78,7 @@ int main(int argc, char* argv[]) {
             crayon::CrayonProject proj;
             if (crayon::loadCrayonProject(local_manifest, proj)) {
                 script_path = proj.resolveTargetScript(std::filesystem::current_path());
+                // Already inside the project root; nothing to chdir to.
             } else {
                 return 1;
             }
@@ -88,7 +102,7 @@ int main(int argc, char* argv[]) {
                 project_dir = std::filesystem::current_path();
             }
             script_path = proj.resolveTargetScript(project_dir);
-            std::filesystem::current_path(project_dir);
+            set_project_root(project_dir);
         }
         // 3. Project folder passed: crayon <folder_path>
         else if (std::filesystem::is_directory(p)) {
@@ -102,11 +116,19 @@ int main(int argc, char* argv[]) {
                 return 1;
             }
             script_path = proj.resolveTargetScript(p);
-            std::filesystem::current_path(p);
+            set_project_root(p);
         }
         // 4. Direct Lua script: crayon <path_to_script>.lua
+        //    Assets resolve relative to the SCRIPT'S directory, so running
+        //    `crayon /some/game/main.lua` behaves identically to running
+        //    `crayon /some/game` when a .crayonproj is present.
         else if (std::filesystem::is_regular_file(p)) {
             script_path = p.string();
+
+            std::filesystem::path script_dir = p.parent_path();
+            if (!script_dir.empty()) {
+                set_project_root(script_dir);
+            }
         }
     }
 
@@ -116,6 +138,7 @@ int main(int argc, char* argv[]) {
             return 1;
         }
         CRAYON_LOG_INFO("Starting Crayon Engine with script '{}'", script_path);
+        CRAYON_LOG_INFO("Asset root: '{}'", std::filesystem::current_path().string());
     } else {
         CRAYON_LOG_INFO("Starting Crayon Engine with no script");
     }

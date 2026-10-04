@@ -39,10 +39,10 @@ function crayon.init()
     crayon.window.setResolution(320, 240)
     crayon.window.setTitle("02 - 2D Sprites, 9-Slice & 2D Camera [WASD: Move, Q/E: Rotate, Scroll: Zoom]")
 
-    tex_coin  = crayon.graphics.loadTexture("game/assets/textures/coin.bmp")
-    tex_brick = crayon.graphics.loadTexture("game/assets/textures/brick.bmp")
-    tex_crate = crayon.graphics.loadTexture("game/assets/textures/crate.bmp")
-    tex_grass = crayon.graphics.loadTexture("game/assets/textures/grass.bmp")
+    tex_coin  = crayon.graphics.loadTexture("../assets/textures/coin.bmp")
+    tex_brick = crayon.graphics.loadTexture("../assets/textures/brick.bmp")
+    tex_crate = crayon.graphics.loadTexture("../assets/textures/crate.bmp")
+    tex_grass = crayon.graphics.loadTexture("../assets/textures/grass.bmp")
 end
 
 function crayon.update(dt)
@@ -208,7 +208,7 @@ function crayon.draw()
 
         -- 9-Slice rendered using brick texture with 8px borders
         crayon.graphics.setColor(0.9, 0.9, 1.0, 0.95)
-        crayon.graphics.drawSprite9slice(tex_brick, dx, dy, dw, dh, 8, 8, 8, 8)
+        crayon.graphics.drawSprite9Slice(tex_brick, dx, dy, dw, dh, 8, 8, 8, 8)
 
         -- Inner backdrop for clean text legibility
         crayon.graphics.setColor(0.05, 0.07, 0.12, 0.9)
