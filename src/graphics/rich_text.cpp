@@ -1,9 +1,13 @@
 #include "rich_text.hpp"
 #include "font.hpp"
 #include <cmath>
-#include <sstream>
+#include <cstdio>
+#include <cstring>
+#include <cstdint>
 #include <algorithm>
-#include <stack>
+#include <string_view>
+#include <unordered_map>
+#include <vector>
 
 namespace crayon {
 
@@ -78,74 +82,100 @@ struct GlyphState {
     int charIndex = 0;
 };
 
-static std::vector<GlyphState> parseMarkup(const std::string& markup, const RichTextOptions& opts) {
+// One laid-out line: glyphs [begin, end) of the parsed array. A space/newline
+// dropped at a break is simply not inside any range.
+struct RtLine {
+    uint32_t begin = 0;
+    uint32_t end = 0;
+    float width = 0.0f;
+    float maxScale = 0.0f; // largest glyph scale on the line (0 if empty)
+};
+
+// Reads the float that follows `key` inside a tag (e.g. "amp=" in "wave amp=3").
+// Copies into a NUL-terminated buffer so sscanf can never run past the tag.
+static bool readFloatAfter(std::string_view tag, std::string_view key, float& out) {
+    size_t pos = tag.find(key);
+    if (pos == std::string_view::npos) return false;
+    std::string_view rest = tag.substr(pos + key.size());
+    char buf[64];
+    size_t n = std::min(rest.size(), sizeof(buf) - 1);
+    std::memcpy(buf, rest.data(), n);
+    buf[n] = '\0';
+    float v = 0.0f;
+    if (std::sscanf(buf, "%f", &v) == 1) {
+        out = v;
+        return true;
+    }
+    return false;
+}
+
+static std::vector<GlyphState> parseMarkup(const std::string& markup, float baseScale, const glm::vec4& defaultColor) {
     std::vector<GlyphState> glyphs;
     glyphs.reserve(markup.size());
 
-    std::stack<glm::vec4> colorStack;
-    colorStack.push(opts.defaultColor);
+    // Plain vectors instead of std::stack: std::stack defaults to std::deque,
+    // which heap-allocates on construction (6 deques per call before).
+    std::vector<glm::vec4> colorStack;
+    colorStack.push_back(defaultColor);
 
-    std::stack<std::pair<float, float>> waveStack; // amp, freq
-    std::stack<float> shakeStack;                 // intensity
-    std::stack<float> rainbowStack;               // speed
-    std::stack<float> scaleStack;
-    scaleStack.push(opts.scale);
-    std::stack<bool> boldStack;
+    std::vector<std::pair<float, float>> waveStack; // amp, freq
+    std::vector<float> shakeStack;                  // intensity
+    std::vector<float> rainbowStack;                // speed
+    std::vector<float> scaleStack;
+    scaleStack.push_back(baseScale);
+    int boldDepth = 0;
 
     int printIdx = 0;
+    const std::string_view mv(markup);
 
-    for (size_t i = 0; i < markup.size(); ++i) {
-        if (markup[i] == '[') {
-            size_t close = markup.find(']', i);
-            if (close != std::string::npos) {
-                std::string tag = markup.substr(i + 1, close - i - 1);
+    for (size_t i = 0; i < mv.size(); ++i) {
+        if (mv[i] == '[') {
+            size_t close = mv.find(']', i);
+            if (close != std::string_view::npos) {
+                std::string_view tag = mv.substr(i + 1, close - i - 1);
                 i = close;
 
                 // Closing tags
                 if (!tag.empty() && tag[0] == '/') {
-                    std::string endTag = tag.substr(1);
-                    if (endTag == "color" && colorStack.size() > 1) colorStack.pop();
-                    else if (endTag == "wave" && !waveStack.empty()) waveStack.pop();
-                    else if (endTag == "shake" && !shakeStack.empty()) shakeStack.pop();
-                    else if (endTag == "rainbow" && !rainbowStack.empty()) rainbowStack.pop();
-                    else if (endTag == "scale" && scaleStack.size() > 1) scaleStack.pop();
-                    else if (endTag == "b" && !boldStack.empty()) boldStack.pop();
+                    std::string_view endTag = tag.substr(1);
+                    if (endTag == "color" && colorStack.size() > 1) colorStack.pop_back();
+                    else if (endTag == "wave" && !waveStack.empty()) waveStack.pop_back();
+                    else if (endTag == "shake" && !shakeStack.empty()) shakeStack.pop_back();
+                    else if (endTag == "rainbow" && !rainbowStack.empty()) rainbowStack.pop_back();
+                    else if (endTag == "scale" && scaleStack.size() > 1) scaleStack.pop_back();
+                    else if (endTag == "b" && boldDepth > 0) --boldDepth;
                     continue;
                 }
 
                 // Opening tags
-                if (tag.rfind("color=", 0) == 0) {
-                    std::string val = tag.substr(6);
-                    colorStack.push(parseColorString(val, colorStack.top()));
+                if (tag.starts_with("color=")) {
+                    std::string val(tag.substr(6));
+                    colorStack.push_back(parseColorString(val, colorStack.back()));
                 } else if (tag == "wave") {
-                    waveStack.push({3.0f, 4.0f});
-                } else if (tag.rfind("wave", 0) == 0) {
+                    waveStack.push_back({3.0f, 4.0f});
+                } else if (tag.starts_with("wave")) {
                     float amp = 3.0f, freq = 4.0f;
-                    size_t aPos = tag.find("amp=");
-                    if (aPos != std::string::npos) std::sscanf(tag.c_str() + aPos + 4, "%f", &amp);
-                    size_t fPos = tag.find("freq=");
-                    if (fPos != std::string::npos) std::sscanf(tag.c_str() + fPos + 5, "%f", &freq);
-                    waveStack.push({amp, freq});
+                    readFloatAfter(tag, "amp=", amp);
+                    readFloatAfter(tag, "freq=", freq);
+                    waveStack.push_back({amp, freq});
                 } else if (tag == "shake") {
-                    shakeStack.push(1.5f);
-                } else if (tag.rfind("shake", 0) == 0) {
+                    shakeStack.push_back(1.5f);
+                } else if (tag.starts_with("shake")) {
                     float intens = 1.5f;
-                    size_t sPos = tag.find("int=");
-                    if (sPos != std::string::npos) std::sscanf(tag.c_str() + sPos + 4, "%f", &intens);
-                    shakeStack.push(intens);
+                    readFloatAfter(tag, "int=", intens);
+                    shakeStack.push_back(intens);
                 } else if (tag == "rainbow") {
-                    rainbowStack.push(1.5f);
-                } else if (tag.rfind("rainbow", 0) == 0) {
+                    rainbowStack.push_back(1.5f);
+                } else if (tag.starts_with("rainbow")) {
                     float spd = 1.5f;
-                    size_t spPos = tag.find("speed=");
-                    if (spPos != std::string::npos) std::sscanf(tag.c_str() + spPos + 6, "%f", &spd);
-                    rainbowStack.push(spd);
-                } else if (tag.rfind("scale=", 0) == 0) {
-                    float sc = opts.scale;
-                    std::sscanf(tag.c_str() + 6, "%f", &sc);
-                    scaleStack.push(sc);
+                    readFloatAfter(tag, "speed=", spd);
+                    rainbowStack.push_back(spd);
+                } else if (tag.starts_with("scale=")) {
+                    float sc = baseScale;
+                    readFloatAfter(tag, "scale=", sc);
+                    scaleStack.push_back(sc);
                 } else if (tag == "b") {
-                    boldStack.push(true);
+                    ++boldDepth;
                 }
                 continue;
             }
@@ -153,23 +183,23 @@ static std::vector<GlyphState> parseMarkup(const std::string& markup, const Rich
 
         // Printable char or newline
         GlyphState g;
-        g.c = markup[i];
-        g.color = colorStack.top();
+        g.c = mv[i];
+        g.color = colorStack.back();
         if (!waveStack.empty()) {
             g.wave = true;
-            g.waveAmp = waveStack.top().first;
-            g.waveFreq = waveStack.top().second;
+            g.waveAmp = waveStack.back().first;
+            g.waveFreq = waveStack.back().second;
         }
         if (!shakeStack.empty()) {
             g.shake = true;
-            g.shakeInt = shakeStack.top();
+            g.shakeInt = shakeStack.back();
         }
         if (!rainbowStack.empty()) {
             g.rainbow = true;
-            g.rainbowSpeed = rainbowStack.top();
+            g.rainbowSpeed = rainbowStack.back();
         }
-        g.scale = scaleStack.top();
-        g.bold = !boldStack.empty();
+        g.scale = scaleStack.back();
+        g.bold = boldDepth > 0;
         g.charIndex = printIdx++;
         glyphs.push_back(g);
     }
@@ -177,81 +207,155 @@ static std::vector<GlyphState> parseMarkup(const std::string& markup, const Rich
     return glyphs;
 }
 
-int RichText::countPrintableChars(const std::string& markup) {
-    RichTextOptions dummy;
-    auto glyphs = parseMarkup(markup, dummy);
-    return static_cast<int>(glyphs.size());
-}
+// Greedy word-wrap layout over the parsed glyphs. Shared by drawing and
+// measuring so the two can never disagree.
+static void computeLayout(const std::vector<GlyphState>& glyphs, float wrapWidth, std::vector<RtLine>& lines) {
+    constexpr float baseCharW = 8.0f;
+    lines.clear();
+    lines.push_back(RtLine{});
 
-void RichText::drawMarkup(Batch2D& batch, const std::string& markup, float startX, float startY, const RichTextOptions& opts) {
-    auto glyphs = parseMarkup(markup, opts);
-    if (glyphs.empty()) return;
+    const size_t n = glyphs.size();
+    size_t lineStart = 0;
+    float curW = 0.0f;
+    bool haveSpace = false;
+    size_t lastSpace = 0;
+    float widthAtSpace = 0.0f;
 
-    GLuint fontId = batch.get_white_texture_id(); // Fallback if no font texture
-    // Default 8x8 font metrics
-    float baseCharW = 8.0f;
-    float baseCharH = 8.0f;
-
-    // Split into lines respecting wrapWidth
-    struct LineInfo {
-        std::vector<GlyphState> lineGlyphs;
-        float width = 0.0f;
+    auto closeLine = [&](size_t end, float width) {
+        RtLine& L = lines.back();
+        L.end = static_cast<uint32_t>(end);
+        L.width = width;
+        float ms = 0.0f;
+        for (size_t k = L.begin; k < end; ++k) ms = std::max(ms, glyphs[k].scale);
+        L.maxScale = ms;
+    };
+    auto openLine = [&](size_t start) {
+        RtLine L;
+        L.begin = L.end = static_cast<uint32_t>(start);
+        lines.push_back(L);
+        lineStart = start;
     };
 
-    std::vector<LineInfo> lines;
-    lines.emplace_back();
-
-    float currentLineWidth = 0.0f;
-    size_t lastSpaceIdx = 0;
-    float widthAtLastSpace = 0.0f;
-
-    for (size_t i = 0; i < glyphs.size(); ++i) {
-        const auto& g = glyphs[i];
+    for (size_t i = 0; i < n; ++i) {
+        const GlyphState& g = glyphs[i];
         if (g.c == '\n') {
-            lines.back().width = currentLineWidth;
-            lines.emplace_back();
-            currentLineWidth = 0.0f;
-            lastSpaceIdx = 0;
-            widthAtLastSpace = 0.0f;
+            closeLine(i, curW);
+            openLine(i + 1);
+            curW = 0.0f;
+            haveSpace = false;
+            widthAtSpace = 0.0f;
             continue;
         }
 
-        float charW = baseCharW * g.scale;
+        const float charW = baseCharW * g.scale;
+        const size_t count = i - lineStart; // glyphs already on this line
 
-        if (opts.wrapWidth > 0.0f && (currentLineWidth + charW > opts.wrapWidth) && !lines.back().lineGlyphs.empty()) {
-            // Word wrap if space occurred
-            if (lastSpaceIdx > 0 && lastSpaceIdx < lines.back().lineGlyphs.size()) {
-                std::vector<GlyphState> carried(lines.back().lineGlyphs.begin() + lastSpaceIdx + 1, lines.back().lineGlyphs.end());
-                lines.back().lineGlyphs.resize(lastSpaceIdx);
-                lines.back().width = widthAtLastSpace;
-
-                lines.emplace_back();
-                lines.back().lineGlyphs = carried;
-                currentLineWidth = 0.0f;
-                for (const auto& cg : carried) currentLineWidth += baseCharW * cg.scale;
-                lastSpaceIdx = 0;
+        if (wrapWidth > 0.0f && (curW + charW > wrapWidth) && count > 0) {
+            if (haveSpace && lastSpace > lineStart && lastSpace < i) {
+                // Break at the last space: drop the space, carry the partial word down.
+                closeLine(lastSpace, widthAtSpace);
+                openLine(lastSpace + 1);
+                curW = 0.0f;
+                for (size_t k = lineStart; k < i; ++k) curW += baseCharW * glyphs[k].scale;
             } else {
-                lines.back().width = currentLineWidth;
-                lines.emplace_back();
-                currentLineWidth = 0.0f;
+                // No usable space: hard break before this glyph.
+                closeLine(i, curW);
+                openLine(i);
+                curW = 0.0f;
             }
+            // The break point belongs to the previous line. (The old code left a
+            // stale index behind after a hard break, which could split a word later.)
+            haveSpace = false;
+            widthAtSpace = 0.0f;
         }
 
         if (g.c == ' ') {
-            lastSpaceIdx = lines.back().lineGlyphs.size();
-            widthAtLastSpace = currentLineWidth;
+            haveSpace = true;
+            lastSpace = i;
+            widthAtSpace = curW;
         }
-
-        lines.back().lineGlyphs.push_back(g);
-        currentLineWidth += charW;
+        curW += charW;
     }
-    lines.back().width = currentLineWidth;
+    closeLine(n, curW);
+}
 
-    // Render lines with alignment and animations
+// Parsed + laid-out markup, cached by markup string. Dynamic strings churn the
+// cache, so it is bounded and simply dropped when full.
+struct RtEntry {
+    float scale = 1.0f;
+    glm::vec4 color{1.0f};
+    std::vector<GlyphState> glyphs;
+    bool layoutValid = false;
+    float layoutWrap = -1.0f;
+    std::vector<RtLine> lines;
+};
+
+static RtEntry& acquireEntry(const std::string& markup, float scale, const glm::vec4& color, bool ignoreColor) {
+    static std::unordered_map<std::string, RtEntry> cache;
+    constexpr size_t kMaxEntries = 256;
+
+    auto it = cache.find(markup);
+    if (it != cache.end()) {
+        RtEntry& e = it->second;
+        if (e.scale == scale && (ignoreColor || e.color == color)) return e;
+        e.scale = scale;
+        e.color = color;
+        e.glyphs = parseMarkup(markup, scale, color);
+        e.layoutValid = false;
+        return e;
+    }
+
+    if (cache.size() >= kMaxEntries) cache.clear();
+    RtEntry& e = cache[markup];
+    e.scale = scale;
+    e.color = color;
+    e.glyphs = parseMarkup(markup, scale, color);
+    e.layoutValid = false;
+    return e;
+}
+
+static const std::vector<RtLine>& layoutFor(RtEntry& e, float wrapWidth) {
+    const float w = wrapWidth > 0.0f ? wrapWidth : -1.0f;
+    if (!e.layoutValid || e.layoutWrap != w) {
+        computeLayout(e.glyphs, w, e.lines);
+        e.layoutWrap = w;
+        e.layoutValid = true;
+    }
+    return e.lines;
+}
+
+int RichText::countPrintableChars(const std::string& markup) {
+    // Same tag rule as parseMarkup ("[...]" with a closing bracket is a tag),
+    // but counts without building any glyph objects.
+    int count = 0;
+    const std::string_view mv(markup);
+    for (size_t i = 0; i < mv.size(); ++i) {
+        if (mv[i] == '[') {
+            size_t close = mv.find(']', i);
+            if (close != std::string_view::npos) {
+                i = close;
+                continue;
+            }
+        }
+        ++count;
+    }
+    return count;
+}
+
+void RichText::drawMarkup(Batch2D& batch, const std::string& markup, float startX, float startY, const RichTextOptions& opts) {
+    RtEntry& entry = acquireEntry(markup, opts.scale, opts.defaultColor, false);
+    if (entry.glyphs.empty()) return;
+
+    const std::vector<RtLine>& lines = layoutFor(entry, opts.wrapWidth);
+
+    // Default 8x8 font metrics
+    constexpr float baseCharW = 8.0f;
+    constexpr float baseCharH = 8.0f;
+
     float cursorY = startY;
     int renderedCount = 0;
 
-    for (const auto& line : lines) {
+    for (const RtLine& line : lines) {
         float cursorX = startX;
         if (opts.align == 1 && opts.wrapWidth > 0.0f) { // Center
             cursorX += (opts.wrapWidth - line.width) * 0.5f;
@@ -259,17 +363,17 @@ void RichText::drawMarkup(Batch2D& batch, const std::string& markup, float start
             cursorX += (opts.wrapWidth - line.width);
         }
 
-        float maxHeight = baseCharH * opts.scale;
+        const float maxHeight = std::max(baseCharH * opts.scale, baseCharH * line.maxScale);
 
-        for (const auto& g : line.lineGlyphs) {
+        for (uint32_t k = line.begin; k < line.end; ++k) {
+            const GlyphState& g = entry.glyphs[k];
+
             if (opts.visibleChars >= 0 && renderedCount >= opts.visibleChars) {
                 return; // Typewriter cutoff
             }
             renderedCount++;
 
-            float charW = baseCharW * g.scale;
-            float charH = baseCharH * g.scale;
-            maxHeight = std::max(maxHeight, charH);
+            const float charW = baseCharW * g.scale;
 
             if (g.c != ' ') {
                 float drawX = cursorX;
@@ -296,15 +400,16 @@ void RichText::drawMarkup(Batch2D& batch, const std::string& markup, float start
                     finalColor = hsvToRgb(hue, 0.85f, 1.0f, g.color.a);
                 }
 
+                // One-character views: no per-glyph std::string construction.
+                const std::string_view ch(&g.c, 1);
+
                 // Bold drop shadow accent
                 if (g.bold) {
                     glm::vec4 shadowCol = glm::vec4(0.0f, 0.0f, 0.0f, finalColor.a * 0.7f);
-                    std::string s(1, g.c);
-                    batch.draw_text(s, drawX + 1.0f, drawY + 1.0f, g.scale, shadowCol);
+                    batch.draw_text(ch, drawX + 1.0f, drawY + 1.0f, g.scale, shadowCol);
                 }
 
-                std::string s(1, g.c);
-                batch.draw_text(s, drawX, drawY, g.scale, finalColor);
+                batch.draw_text(ch, drawX, drawY, g.scale, finalColor);
             }
 
             cursorX += charW;
@@ -316,39 +421,22 @@ void RichText::drawMarkup(Batch2D& batch, const std::string& markup, float start
 
 glm::vec2 RichText::measureMarkup(Batch2D& batch, const std::string& markup, float scale, float wrapWidth) {
     (void)batch;
-    RichTextOptions opts;
-    opts.scale = scale;
-    opts.wrapWidth = wrapWidth;
 
-    auto glyphs = parseMarkup(markup, opts);
-    if (glyphs.empty()) return glm::vec2(0.0f);
+    // Colours don't affect layout, so reuse whichever cached parse matches this scale.
+    RtEntry& entry = acquireEntry(markup, scale, glm::vec4(1.0f), true);
+    if (entry.glyphs.empty()) return glm::vec2(0.0f);
 
-    float baseCharW = 8.0f;
-    float baseCharH = 8.0f;
+    // Uses the exact layout drawMarkup uses (previously measure ignored word-wrap
+    // and scaled glyphs, so it disagreed with what was actually drawn).
+    const std::vector<RtLine>& lines = layoutFor(entry, wrapWidth);
 
+    constexpr float baseCharH = 8.0f;
     float maxLineWidth = 0.0f;
-    float currentLineWidth = 0.0f;
-    int lineCount = 1;
-
-    for (const auto& g : glyphs) {
-        if (g.c == '\n') {
-            maxLineWidth = std::max(maxLineWidth, currentLineWidth);
-            currentLineWidth = 0.0f;
-            lineCount++;
-            continue;
-        }
-
-        float charW = baseCharW * g.scale;
-        if (wrapWidth > 0.0f && currentLineWidth + charW > wrapWidth) {
-            maxLineWidth = std::max(maxLineWidth, currentLineWidth);
-            currentLineWidth = 0.0f;
-            lineCount++;
-        }
-        currentLineWidth += charW;
+    float totalH = 0.0f;
+    for (const RtLine& line : lines) {
+        maxLineWidth = std::max(maxLineWidth, line.width);
+        totalH += std::max(baseCharH * scale, baseCharH * line.maxScale) + 2.0f * scale;
     }
-    maxLineWidth = std::max(maxLineWidth, currentLineWidth);
-
-    float totalH = lineCount * (baseCharH * scale + 2.0f * scale);
     return glm::vec2(maxLineWidth, totalH);
 }
 

@@ -40,8 +40,8 @@ bool Shader::load_from_memory(const std::string& vertex_source, const std::strin
     if (m_program_id != 0) {
         glDeleteProgram(m_program_id);
         m_program_id = 0;
-        m_uniform_cache.clear();
     }
+    m_uniform_cache.clear();
 
     GLuint vs = compile_stage(GL_VERTEX_SHADER, vertex_source);
     if (!vs) return false;
@@ -108,59 +108,62 @@ void Shader::unbind() const {
     glUseProgram(0);
 }
 
-GLint Shader::get_uniform_location(const std::string& name) {
-    auto it = m_uniform_cache.find(name);
+GLint Shader::get_uniform_location(std::string_view name) {
+    auto it = m_uniform_cache.find(name);   // heterogeneous lookup: no allocation
     if (it != m_uniform_cache.end()) {
         return it->second;
     }
-    GLint loc = glGetUniformLocation(m_program_id, name.c_str());
-    m_uniform_cache[name] = loc;
+    if (m_program_id == 0) return -1;
+    // string_view is not guaranteed NUL-terminated; build a std::string only on a cache miss.
+    std::string owned(name);
+    GLint loc = glGetUniformLocation(m_program_id, owned.c_str());
+    m_uniform_cache.emplace(std::move(owned), loc);
     return loc;
 }
 
-void Shader::set_mat4(const std::string& name, const glm::mat4& mat) {
+void Shader::set_mat4(std::string_view name, const glm::mat4& mat) {
     GLint loc = get_uniform_location(name);
     if (loc != -1) {
         glUniformMatrix4fv(loc, 1, GL_FALSE, glm::value_ptr(mat));
     }
 }
 
-void Shader::set_mat4_array(const std::string& name, const glm::mat4* mats, GLsizei count) {
+void Shader::set_mat4_array(std::string_view name, const glm::mat4* mats, GLsizei count) {
     GLint loc = get_uniform_location(name);
     if (loc != -1 && mats && count > 0) {
         glUniformMatrix4fv(loc, count, GL_FALSE, glm::value_ptr(mats[0]));
     }
 }
 
-void Shader::set_vec4(const std::string& name, const glm::vec4& vec) {
+void Shader::set_vec4(std::string_view name, const glm::vec4& vec) {
     GLint loc = get_uniform_location(name);
     if (loc != -1) {
         glUniform4fv(loc, 1, glm::value_ptr(vec));
     }
 }
 
-void Shader::set_vec3(const std::string& name, const glm::vec3& vec) {
+void Shader::set_vec3(std::string_view name, const glm::vec3& vec) {
     GLint loc = get_uniform_location(name);
     if (loc != -1) {
         glUniform3fv(loc, 1, glm::value_ptr(vec));
     }
 }
 
-void Shader::set_vec2(const std::string& name, const glm::vec2& vec) {
+void Shader::set_vec2(std::string_view name, const glm::vec2& vec) {
     GLint loc = get_uniform_location(name);
     if (loc != -1) {
         glUniform2fv(loc, 1, glm::value_ptr(vec));
     }
 }
 
-void Shader::set_float(const std::string& name, float val) {
+void Shader::set_float(std::string_view name, float val) {
     GLint loc = get_uniform_location(name);
     if (loc != -1) {
         glUniform1f(loc, val);
     }
 }
 
-void Shader::set_int(const std::string& name, int val) {
+void Shader::set_int(std::string_view name, int val) {
     GLint loc = get_uniform_location(name);
     if (loc != -1) {
         glUniform1i(loc, val);

@@ -3,6 +3,7 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
+#include <unordered_set>
 #include <chrono>
 #include <filesystem>
 #include "engine_config.hpp"
@@ -114,6 +115,7 @@ private:
     float m_physics2d_accumulator = 0.0f;
 
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_texture_cache;
+    std::unordered_set<std::string> m_texture_failed; // paths that failed to load (don't hit disk again every call)
     std::unordered_map<GLuint, std::pair<int, int>> m_texture_sizes;
     std::unordered_map<std::string, std::shared_ptr<Mesh3D>> m_mesh_cache;
     std::unordered_map<std::string, std::shared_ptr<Model3D>> m_model_cache;
@@ -130,6 +132,8 @@ private:
     int m_frame_count = 0;
     double m_fps_timer = 0.0;
 
+    float m_hot_reload_timer = 0.0f;   // throttles the script mtime poll
+    bool m_shutdown_done = false;      // shutdown() is called explicitly and again by the destructor
     bool m_hot_reload_requested = false;
     bool m_running = false;
     bool m_paused = false;

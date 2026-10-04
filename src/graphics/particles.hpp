@@ -1,6 +1,7 @@
 #pragma once
 
 #include <vector>
+#include <cstdint>
 #include <random>
 #include <glm/glm.hpp>
 #include <glad/glad.h>
@@ -74,8 +75,12 @@ public:
     int get_alive_count() const { return m_alive_count; }
 
 private:
+    void rebuild_pools();
+
     ParticleConfig m_config;
     std::vector<Particle> m_particles;
+    std::vector<uint32_t> m_free;    // indices of dead slots (emit pops from here: O(1))
+    std::vector<uint32_t> m_alive;   // indices of live slots (update/draw iterate only these)
     float m_emit_accumulator = 0.0f;
     int m_alive_count = 0;
     bool m_active = true;

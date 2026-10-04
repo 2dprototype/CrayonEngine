@@ -804,7 +804,8 @@ bool MeshRenderer3D::init() {
     glGenBuffers(1, &m_dyn_vbo);
     glBindVertexArray(m_dyn_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_dyn_vbo);
-    glBufferData(GL_ARRAY_BUFFER, 65536 * sizeof(Vertex3D), nullptr, GL_DYNAMIC_DRAW);
+    m_dyn_capacity = 4096;
+    glBufferData(GL_ARRAY_BUFFER, m_dyn_capacity * sizeof(Vertex3D), nullptr, GL_DYNAMIC_DRAW);
 
     glEnableVertexAttribArray(0);
     glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, sizeof(Vertex3D), reinterpret_cast<void*>(offsetof(Vertex3D, position)));
@@ -822,6 +823,16 @@ bool MeshRenderer3D::init() {
 }
 
 void MeshRenderer3D::shutdown() {
+    if (m_grid_vao) {
+        glDeleteVertexArrays(1, &m_grid_vao);
+        m_grid_vao = 0;
+    }
+    if (m_grid_vbo) {
+        glDeleteBuffers(1, &m_grid_vbo);
+        m_grid_vbo = 0;
+    }
+    m_grid_size = -1.0f;
+    m_grid_divs = -1;
     if (m_dyn_vao) {
         glDeleteVertexArrays(1, &m_dyn_vao);
         m_dyn_vao = 0;
@@ -936,6 +947,18 @@ void MeshRenderer3D::set_spot_light_enabled(int index, bool enabled) {
     }
 }
 
+// Uniform names for the light arrays, built once instead of via string concatenation per draw.
+static const char* const kPointLightNames[4][4] = {
+    {"u_point_lights[0].pos","u_point_lights[0].color","u_point_lights[0].radius","u_point_lights[0].intensity"},
+    {"u_point_lights[1].pos","u_point_lights[1].color","u_point_lights[1].radius","u_point_lights[1].intensity"},
+    {"u_point_lights[2].pos","u_point_lights[2].color","u_point_lights[2].radius","u_point_lights[2].intensity"},
+    {"u_point_lights[3].pos","u_point_lights[3].color","u_point_lights[3].radius","u_point_lights[3].intensity"},
+};
+static const char* const kSpotLightNames[2][7] = {
+    {"u_spot_lights[0].pos","u_spot_lights[0].dir","u_spot_lights[0].color","u_spot_lights[0].radius","u_spot_lights[0].intensity","u_spot_lights[0].inner_cutoff","u_spot_lights[0].outer_cutoff"},
+    {"u_spot_lights[1].pos","u_spot_lights[1].dir","u_spot_lights[1].color","u_spot_lights[1].radius","u_spot_lights[1].intensity","u_spot_lights[1].inner_cutoff","u_spot_lights[1].outer_cutoff"},
+};
+
 void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id, const glm::vec4& tint) {
     glm::mat4 final_model = m_current_matrix * model;
 
@@ -962,11 +985,11 @@ void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuin
     int num_lights = 0;
     for (int i = 0; i < 4; ++i) {
         if (m_point_lights[i].enabled) {
-            std::string prefix = "u_point_lights[" + std::to_string(num_lights) + "].";
-            m_shader->set_vec3(prefix + "pos", m_point_lights[i].pos);
-            m_shader->set_vec3(prefix + "color", m_point_lights[i].color);
-            m_shader->set_float(prefix + "radius", m_point_lights[i].radius);
-            m_shader->set_float(prefix + "intensity", m_point_lights[i].intensity);
+            const auto& nm = kPointLightNames[num_lights];
+            m_shader->set_vec3(nm[0], m_point_lights[i].pos);
+            m_shader->set_vec3(nm[1], m_point_lights[i].color);
+            m_shader->set_float(nm[2], m_point_lights[i].radius);
+            m_shader->set_float(nm[3], m_point_lights[i].intensity);
             num_lights++;
         }
     }
@@ -976,14 +999,14 @@ void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuin
     int num_spot_lights = 0;
     for (int i = 0; i < 2; ++i) {
         if (m_spot_lights[i].enabled) {
-            std::string prefix = "u_spot_lights[" + std::to_string(num_spot_lights) + "].";
-            m_shader->set_vec3(prefix + "pos", m_spot_lights[i].pos);
-            m_shader->set_vec3(prefix + "dir", m_spot_lights[i].dir);
-            m_shader->set_vec3(prefix + "color", m_spot_lights[i].color);
-            m_shader->set_float(prefix + "radius", m_spot_lights[i].radius);
-            m_shader->set_float(prefix + "intensity", m_spot_lights[i].intensity);
-            m_shader->set_float(prefix + "inner_cutoff", m_spot_lights[i].inner_cutoff_cos);
-            m_shader->set_float(prefix + "outer_cutoff", m_spot_lights[i].outer_cutoff_cos);
+            const auto& nm = kSpotLightNames[num_spot_lights];
+            m_shader->set_vec3(nm[0], m_spot_lights[i].pos);
+            m_shader->set_vec3(nm[1], m_spot_lights[i].dir);
+            m_shader->set_vec3(nm[2], m_spot_lights[i].color);
+            m_shader->set_float(nm[3], m_spot_lights[i].radius);
+            m_shader->set_float(nm[4], m_spot_lights[i].intensity);
+            m_shader->set_float(nm[5], m_spot_lights[i].inner_cutoff_cos);
+            m_shader->set_float(nm[6], m_spot_lights[i].outer_cutoff_cos);
             num_spot_lights++;
         }
     }
@@ -1037,11 +1060,11 @@ void MeshRenderer3D::draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& mode
     int num_lights = 0;
     for (int i = 0; i < 4; ++i) {
         if (m_point_lights[i].enabled) {
-            std::string prefix = "u_point_lights[" + std::to_string(num_lights) + "].";
-            m_shader->set_vec3(prefix + "pos", m_point_lights[i].pos);
-            m_shader->set_vec3(prefix + "color", m_point_lights[i].color);
-            m_shader->set_float(prefix + "radius", m_point_lights[i].radius);
-            m_shader->set_float(prefix + "intensity", m_point_lights[i].intensity);
+            const auto& nm = kPointLightNames[num_lights];
+            m_shader->set_vec3(nm[0], m_point_lights[i].pos);
+            m_shader->set_vec3(nm[1], m_point_lights[i].color);
+            m_shader->set_float(nm[2], m_point_lights[i].radius);
+            m_shader->set_float(nm[3], m_point_lights[i].intensity);
             num_lights++;
         }
     }
@@ -1051,14 +1074,14 @@ void MeshRenderer3D::draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& mode
     int num_spot_lights = 0;
     for (int i = 0; i < 2; ++i) {
         if (m_spot_lights[i].enabled) {
-            std::string prefix = "u_spot_lights[" + std::to_string(num_spot_lights) + "].";
-            m_shader->set_vec3(prefix + "pos", m_spot_lights[i].pos);
-            m_shader->set_vec3(prefix + "dir", m_spot_lights[i].dir);
-            m_shader->set_vec3(prefix + "color", m_spot_lights[i].color);
-            m_shader->set_float(prefix + "radius", m_spot_lights[i].radius);
-            m_shader->set_float(prefix + "intensity", m_spot_lights[i].intensity);
-            m_shader->set_float(prefix + "inner_cutoff", m_spot_lights[i].inner_cutoff_cos);
-            m_shader->set_float(prefix + "outer_cutoff", m_spot_lights[i].outer_cutoff_cos);
+            const auto& nm = kSpotLightNames[num_spot_lights];
+            m_shader->set_vec3(nm[0], m_spot_lights[i].pos);
+            m_shader->set_vec3(nm[1], m_spot_lights[i].dir);
+            m_shader->set_vec3(nm[2], m_spot_lights[i].color);
+            m_shader->set_float(nm[3], m_spot_lights[i].radius);
+            m_shader->set_float(nm[4], m_spot_lights[i].intensity);
+            m_shader->set_float(nm[5], m_spot_lights[i].inner_cutoff_cos);
+            m_shader->set_float(nm[6], m_spot_lights[i].outer_cutoff_cos);
             num_spot_lights++;
         }
     }
@@ -1258,6 +1281,13 @@ void MeshRenderer3D::draw_lines_3d_batched(const Vertex3D* vertices, size_t coun
     size_t offset = 0;
     while (offset < count) {
         size_t chunk = std::min(count - offset, size_t(65536));
+        if (chunk > m_dyn_capacity) {
+            // Grow geometrically; the VBO name (and the VAO's attribute bindings) stay valid.
+            size_t new_cap = m_dyn_capacity;
+            while (new_cap < chunk) new_cap *= 2;
+            m_dyn_capacity = new_cap;
+            glBufferData(GL_ARRAY_BUFFER, m_dyn_capacity * sizeof(Vertex3D), nullptr, GL_DYNAMIC_DRAW);
+        }
         glBufferSubData(GL_ARRAY_BUFFER, 0, chunk * sizeof(Vertex3D), vertices + offset);
         glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(chunk));
         offset += chunk;
@@ -1432,20 +1462,14 @@ void MeshRenderer3D::draw_lines_3d(const std::vector<glm::vec3>& points, const g
 void MeshRenderer3D::draw_grid_3d(float size, int divisions, float y_level, const glm::vec4& color) {
     if (divisions < 1) divisions = 10;
     
-    // Static cached grid buffers to prevent reallocating vectors and reuploading VBOs every frame
-    static GLuint s_grid_vao = 0;
-    static GLuint s_grid_vbo = 0;
-    static size_t s_cached_count = 0;
-    static float s_cached_size = -1.0f;
-    static int s_cached_divs = -1;
-    static float s_cached_y = 99999.0f;
-
-    if (s_grid_vao == 0) {
-        glGenVertexArrays(1, &s_grid_vao);
-        glGenBuffers(1, &s_grid_vbo);
+    // Per-instance cache (was function-static: shared by every renderer, leaked on
+    // shutdown, and ignored the colour so changing it never changed the grid).
+    if (m_grid_vao == 0) {
+        glGenVertexArrays(1, &m_grid_vao);
+        glGenBuffers(1, &m_grid_vbo);
     }
 
-    if (s_cached_size != size || s_cached_divs != divisions || s_cached_y != y_level) {
+    if (m_grid_size != size || m_grid_divs != divisions || m_grid_y != y_level || m_grid_color != color) {
         std::vector<Vertex3D> lines;
         lines.reserve((divisions + 1) * 4);
 
@@ -1460,8 +1484,8 @@ void MeshRenderer3D::draw_grid_3d(float size, int divisions, float y_level, cons
             lines.push_back({ { half_size, y_level, c}, {0, 1, 0}, {0, 0}, color });
         }
 
-        glBindVertexArray(s_grid_vao);
-        glBindBuffer(GL_ARRAY_BUFFER, s_grid_vbo);
+        glBindVertexArray(m_grid_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_grid_vbo);
         glBufferData(GL_ARRAY_BUFFER, lines.size() * sizeof(Vertex3D), lines.data(), GL_STATIC_DRAW);
 
         glEnableVertexAttribArray(0);
@@ -1475,10 +1499,11 @@ void MeshRenderer3D::draw_grid_3d(float size, int divisions, float y_level, cons
 
         glBindVertexArray(0);
 
-        s_cached_count = lines.size();
-        s_cached_size = size;
-        s_cached_divs = divisions;
-        s_cached_y = y_level;
+        m_grid_count = lines.size();
+        m_grid_size = size;
+        m_grid_divs = divisions;
+        m_grid_y = y_level;
+        m_grid_color = color;
     }
 
     m_shader->bind();
@@ -1499,8 +1524,8 @@ void MeshRenderer3D::draw_grid_3d(float size, int divisions, float y_level, cons
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_white_texture->get_id());
 
-    glBindVertexArray(s_grid_vao);
-    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(s_cached_count));
+    glBindVertexArray(m_grid_vao);
+    glDrawArrays(GL_LINES, 0, static_cast<GLsizei>(m_grid_count));
     glBindVertexArray(0);
 
     m_shader->unbind();

@@ -16,15 +16,18 @@ Texture::~Texture() {
 }
 
 bool Texture::load_from_file(const std::string& filepath, bool nearest) {
-    int w, h, channels;
+    int w = 0, h = 0, channels = 0;
     stbi_set_flip_vertically_on_load(0);
-    unsigned char* data = stbi_load(filepath.c_str(), &w, &h, &channels, 4);
+
+    // Load with the file's natural channel count (1/2/3/4) instead of always
+    // expanding to RGBA: greyscale and RGB images use 25-75% less memory.
+    unsigned char* data = stbi_load(filepath.c_str(), &w, &h, &channels, 0);
     if (!data) {
         CRAYON_LOG_ERROR("Failed to load texture file: {}", filepath);
         return false;
     }
 
-    bool success = load_from_memory(data, w, h, 4, nearest);
+    bool success = load_from_memory(data, w, h, channels, nearest);
     stbi_image_free(data);
     return success;
 }
@@ -35,18 +38,54 @@ bool Texture::load_from_memory(const unsigned char* data, int width, int height,
         m_texture_id = 0;
     }
 
+    if (!data || width <= 0 || height <= 0) {
+        m_width = 0;
+        m_height = 0;
+        return false;
+    }
+
     m_width = width;
     m_height = height;
 
     glGenTextures(1, &m_texture_id);
     glBindTexture(GL_TEXTURE_2D, m_texture_id);
 
-    GLenum format = GL_RGBA;
-    if (channels == 1) format = GL_RED;
-    else if (channels == 3) format = GL_RGB;
-    else if (channels == 4) format = GL_RGBA;
+    // Tightly packed rows. The GL default (4-byte row alignment) corrupts or
+    // over-reads 1- and 3-channel images whose width*channels is not a multiple of 4.
+    GLint prev_align = 4;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &prev_align);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
 
-    glTexImage2D(GL_TEXTURE_2D, 0, format, m_width, m_height, 0, format, GL_UNSIGNED_BYTE, data);
+    GLenum format = GL_RGBA;
+    GLint internal_format = GL_RGBA8;
+    GLint swizzle[4] = { GL_RED, GL_GREEN, GL_BLUE, GL_ALPHA };
+    bool needs_swizzle = false;
+
+    switch (channels) {
+        case 1: // greyscale -> (g, g, g, 1)
+            format = GL_RED;  internal_format = GL_R8;
+            swizzle[0] = GL_RED; swizzle[1] = GL_RED; swizzle[2] = GL_RED; swizzle[3] = GL_ONE;
+            needs_swizzle = true;
+            break;
+        case 2: // grey + alpha -> (g, g, g, a)
+            format = GL_RG;   internal_format = GL_RG8;
+            swizzle[0] = GL_RED; swizzle[1] = GL_RED; swizzle[2] = GL_RED; swizzle[3] = GL_GREEN;
+            needs_swizzle = true;
+            break;
+        case 3:
+            format = GL_RGB;  internal_format = GL_RGB8;
+            break;
+        default:
+            format = GL_RGBA; internal_format = GL_RGBA8;
+            break;
+    }
+
+    glTexImage2D(GL_TEXTURE_2D, 0, internal_format, m_width, m_height, 0, format, GL_UNSIGNED_BYTE, data);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, prev_align);
+
+    if (needs_swizzle) {
+        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+    }
 
     // Mipmaps: without these, textures on anything that recedes into the
     // distance (floors, terrain, most real game props) alias and shimmer

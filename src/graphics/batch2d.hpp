@@ -2,6 +2,7 @@
 
 #include <vector>
 #include <string>
+#include <string_view>
 #include <memory>
 #include <stack>
 #include <glm/glm.hpp>
@@ -34,6 +35,10 @@ public:
 
     Batch2D();
     ~Batch2D();
+
+    // Owns GL buffers; copying would double-delete them.
+    Batch2D(const Batch2D&) = delete;
+    Batch2D& operator=(const Batch2D&) = delete;
 
     bool init();
     void shutdown();
@@ -106,10 +111,10 @@ public:
     // Text & Font
     void set_font(std::shared_ptr<Font> font);
     std::shared_ptr<Font> get_font() const;
-    void draw_text(const std::string& text, float x, float y, float scale, const glm::vec4& color);
-    void draw_text_ex(const std::string& text, float x, float y, float scale, const glm::vec4& color, float wrap_width = -1.0f, int align = 0);
-    float get_text_width(const std::string& text, float scale = 1.0f) const;
-    float get_text_height(const std::string& text, float scale = 1.0f) const;
+    void draw_text(std::string_view text, float x, float y, float scale, const glm::vec4& color);
+    void draw_text_ex(std::string_view text, float x, float y, float scale, const glm::vec4& color, float wrap_width = -1.0f, int align = 0);
+    float get_text_width(std::string_view text, float scale = 1.0f) const;
+    float get_text_height(std::string_view text, float scale = 1.0f) const;
 
     // bind a custom shader to be used by the next flush.
     // Pass nullptr to return to the built-in 2D batch shader.
@@ -133,6 +138,12 @@ public:
 private:
     void init_font_texture();
 
+    // Fills a triangle fan (center + rim points) using two fan triangles per
+    // quad slot. This halves the vertices a circle/arc/pie/polygon emits
+    // compared with one 4-vertex quad slot per triangle.
+    void fill_fan(const glm::vec2& center, const glm::vec2* pts, size_t count,
+                  bool closed, const glm::vec4& color);
+
     GLuint m_vao = 0;
     GLuint m_vbo = 0;
     GLuint m_ebo = 0;
@@ -146,6 +157,8 @@ private:
 
     std::vector<Vertex2D> m_vertices;
     GLuint m_current_texture = 0;
+    GLuint m_white_id = 0;                  // cached id of m_white_texture (hot path)
+    std::vector<glm::vec2> m_fan_scratch;   // reused rim-point buffer for fans
     glm::mat4 m_proj_matrix{1.0f};
     glm::mat4 m_current_proj_view{1.0f};
 

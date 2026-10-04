@@ -3,6 +3,7 @@
 #include "log.hpp"
 #include <algorithm>
 #include <cctype>
+#include <cstdlib>
 
 namespace crayon {
 
@@ -78,7 +79,20 @@ std::string Input::normalize_key(const std::string& name) const {
 }
 
 void Input::handle_event(const SDL_Event& event, const Window& window) {
-    if (event.type == SDL_EVENT_KEY_DOWN) {
+    if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+        // The matching KEY_UP / BUTTON_UP events go to whichever window has focus now,
+        // so without this, keys and buttons held during alt-tab stay "down" forever.
+        for (const auto& k : m_keys_down) m_keys_released.insert(k);
+        m_keys_down.clear();
+        for (int i = 0; i < 8; ++i) {
+            if (m_mouse_down[i]) m_mouse_released[i] = true;
+            m_mouse_down[i] = false;
+        }
+        for (int i = 0; i < 32; ++i) {
+            if (m_gamepad_buttons_down[i]) m_gamepad_buttons_released[i] = true;
+            m_gamepad_buttons_down[i] = false;
+        }
+    } else if (event.type == SDL_EVENT_KEY_DOWN) {
         if (!event.key.repeat) {
             const char* name = SDL_GetKeyName(event.key.key);
             if (name && name[0] != '\0') {
@@ -197,16 +211,25 @@ void Input::handle_event(const SDL_Event& event, const Window& window) {
     }
 }
 
+const std::string& Input::normalized(const std::string& name) const {
+    auto it = m_norm_cache.find(name);
+    if (it != m_norm_cache.end()) return it->second;
+
+    // Scripts could feed arbitrary strings; keep the memo table bounded.
+    if (m_norm_cache.size() >= 1024) m_norm_cache.clear();
+    return m_norm_cache.emplace(name, normalize_key(name)).first->second;
+}
+
 bool Input::is_key_down(const std::string& key) const {
-    return m_keys_down.contains(normalize_key(key));
+    return m_keys_down.contains(normalized(key));
 }
 
 bool Input::is_key_pressed(const std::string& key) const {
-    return m_keys_pressed.contains(normalize_key(key));
+    return m_keys_pressed.contains(normalized(key));
 }
 
 bool Input::is_key_released(const std::string& key) const {
-    return m_keys_released.contains(normalize_key(key));
+    return m_keys_released.contains(normalized(key));
 }
 
 bool Input::is_scancode_down(const std::string& scancode) const {
@@ -363,10 +386,18 @@ bool Input::gamepad_is_released(int button) const {
     return false;
 }
 
+// std::stoi throws on overflow; a script passing "99999999999" must not crash the engine.
+static int parse_small_int(const std::string& s) {
+    char* end = nullptr;
+    long v = std::strtol(s.c_str(), &end, 10);
+    if (v < 0 || v > 1000000) return -1;
+    return static_cast<int>(v);
+}
+
 int Input::parse_gamepad_button(const std::string& name) {
     if (name.empty()) return -1;
     if (std::isdigit(static_cast<unsigned char>(name[0]))) {
-        return std::stoi(name);
+        return parse_small_int(name);
     }
     return SDL_GetGamepadButtonFromString(name.c_str());
 }
@@ -374,7 +405,7 @@ int Input::parse_gamepad_button(const std::string& name) {
 int Input::parse_gamepad_axis(const std::string& name) {
     if (name.empty()) return -1;
     if (std::isdigit(static_cast<unsigned char>(name[0]))) {
-        return std::stoi(name);
+        return parse_small_int(name);
     }
     return SDL_GetGamepadAxisFromString(name.c_str());
 }

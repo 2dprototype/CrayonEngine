@@ -14,87 +14,111 @@ ParticleEmitter::ParticleEmitter(const ParticleConfig& config) {
 
 float ParticleEmitter::random_float(float min_v, float max_v) {
     if (min_v >= max_v) return min_v;
-    std::uniform_real_distribution<float> dist(min_v, max_v);
-    return dist(m_rng);
+    // 24 random bits -> [0, 1). Cheaper than building a distribution object per call.
+    const float unit = static_cast<float>(m_rng() >> 8) * (1.0f / 16777216.0f);
+    return min_v + (max_v - min_v) * unit;
+}
+
+void ParticleEmitter::rebuild_pools() {
+    const size_t n = m_particles.size();
+    m_free.clear();
+    m_free.reserve(n);
+    // Reverse order so the first emit takes slot 0 (same order as the old linear scan).
+    for (size_t i = n; i > 0; --i) m_free.push_back(static_cast<uint32_t>(i - 1));
+    m_alive.clear();
+    m_alive.reserve(n);
+    m_alive_count = 0;
 }
 
 void ParticleEmitter::set_config(const ParticleConfig& config) {
     m_config = config;
-    m_particles.resize(static_cast<size_t>(std::max(1, m_config.max_particles)));
-    for (auto& p : m_particles) {
-        p.active = false;
-    }
-    m_alive_count = 0;
+    m_particles.assign(static_cast<size_t>(std::max(1, m_config.max_particles)), Particle{});
+    rebuild_pools();
 }
 
 void ParticleEmitter::reset() {
     for (auto& p : m_particles) {
         p.active = false;
     }
-    m_alive_count = 0;
+    rebuild_pools();
     m_emit_accumulator = 0.0f;
 }
 
 void ParticleEmitter::emit(int count) {
     for (int c = 0; c < count; ++c) {
-        for (auto& p : m_particles) {
-            if (!p.active) {
-                p.active = true;
-                p.life = random_float(m_config.lifetime_min, m_config.lifetime_max);
-                p.max_life = p.life;
+        if (m_free.empty()) break; // pool exhausted: nothing more can be emitted
 
-                p.position = m_config.position + glm::vec3(
-                    random_float(-m_config.position_variance.x, m_config.position_variance.x),
-                    random_float(-m_config.position_variance.y, m_config.position_variance.y),
-                    random_float(-m_config.position_variance.z, m_config.position_variance.z)
-                );
+        const uint32_t idx = m_free.back();
+        m_free.pop_back();
+        Particle& p = m_particles[idx];
 
-                p.velocity = glm::vec3(
-                    random_float(m_config.velocity_min.x, m_config.velocity_max.x),
-                    random_float(m_config.velocity_min.y, m_config.velocity_max.y),
-                    random_float(m_config.velocity_min.z, m_config.velocity_max.z)
-                );
+        p.active = true;
+        // A zero/negative lifetime would divide by zero when computing the
+        // normalized age in draw(); keep it strictly positive.
+        p.life = std::max(0.0001f, random_float(m_config.lifetime_min, m_config.lifetime_max));
+        p.max_life = p.life;
 
-                p.acceleration = m_config.acceleration;
-                p.size_start = random_float(m_config.size_start_min, m_config.size_start_max);
-                p.size_end = m_config.size_end;
-                p.color_start = m_config.color_start;
-                p.color_end = m_config.color_end;
-                p.rotation = random_float(0.0f, 6.2831853f);
-                p.rot_speed = random_float(m_config.rot_speed_min, m_config.rot_speed_max);
+        p.position = m_config.position + glm::vec3(
+            random_float(-m_config.position_variance.x, m_config.position_variance.x),
+            random_float(-m_config.position_variance.y, m_config.position_variance.y),
+            random_float(-m_config.position_variance.z, m_config.position_variance.z)
+        );
 
-                m_alive_count++;
-                break;
-            }
-        }
+        p.velocity = glm::vec3(
+            random_float(m_config.velocity_min.x, m_config.velocity_max.x),
+            random_float(m_config.velocity_min.y, m_config.velocity_max.y),
+            random_float(m_config.velocity_min.z, m_config.velocity_max.z)
+        );
+
+        p.acceleration = m_config.acceleration;
+        p.size_start = random_float(m_config.size_start_min, m_config.size_start_max);
+        p.size_end = m_config.size_end;
+        p.color_start = m_config.color_start;
+        p.color_end = m_config.color_end;
+        p.rotation = random_float(0.0f, 6.2831853f);
+        p.rot_speed = random_float(m_config.rot_speed_min, m_config.rot_speed_max);
+
+        m_alive.push_back(idx);
     }
+    m_alive_count = static_cast<int>(m_alive.size());
 }
 
 void ParticleEmitter::update(float dt) {
     if (m_active && m_config.emission_rate > 0.0f) {
         m_emit_accumulator += dt;
-        float interval = 1.0f / m_config.emission_rate;
+        const float interval = 1.0f / m_config.emission_rate;
+
+        // Never queue more than a full pool's worth of particles: after a long
+        // stall (breakpoint, window drag) the old loop could spin for ages.
+        const float max_backlog = interval * static_cast<float>(m_particles.size());
+        if (m_emit_accumulator > max_backlog) m_emit_accumulator = max_backlog;
+
         while (m_emit_accumulator >= interval) {
             emit(1);
             m_emit_accumulator -= interval;
         }
     }
 
-    m_alive_count = 0;
-    for (auto& p : m_particles) {
-        if (!p.active) continue;
+    // Swap-remove dead particles; only live ones are visited.
+    for (size_t k = 0; k < m_alive.size(); ) {
+        const uint32_t idx = m_alive[k];
+        Particle& p = m_particles[idx];
 
         p.life -= dt;
         if (p.life <= 0.0f) {
             p.active = false;
-            continue;
+            m_free.push_back(idx);
+            m_alive[k] = m_alive.back();
+            m_alive.pop_back();
+            continue; // re-examine the element swapped into slot k
         }
 
         p.velocity += p.acceleration * dt;
         p.position += p.velocity * dt;
         p.rotation += p.rot_speed * dt;
-        m_alive_count++;
+        ++k;
     }
+    m_alive_count = static_cast<int>(m_alive.size());
 }
 
 void ParticleEmitter::draw(Batch2D& batch) {
@@ -107,8 +131,8 @@ void ParticleEmitter::draw(Batch2D& batch) {
 
     GLuint tex = m_config.texture_id ? m_config.texture_id : batch.get_white_texture_id();
 
-    for (const auto& p : m_particles) {
-        if (!p.active) continue;
+    for (const uint32_t idx : m_alive) {
+        const Particle& p = m_particles[idx];
 
         float t = 1.0f - (p.life / p.max_life);
         t = std::clamp(t, 0.0f, 1.0f);
@@ -140,8 +164,8 @@ void ParticleEmitter::draw_3d(MeshRenderer3D& renderer) {
 
     GLuint tex = m_config.texture_id ? m_config.texture_id : renderer.get_fallback_texture_id();
 
-    for (const auto& p : m_particles) {
-        if (!p.active) continue;
+    for (const uint32_t idx : m_alive) {
+        const Particle& p = m_particles[idx];
 
         float t = 1.0f - (p.life / p.max_life);
         t = std::clamp(t, 0.0f, 1.0f);

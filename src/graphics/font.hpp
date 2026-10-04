@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <string_view>
 #include <vector>
 #include <memory>
 #include <glad/glad.h>
@@ -22,6 +23,10 @@ public:
     Font();
     ~Font();
 
+    // Owns a GL texture; copying would double-delete it.
+    Font(const Font&) = delete;
+    Font& operator=(const Font&) = delete;
+
     bool load_from_file(const std::string& filepath, float pixel_height = 16.0f, bool nearest_filter = true);
     bool load_from_memory(const unsigned char* data, size_t size, float pixel_height = 16.0f, bool nearest_filter = true);
     void destroy();
@@ -33,13 +38,14 @@ public:
     float get_line_gap() const { return m_line_gap; }
     float get_line_height() const { return m_line_height; }
 
-    glm::vec2 measure_text(const std::string& text, float scale = 1.0f) const;
+    glm::vec2 measure_text(std::string_view text, float scale = 1.0f) const;
 
-    void draw(Batch2D& batch, const std::string& text, float x, float y, float scale,
+    void draw(Batch2D& batch, std::string_view text, float x, float y, float scale,
               const glm::vec4& color, float wrap_width = -1.0f, TextAlign align = TextAlign::Left) const;
 
 private:
-    void render_line(Batch2D& batch, const std::string& line, float x, float y, float scale, const glm::vec4& color) const;
+    void render_line(Batch2D& batch, std::string_view line, float x, float y, float scale, const glm::vec4& color) const;
+    float line_width(std::string_view line, float scale) const;
 
     GLuint m_texture_id = 0;
     int m_atlas_w = 512;

@@ -6,6 +6,9 @@
 #include "../physics/physics_system.hpp"
 #include "../physics/physics2d_system.hpp"
 #include <filesystem>
+#include <algorithm>
+#include <cctype>
+#include <system_error>
 
 namespace crayon {
 
@@ -27,6 +30,7 @@ Engine::~Engine() {
 }
 
 bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, const std::string& title) {
+    m_shutdown_done = false;
     // Remember CLI overrides for soft_restart()
     m_cli_window_w  = window_w;
     m_cli_window_h  = window_h;
@@ -51,8 +55,9 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
     // 3. Run config phase if a game script exists (like love.conf, inside target script)
     bool script_loaded = false;
     if (!m_game_script_path.empty()) {
-        if (std::filesystem::exists(m_game_script_path)) {
-            m_last_script_write_time = std::filesystem::last_write_time(m_game_script_path);
+        std::error_code ec;
+        if (std::filesystem::exists(m_game_script_path, ec)) {
+            m_last_script_write_time = std::filesystem::last_write_time(m_game_script_path, ec);
             script_loaded = m_lua_runtime->run_config_phase(m_game_script_path, m_config);
         } else {
             CRAYON_LOG_WARN("Game entry script not found: {}", m_game_script_path);
@@ -198,7 +203,12 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
 
 void Engine::shutdown() {
     m_running = false;
+    if (m_shutdown_done) return; // destructor calls this again after an explicit shutdown()
+    m_shutdown_done = true;
+
     m_texture_cache.clear();
+    m_texture_sizes.clear();
+    m_texture_failed.clear();
     m_mesh_cache.clear();
     m_model_cache.clear();
 
@@ -217,11 +227,13 @@ void Engine::shutdown() {
     if (m_config.modules.audio) {
         m_audio.shutdown();
     }
-    if (m_config.modules.mesh3d) {
+    if (m_mesh_renderer_initialized) {
         m_mesh_renderer.shutdown();
+        m_mesh_renderer_initialized = false;
     }
     m_post_process_chain.shutdown();
     m_batch2d.shutdown();
+    m_post_shader.reset();   // owns a GL program: must die before the context does
     m_fbo.shutdown();
     m_window.shutdown();
 }
@@ -240,9 +252,16 @@ GLuint Engine::load_texture(const std::string& path) {
         return it->second->get_id();
     }
 
+    // Scripts often call loadTexture() every frame. Remember failures so a missing
+    // file costs one disk probe + one log line, not one per frame.
+    if (m_texture_failed.find(path) != m_texture_failed.end()) {
+        return m_batch2d.get_white_texture_id();
+    }
+
     auto tex = std::make_shared<Texture>();
     if (!tex->load_from_file(path, true)) {
         CRAYON_LOG_WARN("Failed to load texture '{}', falling back to white texture", path);
+        m_texture_failed.insert(path);
         return m_batch2d.get_white_texture_id();
     }
 
@@ -271,9 +290,15 @@ std::shared_ptr<Mesh3D> Engine::load_model(const std::string& path) {
 
     auto mesh = std::make_shared<Mesh3D>();
     bool ok = false;
-    std::string lower = path;
-    std::transform(lower.begin(), lower.end(), lower.begin(), ::tolower);
-    if (lower.ends_with(".gltf") || lower.ends_with(".glb")) {
+    auto ends_with_ci = [&path](std::string_view suffix) {
+        if (path.size() < suffix.size()) return false;
+        const size_t off = path.size() - suffix.size();
+        for (size_t i = 0; i < suffix.size(); ++i) {
+            if (std::tolower(static_cast<unsigned char>(path[off + i])) != suffix[i]) return false;
+        }
+        return true;
+    };
+    if (ends_with_ci(".gltf") || ends_with_ci(".glb")) {
         ok = mesh->load_from_gltf(path);
     } else {
         ok = mesh->load_from_obj(path);
@@ -314,21 +339,34 @@ bool Engine::check_hot_reload() {
         return true;
     }
 
-    if (!m_game_script_path.empty() && std::filesystem::exists(m_game_script_path)) {
-        auto current_time = std::filesystem::last_write_time(m_game_script_path);
-        if (current_time != m_last_script_write_time) {
-            m_last_script_write_time = current_time;
-            return true;
-        }
+    if (m_game_script_path.empty()) return false;
+
+    // A stat() every frame is wasted work; twice a second is plenty for an editor save.
+    m_hot_reload_timer += m_delta_time;
+    if (m_hot_reload_timer < 0.5f) return false;
+    m_hot_reload_timer = 0.0f;
+
+    // Non-throwing overloads: editors that save by delete+rename can make the file
+    // vanish between the exists() and last_write_time() calls, which used to throw
+    // out of the main loop and kill the engine.
+    std::error_code ec;
+    auto current_time = std::filesystem::last_write_time(m_game_script_path, ec);
+    if (ec) return false;
+    if (current_time != m_last_script_write_time) {
+        m_last_script_write_time = current_time;
+        return true;
     }
     return false;
 }
 
 void Engine::soft_restart() {
     if (m_game_script_path.empty()) return;
-    if (!std::filesystem::exists(m_game_script_path)) {
-        CRAYON_LOG_WARN("soft_restart: script no longer exists: {}", m_game_script_path);
-        return;
+    {
+        std::error_code ec;
+        if (!std::filesystem::exists(m_game_script_path, ec)) {
+            CRAYON_LOG_WARN("soft_restart: script no longer exists: {}", m_game_script_path);
+            return;
+        }
     }
 
     CRAYON_LOG_INFO("Soft restart: reloading '{}'", m_game_script_path);
@@ -343,8 +381,13 @@ void Engine::soft_restart() {
     // ---------------------------------------------------------------
     m_texture_cache.clear();
     m_texture_sizes.clear();
+    m_texture_failed.clear();
     m_mesh_cache.clear();
     m_model_cache.clear();
+
+    // Per-script graphics state must not leak into the reloaded script.
+    m_batch2d.set_font(nullptr);
+    m_active_color = glm::vec4(1.0f);
 
     // ---------------------------------------------------------------
     // 3. Tear down everything that owns runtime state.
@@ -516,8 +559,13 @@ void Engine::soft_restart() {
     // ---------------------------------------------------------------
     // 12. Remember the new mtime and clear the pending flag.
     // ---------------------------------------------------------------
-    m_last_script_write_time = std::filesystem::last_write_time(m_game_script_path);
+    {
+        std::error_code ec;
+        auto t = std::filesystem::last_write_time(m_game_script_path, ec);
+        if (!ec) m_last_script_write_time = t;
+    }
     m_hot_reload_requested   = false;
+    m_hot_reload_timer       = 0.0f;
 
     CRAYON_LOG_INFO("Soft restart complete");
 }

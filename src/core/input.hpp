@@ -3,6 +3,9 @@
 #include <string>
 #include <vector>
 #include <unordered_set>
+#include <unordered_map>
+#include <functional>
+#include <string_view>
 #include <SDL3/SDL.h>
 
 namespace crayon {
@@ -97,6 +100,16 @@ public:
     std::string normalize_key(const std::string& name) const;
 
 private:
+    // Memoised normalize_key(): script code polls the same few key names every
+    // frame, so after the first call a lookup is one hash and zero allocations.
+    const std::string& normalized(const std::string& name) const;
+
+    struct NameHash {
+        using is_transparent = void;
+        size_t operator()(std::string_view s) const noexcept { return std::hash<std::string_view>{}(s); }
+    };
+    mutable std::unordered_map<std::string, std::string, NameHash, std::equal_to<>> m_norm_cache;
+
     std::unordered_set<std::string> m_keys_down;
     std::unordered_set<std::string> m_keys_pressed;
     std::unordered_set<std::string> m_keys_released;

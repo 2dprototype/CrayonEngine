@@ -11,6 +11,10 @@ public:
     Texture();
     ~Texture();
 
+    // Owns a GL texture; copying would double-delete it.
+    Texture(const Texture&) = delete;
+    Texture& operator=(const Texture&) = delete;
+
     bool load_from_file(const std::string& filepath, bool nearest = true);
     bool load_from_memory(const unsigned char* data, int width, int height, int channels, bool nearest = true);
 

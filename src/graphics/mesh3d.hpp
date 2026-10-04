@@ -279,7 +279,17 @@ private:
     // Immediate dynamic buffer for 3D lines, triangles, billboards
     GLuint m_dyn_vao = 0;
     GLuint m_dyn_vbo = 0;
+    size_t m_dyn_capacity = 0;              // vertices currently allocated in m_dyn_vbo
     std::vector<Vertex3D> m_line_batch;
+
+    // Cached grid geometry (see draw_grid_3d)
+    GLuint m_grid_vao = 0;
+    GLuint m_grid_vbo = 0;
+    size_t m_grid_count = 0;
+    float  m_grid_size = -1.0f;
+    int    m_grid_divs = -1;
+    float  m_grid_y = 99999.0f;
+    glm::vec4 m_grid_color{-1.0f};
 };
 
 } // namespace crayon

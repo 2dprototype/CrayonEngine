@@ -10,6 +10,7 @@ FBO::~FBO() {
 }
 
 bool FBO::init(int width, int height) {
+    shutdown(); // re-init must not leak the previous GL objects
     m_width = width;
     m_height = height;
 

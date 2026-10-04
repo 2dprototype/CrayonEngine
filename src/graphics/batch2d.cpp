@@ -160,6 +160,7 @@ bool Batch2D::init() {
     }
 
     m_white_texture = Texture::create_white();
+    m_white_id = m_white_texture ? m_white_texture->get_id() : 0;
     init_font_texture();
 
     glGenVertexArrays(1, &m_vao);
@@ -215,6 +216,19 @@ void Batch2D::shutdown() {
         glDeleteBuffers(1, &m_ebo);
         m_ebo = 0;
     }
+
+    // Release GL-owning members now, while the GL context still exists. If they
+    // were left to the destructor they would call glDelete* after the window and
+    // context were already destroyed.
+    m_shader_override.reset();
+    m_current_font.reset();
+    m_shader.reset();
+    m_white_texture.reset();
+    m_font_texture.reset();
+    m_white_id = 0;
+    m_current_texture = 0;
+    m_vertices.clear();
+    m_proj_stack.clear();
 }
 
 void Batch2D::begin(int virtual_w, int virtual_h) {
@@ -431,7 +445,7 @@ void Batch2D::flush() {
     active->set_int("u_texture", 0);
 
     glActiveTexture(GL_TEXTURE0);
-    glBindTexture(GL_TEXTURE_2D, m_current_texture != 0 ? m_current_texture : m_white_texture->get_id());
+    glBindTexture(GL_TEXTURE_2D, m_current_texture != 0 ? m_current_texture : m_white_id);
 
     glBindVertexArray(m_vao);
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
@@ -458,7 +472,7 @@ void Batch2D::draw_sprite(GLuint texture_id, float x, float y, float w, float h,
                          float u0, float v0, float u1, float v1,
                          const glm::vec4& color,
                          float angle_rad, float origin_x, float origin_y) {
-    if (texture_id == 0) texture_id = m_white_texture->get_id();
+    if (texture_id == 0) texture_id = m_white_id;
 
     if (m_current_texture != 0 && m_current_texture != texture_id) {
         flush();
@@ -559,7 +573,7 @@ void Batch2D::draw_point(float x, float y, float size, const glm::vec4& color) {
 
 void Batch2D::draw_rect(float x, float y, float w, float h, const glm::vec4& color, bool filled, float thickness) {
     if (filled) {
-        draw_sprite(m_white_texture->get_id(), x, y, w, h, 0, 0, 1, 1, color);
+        draw_sprite(m_white_id, x, y, w, h, 0, 0, 1, 1, color);
     } else {
         draw_rect(x, y, w, thickness, color, true);
         draw_rect(x, y + h - thickness, w, thickness, color, true);
@@ -570,9 +584,9 @@ void Batch2D::draw_rect(float x, float y, float w, float h, const glm::vec4& col
 
 void Batch2D::draw_triangle(float x1, float y1, float x2, float y2, float x3, float y3, const glm::vec4& color, bool filled) {
     if (filled) {
-        if (m_current_texture != 0 && m_current_texture != m_white_texture->get_id()) flush();
+        if (m_current_texture != 0 && m_current_texture != m_white_id) flush();
         if (m_vertices.size() + 4 > MAX_VERTICES) flush();
-        m_current_texture = m_white_texture->get_id();
+        m_current_texture = m_white_id;
 
         m_vertices.push_back({ {x1, y1}, {0, 0}, color });
         m_vertices.push_back({ {x2, y2}, {1, 0}, color });
@@ -587,9 +601,9 @@ void Batch2D::draw_triangle(float x1, float y1, float x2, float y2, float x3, fl
 
 void Batch2D::draw_quad(float x1, float y1, float x2, float y2, float x3, float y3, float x4, float y4, const glm::vec4& color, bool filled) {
     if (filled) {
-        if (m_current_texture != 0 && m_current_texture != m_white_texture->get_id()) flush();
+        if (m_current_texture != 0 && m_current_texture != m_white_id) flush();
         if (m_vertices.size() + 4 > MAX_VERTICES) flush();
-        m_current_texture = m_white_texture->get_id();
+        m_current_texture = m_white_id;
 
         m_vertices.push_back({ {x1, y1}, {0, 0}, color });
         m_vertices.push_back({ {x2, y2}, {1, 0}, color });
@@ -600,6 +614,31 @@ void Batch2D::draw_quad(float x1, float y1, float x2, float y2, float x3, float 
         draw_line(x2, y2, x3, y3, color);
         draw_line(x3, y3, x4, y4, color);
         draw_line(x4, y4, x1, y1, color);
+    }
+}
+
+void Batch2D::fill_fan(const glm::vec2& center, const glm::vec2* pts, size_t count,
+                       bool closed, const glm::vec4& color) {
+    if (count < 2 || !pts) return;
+
+    if (m_current_texture != 0 && m_current_texture != m_white_id) flush();
+    m_current_texture = m_white_id;
+
+    const size_t tri = closed ? count : count - 1;
+    auto at = [&](size_t j) -> const glm::vec2& { return pts[closed ? (j % count) : j]; };
+
+    // Quad slot (c, a, b, d) is drawn by the static index pattern as triangles
+    // (c, a, b) and (b, d, c) == fan triangles (c, p[i], p[i+1]) and (c, p[i+1], p[i+2]).
+    for (size_t i = 0; i < tri; i += 2) {
+        if (m_vertices.size() + 4 > MAX_VERTICES) flush();
+        const glm::vec2& a = at(i);
+        const glm::vec2& b = at(i + 1);
+        const glm::vec2& d = (i + 1 < tri) ? at(i + 2) : b; // odd tail -> degenerate 2nd triangle
+
+        m_vertices.push_back({ center, {0.0f, 0.0f}, color });
+        m_vertices.push_back({ a,      {1.0f, 0.0f}, color });
+        m_vertices.push_back({ b,      {1.0f, 1.0f}, color });
+        m_vertices.push_back({ d,      {0.0f, 1.0f}, color });
     }
 }
 
@@ -614,11 +653,7 @@ void Batch2D::draw_polygon(const std::vector<glm::vec2>& points, const glm::vec4
         }
         center /= static_cast<float>(points.size());
 
-        for (size_t i = 0; i < points.size(); ++i) {
-            const auto& p1 = points[i];
-            const auto& p2 = points[(i + 1) % points.size()];
-            draw_triangle(center.x, center.y, p1.x, p1.y, p2.x, p2.y, color, true);
-        }
+        fill_fan(center, points.data(), points.size(), true, color);
     } else {
         for (size_t i = 0; i < points.size(); ++i) {
             const auto& p1 = points[i];
@@ -666,7 +701,7 @@ void Batch2D::draw_line(float x1, float y1, float x2, float y2, const glm::vec4&
     if (len <= 0.0001f) return;
 
     float angle = std::atan2(dy, dx);
-    draw_sprite(m_white_texture->get_id(), x1, y1, len, thickness, 0, 0, 1, 1, color, angle, 0.0f, thickness * 0.5f);
+    draw_sprite(m_white_id, x1, y1, len, thickness, 0, 0, 1, 1, color, angle, 0.0f, thickness * 0.5f);
 }
 
 void Batch2D::draw_circle(float cx, float cy, float radius, const glm::vec4& color, bool filled, int segments) {
@@ -678,17 +713,13 @@ void Batch2D::draw_ellipse(float cx, float cy, float rx, float ry, const glm::ve
     float step = (2.0f * 3.14159265359f) / segments;
 
     if (filled) {
-        for (int i = 0; i < segments; ++i) {
-            float a0 = i * step;
-            float a1 = (i + 1) * step;
-
-            float x0 = cx + std::cos(a0) * rx;
-            float y0 = cy + std::sin(a0) * ry;
-            float x1 = cx + std::cos(a1) * rx;
-            float y1 = cy + std::sin(a1) * ry;
-
-            draw_triangle(cx, cy, x0, y0, x1, y1, color, true);
+        m_fan_scratch.clear();
+        m_fan_scratch.reserve(static_cast<size_t>(segments) + 1);
+        for (int i = 0; i <= segments; ++i) {
+            float a = i * step;
+            m_fan_scratch.emplace_back(cx + std::cos(a) * rx, cy + std::sin(a) * ry);
         }
+        fill_fan(glm::vec2(cx, cy), m_fan_scratch.data(), m_fan_scratch.size(), false, color);
     } else {
         for (int i = 0; i < segments; ++i) {
             float a0 = i * step;
@@ -706,15 +737,13 @@ void Batch2D::draw_arc(float cx, float cy, float radius, float start_angle, floa
     float step = diff / segments;
 
     if (filled) {
-        for (int i = 0; i < segments; ++i) {
-            float a0 = start_angle + i * step;
-            float a1 = start_angle + (i + 1) * step;
-            float x0 = cx + std::cos(a0) * radius;
-            float y0 = cy + std::sin(a0) * radius;
-            float x1 = cx + std::cos(a1) * radius;
-            float y1 = cy + std::sin(a1) * radius;
-            draw_triangle(cx, cy, x0, y0, x1, y1, color, true);
+        m_fan_scratch.clear();
+        m_fan_scratch.reserve(static_cast<size_t>(segments) + 1);
+        for (int i = 0; i <= segments; ++i) {
+            float a = start_angle + i * step;
+            m_fan_scratch.emplace_back(cx + std::cos(a) * radius, cy + std::sin(a) * radius);
         }
+        fill_fan(glm::vec2(cx, cy), m_fan_scratch.data(), m_fan_scratch.size(), false, color);
     } else {
         for (int i = 0; i < segments; ++i) {
             float a0 = start_angle + i * step;
@@ -764,7 +793,7 @@ std::shared_ptr<Font> Batch2D::get_font() const {
     return m_current_font;
 }
 
-void Batch2D::draw_text(const std::string& text, float x, float y, float scale, const glm::vec4& color) {
+void Batch2D::draw_text(std::string_view text, float x, float y, float scale, const glm::vec4& color) {
     if (m_current_font) {
         m_current_font->draw(*this, text, x, y, scale, color, -1.0f, TextAlign::Left);
         return;
@@ -805,7 +834,7 @@ void Batch2D::draw_text(const std::string& text, float x, float y, float scale, 
     }
 }
 
-void Batch2D::draw_text_ex(const std::string& text, float x, float y, float scale, const glm::vec4& color, float wrap_width, int align) {
+void Batch2D::draw_text_ex(std::string_view text, float x, float y, float scale, const glm::vec4& color, float wrap_width, int align) {
     if (m_current_font) {
         TextAlign ta = TextAlign::Left;
         if (align == 1) ta = TextAlign::Center;
@@ -816,7 +845,7 @@ void Batch2D::draw_text_ex(const std::string& text, float x, float y, float scal
     draw_text(text, x, y, scale, color);
 }
 
-float Batch2D::get_text_width(const std::string& text, float scale) const {
+float Batch2D::get_text_width(std::string_view text, float scale) const {
     if (m_current_font) {
         return m_current_font->measure_text(text, scale).x;
     }
@@ -835,7 +864,7 @@ float Batch2D::get_text_width(const std::string& text, float scale) const {
     return max_len * 8.0f * scale;
 }
 
-float Batch2D::get_text_height(const std::string& text, float scale) const {
+float Batch2D::get_text_height(std::string_view text, float scale) const {
     if (m_current_font) {
         return m_current_font->measure_text(text, scale).y;
     }
@@ -853,15 +882,13 @@ void Batch2D::draw_pie(float cx, float cy, float radius, float start_angle, floa
     float da = (end_angle - start_angle) / static_cast<float>(segments);
 
     if (filled) {
-        for (int i = 0; i < segments; ++i) {
-            float a1 = start_angle + static_cast<float>(i) * da;
-            float a2 = start_angle + static_cast<float>(i + 1) * da;
-            float x1 = cx + std::cos(a1) * radius;
-            float y1 = cy + std::sin(a1) * radius;
-            float x2 = cx + std::cos(a2) * radius;
-            float y2 = cy + std::sin(a2) * radius;
-            draw_triangle(cx, cy, x1, y1, x2, y2, color, true);
+        m_fan_scratch.clear();
+        m_fan_scratch.reserve(static_cast<size_t>(segments) + 1);
+        for (int i = 0; i <= segments; ++i) {
+            float a = start_angle + static_cast<float>(i) * da;
+            m_fan_scratch.emplace_back(cx + std::cos(a) * radius, cy + std::sin(a) * radius);
         }
+        fill_fan(glm::vec2(cx, cy), m_fan_scratch.data(), m_fan_scratch.size(), false, color);
     } else {
         float x_start = cx + std::cos(start_angle) * radius;
         float y_start = cy + std::sin(start_angle) * radius;
@@ -876,9 +903,9 @@ void Batch2D::draw_pie(float cx, float cy, float radius, float start_angle, floa
 void Batch2D::draw_gradient_rect(float x, float y, float w, float h,
                                  const glm::vec4& c_tl, const glm::vec4& c_tr,
                                  const glm::vec4& c_br, const glm::vec4& c_bl) {
-    if (m_current_texture != 0 && m_current_texture != m_white_texture->get_id()) flush();
+    if (m_current_texture != 0 && m_current_texture != m_white_id) flush();
     if (m_vertices.size() + 4 > MAX_VERTICES) flush();
-    m_current_texture = m_white_texture->get_id();
+    m_current_texture = m_white_id;
 
     m_vertices.push_back({ {x, y}, {0.0f, 0.0f}, c_tl });
     m_vertices.push_back({ {x + w, y}, {1.0f, 0.0f}, c_tr });
@@ -960,7 +987,7 @@ void Batch2D::draw_rounded_rect_ex(float x, float y, float w, float h, float rtl
 }
 
 GLuint Batch2D::get_white_texture_id() const {
-    return m_white_texture ? m_white_texture->get_id() : 0;
+    return m_white_texture ? m_white_id : 0;
 }
 
 GLuint Batch2D::get_font_texture_id() const {
