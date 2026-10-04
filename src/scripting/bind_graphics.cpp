@@ -379,10 +379,26 @@ static int l_canvas_render_to(lua_State* L) {
         return 0;
     }
 
-    // Flush batch, bind canvas FBO, run callback, flush batch, restore virtual screen
-    Engine::get().get_batch2d().flush();
+    auto& batch = Engine::get().get_batch2d();
+
+    // Submit anything queued in virtual-screen space first.
+    batch.flush();
+
+    // CRITICAL: unbind every texture unit before the canvas FBO becomes
+    // current. If the canvas's own color texture is still bound to a
+    // sampler while its FBO is bound, drivers treat that as a feedback
+    // loop and may reject / corrupt subsequent writes to the FBO —
+    // manifesting as "renders once, then black".
+    for (int i = 0; i < 4; ++i) {
+        glActiveTexture(GL_TEXTURE0 + i);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    glActiveTexture(GL_TEXTURE0);
+
     c->bind();
     glViewport(0, 0, c->get_width(), c->get_height());
+
+    batch.push_projection(c->get_width(), c->get_height());
 
     lua_pushvalue(L, 2);
     if (lua_pcall(L, 0, 0, 0) != 0) {
@@ -391,8 +407,17 @@ static int l_canvas_render_to(lua_State* L) {
         lua_pop(L, 1);
     }
 
-    Engine::get().get_batch2d().flush();
+    batch.pop_projection();
+
     c->unbind();
+
+    // Same defensive unbind on the way out, so the canvas texture never
+    // lingers on a unit going into the next frame.
+    for (int i = 0; i < 4; ++i) {
+        glActiveTexture(GL_TEXTURE0 + i);
+        glBindTexture(GL_TEXTURE_2D, 0);
+    }
+    glActiveTexture(GL_TEXTURE0);
 
     int vw = Engine::get().get_window().get_virtual_width();
     int vh = Engine::get().get_window().get_virtual_height();
@@ -2923,6 +2948,23 @@ static int l_graphics_pop_matrix(lua_State* L) {
     return 0;
 }
 
+static int l_graphics_push_projection_2d(lua_State* L) {
+    int w = static_cast<int>(luaL_checkinteger(L, 1));
+    int h = static_cast<int>(luaL_checkinteger(L, 2));
+    if (w <= 0 || h <= 0) {
+        luaL_error(L, "pushProjection2D: width and height must be > 0");
+        return 0;
+    }
+    Engine::get().get_batch2d().push_projection(w, h);
+    return 0;
+}
+
+static int l_graphics_pop_projection_2d(lua_State* L) {
+    (void)L;
+    Engine::get().get_batch2d().pop_projection();
+    return 0;
+}
+
 static int l_graphics_translate(lua_State* L) {
     float x = static_cast<float>(luaL_checknumber(L, 1));
     float y = static_cast<float>(luaL_checknumber(L, 2));
@@ -3987,6 +4029,12 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_pop_matrix);
     lua_setfield(L, -2, "popMatrix");
+    
+    lua_pushcfunction(L, l_graphics_push_projection_2d);
+    lua_setfield(L, -2, "pushProjection2D");
+
+    lua_pushcfunction(L, l_graphics_pop_projection_2d);
+    lua_setfield(L, -2, "popProjection2D");
 
     lua_pushcfunction(L, l_graphics_translate);
     lua_setfield(L, -2, "translate");

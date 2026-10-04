@@ -116,6 +116,13 @@ public:
     void set_shader_override(std::shared_ptr<Shader> shader) { m_shader_override = std::move(shader); }
     std::shared_ptr<Shader> get_shader_override() const { return m_shader_override; }
     
+    // Save/restore the 2D projection + virtual-size state. Used by
+    // canvas:renderTo so the callback draws in canvas-space coordinates
+    // instead of the (larger) virtual-screen space.
+    void push_projection(int w, int h);
+    void pop_projection();
+    
+    
     GLuint get_white_texture_id() const;
     GLuint get_font_texture_id() const;
     
@@ -148,6 +155,14 @@ private:
 
     int m_virtual_w = 320;
     int m_virtual_h = 240;
+    
+    struct ProjState {
+        glm::mat4 proj;
+        glm::mat4 proj_view;
+        int virtual_w;
+        int virtual_h;
+    };
+    std::vector<ProjState> m_proj_stack;
 };
 
 } // namespace crayon

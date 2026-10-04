@@ -1,5 +1,10 @@
 local shader
 
+function crayon.config(t)
+    t.window.width = 640
+    t.window.height = 360
+end
+
 function crayon.init()
     crayon.window.setResolution(640, 360)
 

@@ -233,9 +233,15 @@ void Batch2D::begin(int virtual_w, int virtual_h) {
         m_scissor_active = false;
     }
 
-    // clear any shader override so a missed setShader(nil) doesn't
+    // Clear any shader override so a missed setShader(nil) doesn't
     // bleed into the next frame.
     m_shader_override.reset();
+
+    // Drop any projection pushes the previous frame left unbalanced.
+    // A leaked pushProjection2D() would otherwise persist a stale
+    // ortho matrix (and virtual size) into the new frame, causing
+    // everything to render in the wrong coordinate space.
+    m_proj_stack.clear();
 }
 
 void Batch2D::end() {
@@ -320,6 +326,38 @@ void Batch2D::pop_matrix_2d() {
     m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
 }
 
+void Batch2D::push_projection(int w, int h) {
+    flush();   // submit anything queued under the old projection first
+
+    m_proj_stack.push_back({ m_proj_matrix, m_current_proj_view, m_virtual_w, m_virtual_h });
+
+    m_virtual_w = w;
+    m_virtual_h = h;
+    m_proj_matrix = glm::ortho(0.0f, static_cast<float>(w),
+                               static_cast<float>(h), 0.0f, -1.0f, 1.0f);
+    m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
+
+    // Reset any active scissor; the old rect is in the wrong space.
+    if (m_scissor_active) {
+        glDisable(GL_SCISSOR_TEST);
+        m_scissor_active = false;
+    }
+}
+
+void Batch2D::pop_projection() {
+    flush();   // submit canvas-space geometry before we switch back
+
+    if (!m_proj_stack.empty()) {
+        const ProjState& s = m_proj_stack.back();
+        m_proj_matrix      = s.proj;
+        m_current_proj_view = s.proj_view;
+        m_virtual_w        = s.virtual_w;
+        m_virtual_h        = s.virtual_h;
+        m_proj_stack.pop_back();
+    }
+    // else: unbalanced pop, leave current state alone.
+}
+
 void Batch2D::translate_2d(float x, float y) {
     flush();
     m_model_matrix_2d = glm::translate(m_model_matrix_2d, glm::vec3(x, y, 0.0f));
@@ -378,9 +416,7 @@ void Batch2D::flush() {
     glDisable(GL_DEPTH_TEST);
 
     // Use the caller-supplied shader override if one is set, otherwise
-    // fall back to the built-in 2D batch shader. Previously we always
-    // bound m_shader here, which silently clobbered any shader that
-    // Graphics.setShader() had just bound before the geometry was queued.
+    // fall back to the built-in 2D batch shader.
     Shader* active = m_shader_override ? m_shader_override.get() : m_shader.get();
     active->bind();
     active->set_mat4("u_proj", m_current_proj_view);
@@ -398,6 +434,14 @@ void Batch2D::flush() {
 
     glBindVertexArray(0);
     active->unbind();
+
+    // Unbind the texture we just sampled. If we leave it bound and a
+    // later call binds the FBO that owns that texture (e.g. next
+    // frame's canvas:renderTo), the driver sees a read/write feedback
+    // loop and refuses to write into the attachment — producing the
+    // classic "renders once, then black" symptom.
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_2D, 0);
 
     m_vertices.clear();
 }

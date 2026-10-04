@@ -25,7 +25,8 @@ local playerY = 120
 --   location 0 = a_position (vec2, in virtual/pixel space)
 --   location 1 = a_uv       (vec2)
 --   location 2 = a_color    (vec4)
--- and expects the Batch2D to upload `u_projection`.
+-- Batch2D uploads the orthographic matrix as "u_proj" and the texture
+-- sampler as "u_texture" (see Batch2D::flush()).
 -- ----------------------------------------------------------------------------
 local crtVertShader = [[
 #version 330 core
@@ -33,7 +34,7 @@ layout(location = 0) in vec2 a_position;
 layout(location = 1) in vec2 a_uv;
 layout(location = 2) in vec4 a_color;
 
-uniform mat4 u_projection;
+uniform mat4 u_proj;          // <-- was u_projection
 
 out vec2 v_uv;
 out vec4 v_color;
@@ -41,7 +42,7 @@ out vec4 v_color;
 void main() {
     v_uv = a_uv;
     v_color = a_color;
-    gl_Position = u_projection * vec4(a_position, 0.0, 1.0);
+    gl_Position = u_proj * vec4(a_position, 0.0, 1.0);
 }
 ]]
 

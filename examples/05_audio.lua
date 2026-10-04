@@ -23,7 +23,7 @@ function crayon.init()
 
     -- Attempt loading a sound effect if present in assets
     -- Supported formats: WAV via SDL3 audio loading
-    soundId = crayon.audio.loadSound("assets/audio/laser.wav")
+    soundId = crayon.audio.loadSound("assets/audio/snare_4.wav")
     if soundId > 0 then
         audioLoaded = true
     end
