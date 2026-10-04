@@ -2837,13 +2837,21 @@ static int l_graphics_load_shader(lua_State* L) {
 }
 
 static int l_graphics_set_shader(lua_State* L) {
-    Engine::get().get_batch2d().flush();
+    auto& batch = Engine::get().get_batch2d();
+
+    // Flush pending geometry with the *previous* shader so it isn't
+    // retroactively drawn with the new one.
+    batch.flush();
+
     if (lua_isnoneornil(L, 1)) {
-        glUseProgram(0);
+        batch.set_shader_override(nullptr);
         return 0;
     }
+
     auto shader = check_shader(L, 1);
-    shader->bind();
+    // Store the override; Batch2D::flush() will bind it at draw time and
+    // will also set u_proj / u_texture for us.
+    batch.set_shader_override(shader);
     return 0;
 }
 

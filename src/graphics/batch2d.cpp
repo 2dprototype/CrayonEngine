@@ -232,6 +232,10 @@ void Batch2D::begin(int virtual_w, int virtual_h) {
         glDisable(GL_SCISSOR_TEST);
         m_scissor_active = false;
     }
+
+    // clear any shader override so a missed setShader(nil) doesn't
+    // bleed into the next frame.
+    m_shader_override.reset();
 }
 
 void Batch2D::end() {
@@ -373,9 +377,14 @@ void Batch2D::flush() {
     }
     glDisable(GL_DEPTH_TEST);
 
-    m_shader->bind();
-    m_shader->set_mat4("u_proj", m_current_proj_view);
-    m_shader->set_int("u_texture", 0);
+    // Use the caller-supplied shader override if one is set, otherwise
+    // fall back to the built-in 2D batch shader. Previously we always
+    // bound m_shader here, which silently clobbered any shader that
+    // Graphics.setShader() had just bound before the geometry was queued.
+    Shader* active = m_shader_override ? m_shader_override.get() : m_shader.get();
+    active->bind();
+    active->set_mat4("u_proj", m_current_proj_view);
+    active->set_int("u_texture", 0);
 
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, m_current_texture != 0 ? m_current_texture : m_white_texture->get_id());
@@ -388,7 +397,7 @@ void Batch2D::flush() {
     glDrawElements(GL_TRIANGLES, static_cast<GLsizei>(quad_count * 6), GL_UNSIGNED_INT, nullptr);
 
     glBindVertexArray(0);
-    m_shader->unbind();
+    active->unbind();
 
     m_vertices.clear();
 }

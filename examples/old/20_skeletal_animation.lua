@@ -59,7 +59,7 @@ function crayon.init()
 
     -- Try loading a glTF humanoid character (replace path with your rigged .glb / .gltf)
     local sample_paths = {
-        "models/Soldier.glb",
+        "../../models/Soldier.glb",
     }
 
     for _, path in ipairs(sample_paths) do

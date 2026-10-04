@@ -111,8 +111,14 @@ public:
     float get_text_width(const std::string& text, float scale = 1.0f) const;
     float get_text_height(const std::string& text, float scale = 1.0f) const;
 
+    // bind a custom shader to be used by the next flush.
+    // Pass nullptr to return to the built-in 2D batch shader.
+    void set_shader_override(std::shared_ptr<Shader> shader) { m_shader_override = std::move(shader); }
+    std::shared_ptr<Shader> get_shader_override() const { return m_shader_override; }
+    
     GLuint get_white_texture_id() const;
     GLuint get_font_texture_id() const;
+    
 
 private:
     void init_font_texture();
@@ -125,6 +131,8 @@ private:
     std::shared_ptr<Texture> m_white_texture;
     std::shared_ptr<Texture> m_font_texture;
     std::shared_ptr<Font> m_current_font;
+    
+    std::shared_ptr<Shader> m_shader_override;      // null = use m_shader
 
     std::vector<Vertex2D> m_vertices;
     GLuint m_current_texture = 0;
