@@ -471,27 +471,16 @@ void AudioSystem::clear_custom_gen(uint32_t voice_id) {
 }
 
 void AudioSystem::refill_custom_gen(Voice& v) {
-    if (!m_custom_gen_cb || v.custom_gen_ref < 0) { ... }
-
-#if defined(CRAYON_AUDIO_DEBUG_STACK)
-    extern lua_State* g_lua_for_debug;  // set from bind_audio
-    int top_before = lua_gettop(g_lua_for_debug);
-#endif
-
+    if (!m_custom_gen_cb || v.custom_gen_ref < 0) {
+        v.custom_gen_buffer.assign(v.custom_gen_buffer.size(), 0.0f);
+        v.custom_gen_pos = 0;
+        return;
+    }
     m_custom_gen_cb(v.custom_gen_ref,
                     v.custom_gen_buffer.data(),
                     (int)v.custom_gen_buffer.size(),
                     v.custom_gen_time,
                     CRAYON_DEVICE_RATE);
-
-#if defined(CRAYON_AUDIO_DEBUG_STACK)
-    int top_after = lua_gettop(g_lua_for_debug);
-    if (top_after != top_before) {
-        CRAYON_LOG_ERROR("[audio] custom gen leaked {} Lua stack slot(s)!",
-                         top_after - top_before);
-    }
-#endif
-
     v.custom_gen_pos  = 0;
     v.custom_gen_time += (double)v.custom_gen_buffer.size() * INV_SR;
 }

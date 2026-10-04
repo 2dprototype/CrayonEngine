@@ -385,10 +385,7 @@ static int l_canvas_render_to(lua_State* L) {
     batch.flush();
 
     // CRITICAL: unbind every texture unit before the canvas FBO becomes
-    // current. If the canvas's own color texture is still bound to a
-    // sampler while its FBO is bound, drivers treat that as a feedback
-    // loop and may reject / corrupt subsequent writes to the FBO —
-    // manifesting as "renders once, then black".
+    // current.
     for (int i = 0; i < 4; ++i) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, 0);
@@ -407,12 +404,14 @@ static int l_canvas_render_to(lua_State* L) {
         lua_pop(L, 1);
     }
 
+    // [FIX] Flush the queued geometry to the canvas FBO before unbinding
+    batch.flush();
+
     batch.pop_projection();
 
     c->unbind();
 
-    // Same defensive unbind on the way out, so the canvas texture never
-    // lingers on a unit going into the next frame.
+    // Same defensive unbind on the way out...
     for (int i = 0; i < 4; ++i) {
         glActiveTexture(GL_TEXTURE0 + i);
         glBindTexture(GL_TEXTURE_2D, 0);
