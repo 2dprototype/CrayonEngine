@@ -109,7 +109,7 @@ function crayon.dropbegin(x, y)
 end
 
 -- Fired repeatedly while the drag moves over the window.
-function crayon.dropposition(x, y)
+function crayon.dropPosition(x, y)
     drag.x = x
     drag.y = y
     drag.hover_count = drag.hover_count + 1
@@ -118,7 +118,7 @@ end
 
 -- Fired once per file that was part of the drop payload.
 -- If the user drags 5 files at once, this fires 5 times back to back.
-function crayon.dropfile(path, x, y)
+function crayon.dropFile(path, x, y)
     stats.total_files = stats.total_files + 1
 
     local stem, ext, name = describe_path(path)
@@ -141,7 +141,7 @@ end
 
 -- Fired once per text payload in a drop. Most OS file managers send files,
 -- but text editors and browsers often send text/uri-list or plain text.
-function crayon.droptext(text, x, y)
+function crayon.dropText(text, x, y)
     stats.total_texts = stats.total_texts + 1
     stats.last_text = text
 
@@ -155,7 +155,7 @@ end
 -- Fired once when the whole drag operation finishes (after all dropfiles
 -- and droptexts). Also fires if the user cancels the drag by dropping
 -- outside the window, or by pressing Escape.
-function crayon.dropcomplete()
+function crayon.dropComplete()
     if drag.active then
         local elapsed = crayon.time.getTime() - drag.started_at
         push_log("complete",

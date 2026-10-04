@@ -526,13 +526,13 @@ function crayon.dropbegin(x, y)
 end
 
 -- The drag is moving over the window.
-function crayon.dropposition(x, y)
+function crayon.dropPosition(x, y)
     drag.x, drag.y = x, y
 end
 
 -- A file was dropped. If several files land together, this fires once per
 -- file, and dropcomplete fires once at the end.
-function crayon.dropfile(path, x, y)
+function crayon.dropFile(path, x, y)
     drag.count = drag.count + 1
     drag.last_x, drag.last_y = x, y
 
@@ -557,7 +557,7 @@ function crayon.dropfile(path, x, y)
 end
 
 -- Dropped text (URLs dragged from browsers, selections from editors).
-function crayon.droptext(text, x, y)
+function crayon.dropText(text, x, y)
     drag.count = drag.count + 1
     drag.last_x, drag.last_y = x, y
 
@@ -579,7 +579,7 @@ function crayon.droptext(text, x, y)
 end
 
 -- The drag ended (successful drop or cancelled outside the window).
-function crayon.dropcomplete()
+function crayon.dropComplete()
     drag.active = false
     drag.count = 0
 end

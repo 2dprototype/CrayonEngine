@@ -3,10 +3,12 @@
 ## Overview
 Crayon Engine is a 2D/3D game engine with retro aesthetics, modern physics, and Lua scripting. All engine functionality is accessed through the global `crayon` table.
 
+**Conventions:** All exposed functions, methods, and config keys use strict camelCase. Acronyms that appear as a suffix capitalize only their first letter (`getFps`, `getEngineRpm`, `setSfxVolume`, `getId`, `setVsync`). Numeric suffixes are `2D` / `3D` (capital `D`).
+
 ## Table of Contents
 1. [Time Module](#time-module)
 2. [Window Module](#window-module)
-3. [Input Module](#input-module)
+3. [Input Modules](#input-modules)
 4. [Graphics Module](#graphics-module)
 5. [Physics3D Module](#physics3d-module)
 6. [Physics2D Module](#physics2d-module)
@@ -51,6 +53,7 @@ Access via: `crayon.window`
 | `setMinSize(w, h)` | Set minimum window size |
 | `setMaxSize(w, h)` | Set maximum window size |
 | `getDisplaySize()` | Returns primary monitor width, height |
+| `getUsableBounds()` | Returns usable desktop x, y, w, h |
 
 ### Position
 
@@ -104,7 +107,6 @@ Access via: `crayon.window`
 | `getOpacity()` | Returns window opacity |
 | `setAlwaysOnTop(enabled)` | Keep window on top |
 | `isAlwaysOnTop()` | Returns always-on-top state |
-| `setTransparent(enabled)` | Enable transparent window |
 | `isTransparent()` | Returns transparency state |
 
 ### Mouse & Cursor
@@ -117,6 +119,19 @@ Access via: `crayon.window`
 | `isMouseRelative()` | Returns relative mouse state |
 | `showCursor(show)` | Show/hide cursor |
 | `isCursorVisible()` | Returns cursor visibility |
+
+### Overlay Flags (see config for creation-time flags)
+
+| Function | Description |
+|----------|-------------|
+| `show()` / `hide()` | Show / hide window |
+| `isVisible()` | Returns visibility state |
+| `setClickThrough(enabled)` / `isClickThrough()` | Mouse passthrough |
+| `setSkipTaskbar(skip)` / `isSkipTaskbar()` | Hide from taskbar |
+| `setNotFocusable(nf)` / `isNotFocusable()` | Prevent focus stealing |
+| `setUtilityWindow(util)` / `isUtilityWindow()` | Utility chrome |
+| `getDisplays()` | Array of display tables |
+| `getVirtualDesktopBounds()` | x, y, w, h of virtual desktop |
 
 ### Misc
 
@@ -140,9 +155,9 @@ print("Display:", w, "x", h)
 
 ---
 
-## Input Module
+## Input Modules
 
-> **Note:** The API is split into four sub-tables: `crayon.key`, `crayon.mouse`, `crayon.gamepad`, and `crayon.input` (unified camelCase aliases).
+Input is exposed as three sub-tables: `crayon.key`, `crayon.mouse`, and `crayon.gamepad`. The previous `crayon.input` alias table has been **removed**; use the sub-tables directly.
 
 ### `crayon.key`
 
@@ -190,6 +205,7 @@ print("Display:", w, "x", h)
 | `getWindowDelta()` | Returns window delta x, y |
 | `getWheel()` | Returns wheel x, y |
 | `getWheelX()` / `getWheelY()` | Returns wheel x or y |
+| `getGlobalPosition()` | Global desktop mouse position |
 | `setPosition(x, y)` | Set mouse virtual position |
 | `setWindowPosition(x, y)` | Set mouse window position |
 | `setVisible(visible)` | Show/hide cursor |
@@ -213,19 +229,6 @@ print("Display:", w, "x", h)
 | `getName([idx])` | Gamepad name string |
 | `getCount()` | Number of connected gamepads |
 
-### `crayon.input` (Unified Aliases)
-
-A flat camelCase namespace combining key, mouse, and gamepad helpers:
-
-| Function | Description |
-|----------|-------------|
-| `isKeyDown(...)` / `isKeyPressed(...)` / `isKeyReleased(...)` | Keyboard |
-| `isMouseDown(...)` / `isMousePressed(...)` / `isMouseReleased(...)` | Mouse buttons |
-| `getMousePosition()` / `getMouseX()` / `getMouseY()` | Mouse position |
-| `getMouseDelta()` / `getMouseWheel()` | Mouse delta/wheel |
-| `setMouseVisible(v)` / `setMouseGrabbed(v)` / `setMouseRelative(v)` | Mouse modes |
-| `isGamepadDown(b)` / `isGamepadPressed(b)` / `getGamepadAxis(a)` / `isGamepadConnected([i])` | Gamepad |
-
 ### Input Examples
 
 ```lua
@@ -243,9 +246,6 @@ local wx, wy = crayon.mouse.getWheel()
 -- Gamepad
 if crayon.gamepad.isDown(0) then fire() end
 local lx = crayon.gamepad.getAxis("leftx")
-
--- Unified
-if crayon.input.isKeyPressed("space") then jump() end
 ```
 
 ---
@@ -317,7 +317,7 @@ crayon.graphics.drawSprite(canvas:getTexture(), 0, 0)
 
 | Function | Description |
 |----------|-------------|
-| `setCamera3d(cam)` | Set 3D camera parameters |
+| `setCamera3D(cam)` | Set 3D camera parameters |
 | `getCameraRay(sx, sy)` | Returns `{origin={x,y,z}, direction={x,y,z}}` for screen pos |
 
 **Camera Table:**
@@ -334,7 +334,7 @@ crayon.graphics.drawSprite(canvas:getTexture(), 0, 0)
 }
 ```
 
-Alternative: `setCamera3d(x, y, z [, yaw, pitch, fov])` — sets position and orients using yaw/pitch in degrees.
+Alternative: `setCamera3D(x, y, z [, yaw, pitch, fov])` — sets position and orients using yaw/pitch in degrees.
 
 ### Lighting
 
@@ -457,16 +457,16 @@ Alternative: `setCamera3d(x, y, z [, yaw, pitch, fov])` — sets position and or
 | `drawCapsule(x, y, z, radius, height, tex, rx, ry, rz)` | Draw capsule |
 | `drawBillboard(x, y, z, w, h, tex, mode, u0, v0, u1, v1)` | Billboard. `mode` = `true`/`"cylindrical"` for cylindrical; else spherical |
 | `drawBillboardRot(tex, x, y, z, w, h, angle [, mode, color])` | Rotated billboard |
-| `drawLine3d(x1, y1, z1, x2, y2, z2)` | 3D line |
-| `drawLines3d(points)` | Multiple 3D segments |
-| `drawGrid3d([size, divs, y])` | 3D grid |
-| `drawTriangle3d(p1, p2, p3 [, tex])` | 3D triangle (points as `{x,y,z}`) |
-| `drawQuad3d(p1, p2, p3, p4 [, tex])` | 3D quad |
-| `drawAxes3d(x, y, z, size)` | Coordinate axes |
+| `drawLine3D(x1, y1, z1, x2, y2, z2)` | 3D line |
+| `drawLines3D(points)` | Multiple 3D segments |
+| `drawGrid3D([size, divs, y])` | 3D grid |
+| `drawTriangle3D(p1, p2, p3 [, tex])` | 3D triangle (points as `{x,y,z}`) |
+| `drawQuad3D(p1, p2, p3, p4 [, tex])` | 3D quad |
+| `drawAxes3D(x, y, z, size)` | Coordinate axes |
 | `drawCubeWires(x, y, z, sx, sy, sz [, color, rx, ry, rz])` | Wireframe cube |
 | `drawCapsuleWires(x, y, z, radius, halfH [, color, rx, ry, rz])` | Wireframe capsule |
 | `drawCylinderWires(x, y, z, radius, halfH [, color, rx, ry, rz])` | Wireframe cylinder |
-| `drawRay3d(sx, sy, sz, dx, dy, dz, length, color)` | Draw ray |
+| `drawRay3D(sx, sy, sz, dx, dy, dz, length, color)` | Draw ray |
 | `drawSkeleton(positions, connections [, color])` | positions = `{{x,y,z},...}`, connections = `{{parentIdx, childIdx},...}` (1-indexed) |
 | `drawSegmentedMesh(meshes, transforms [, textures])` | Draw segmented mesh; transforms = array of 16-element matrices |
 | `project(x, y, z)` | Returns sx, sy, visible |
@@ -479,7 +479,7 @@ Alternative: `setCamera3d(x, y, z [, yaw, pitch, fov])` — sets position and or
 | `drawSprite(tex, x, y, w, h, rot, ox, oy)` | Draw sprite |
 | `drawSpritePart(tex, x, y, u0, v0, u1, v1, w, h, rot, ox, oy)` | Draw sprite part |
 | `drawSpriteTiled(tex, x, y, w, h, tileW, tileH, ox, oy)` | Tiled sprite |
-| `drawSprite9slice(tex, x, y, w, h, left, top, right, bottom [, texW, texH])` | 9-slice sprite |
+| `drawSprite9Slice(tex, x, y, w, h, left, top, right, bottom [, texW, texH])` | 9-slice sprite |
 | `drawTextureRot(tex, x, y, w, h, angle [, ox, oy])` | Rotated texture |
 | `drawPoint(x, y, size)` | Draw point |
 | `drawLine(x1, y1, x2, y2, thick)` | Draw line |
@@ -525,7 +525,7 @@ local w, h, total = crayon.graphics.measureTextMarkup("[wave]Hello[/wave]", { sc
 | `setBlendMode(mode)` | "alpha", "additive", "multiply", "none" |
 | `setScissor(x, y, w, h)` / `resetScissor()` | Scissor rect |
 | `pushScissor(x, y, w, h)` / `popScissor()` | Scissor stack |
-| `setCamera2d(cam)` / `resetCamera2d()` | 2D camera |
+| `setCamera2D(cam)` / `resetCamera2D()` | 2D camera |
 
 **2D Camera Table:**
 ```lua
@@ -536,7 +536,7 @@ local w, h, total = crayon.graphics.measureTextMarkup("[wave]Hello[/wave]", { sc
 
 | Function | Description |
 |----------|-------------|
-| `newCamera2d([x, y, zoom])` | Create a `Graphics.Camera2D` object |
+| `newCamera2D([x, y, zoom])` | Create a `Graphics.Camera2D` object |
 
 **Camera2D Methods**:
 - `:setTarget(x, y)` / `:clearTarget()`
@@ -552,7 +552,7 @@ local w, h, total = crayon.graphics.measureTextMarkup("[wave]Hello[/wave]", { sc
 - `:isMoving()` / `:isShaking()`
 
 ```lua
-local cam = crayon.graphics.newCamera2d(160, 120, 2.0)
+local cam = crayon.graphics.newCamera2D(160, 120, 2.0)
 cam:setTarget(player.x, player.y)
 cam:setDeadzone(40, 30)
 cam:shake(5.0, 0.3)
@@ -569,28 +569,28 @@ cam:apply()
 | `clearEffects()` | Remove all effects |
 | `setEffectUniform([effectName_or_idx,] name, value_or_x [, y, z, w])` | Set a uniform on the active/last/target effect. Values may be a number, boolean, or `{x,y}`, `{x,y,z}`, `{x,y,z,w}`. |
 
+**Built-in effects**: `"chromatic"`, `"vignette"`, `"dissolve"`, `"vhs"`, `"bloom2D"`, `"pixelate"`, `"radialBlur"`, `"filmGrain"`.
+
 ```lua
-crayon.graphics.pushEffect("bloom", { intensity = 1.5, threshold = 0.8 })
+crayon.graphics.pushEffect("bloom2D", { intensity = 1.5, threshold = 0.8 })
 -- ... draw scene ...
+crayon.graphics.setEffectUniform("intensity", 2.0)
 crayon.graphics.popEffect()
 
--- Update uniform on active effect
-crayon.graphics.setEffectUniform("intensity", 2.0)
-
 -- Update by name
-crayon.graphics.setEffectUniform("bloom", "threshold", 0.9)
+crayon.graphics.setEffectUniform("bloom2D", "threshold", 0.9)
 ```
 
 ### Transform Stacks
 
 **3D:** `pushMatrix()`, `popMatrix()`, `translate(x,y,z)`, `rotate(angle, ax,ay,az)`, `scale(sx,sy,sz)`
 
-**2D:** `pushMatrix2d()`, `popMatrix2d()`, `translate2d(x,y)`, `rotate2d(angle)`, `scale2d(sx,sy)`
+**2D:** `pushMatrix2D()`, `popMatrix2D()`, `translate2D(x,y)`, `rotate2D(angle)`, `scale2D(sx,sy)`
 
 ---
 
 ## Physics3D Module
-Access via: `crayon.physics3d`
+Access via: `crayon.physics3D`
 
 ### Body Creation
 
@@ -626,7 +626,7 @@ Access via: `crayon.physics3d`
 | `:setGravityFactor(f)` | Gravity multiplier |
 | `:setFriction(f)` / `:setRestitution(r)` | Physics material |
 | `:setMotionType(type)` | Change motion type |
-| `:setMotionQuality(mode)` | `true`/`"linearCast"`/`"ccd"` for CCD; else discrete |
+| `:setMotionQuality(mode)` | `true` or `"linearCast"` for CCD; else discrete |
 | `:setPlanarLock(plane)` | "xy", "xz", "yz" for planar 2D-in-3D constraint |
 | `:setDamping(linear [, angular])` | Set damping |
 | `:setSensor(bool)` / `:isSensor()` | Sensor (trigger) mode |
@@ -919,7 +919,7 @@ Access via: `crayon.physics3d`
 ---
 
 ## Physics2D Module
-Access via: `crayon.physics2d`
+Access via: `crayon.physics2D`
 
 ### World Operations
 
@@ -979,13 +979,13 @@ Access via: `crayon.physics2d`
 ### Physics2D Example
 
 ```lua
-crayon.physics2d.setGravity(0, 980)
-crayon.physics2d.setMeterScale(32.0)
+crayon.physics2D.setGravity(0, 980)
+crayon.physics2D.setMeterScale(32.0)
 
-local ground = crayon.physics2d.createBody("static", 160, 220)
+local ground = crayon.physics2D.createBody("static", 160, 220)
 ground:addBox(320, 20)
 
-local box = crayon.physics2d.createBody("dynamic", 160, 100)
+local box = crayon.physics2D.createBody("dynamic", 160, 100)
 box:addBox(20, 20, 0, 0, 0, 1.0, 0.3, 0.1)
 
 function crayon.update(dt)
@@ -1013,7 +1013,7 @@ Access via: `crayon.audio`
 | `unloadSound(id)` | Unload a sound, returns bool |
 | `playSound(id [, volume, pitch, pan, loop])` | Play a sound effect, returns voice ID |
 | `playSound(id, opts)` | Play with `{volume, pitch, pan, loop}` table |
-| `playSound3d(id, x, y, z [, opts])` | Positional 3D sound. Opts: `{volume, pitch, minDist, maxDist}` |
+| `playSound3D(id, x, y, z [, opts])` | Positional 3D sound. Opts: `{volume, pitch, minDist, maxDist}` |
 | `stopSound(voiceId)` | Stop a specific voice |
 | `stopAllSounds()` | Stop all playing sounds |
 | `isSoundPlaying(voiceId)` | Returns bool |
@@ -1076,7 +1076,7 @@ Access via: `crayon.particles`
 | `:burst(count)` | Emit a burst of particles |
 | `:update(dt)` | Advance simulation |
 | `:draw()` | Draw with 2D batch renderer |
-| `:draw3d()` | Draw with 3D mesh renderer |
+| `:draw3D()` | Draw with 3D mesh renderer |
 | `:reset()` | Reset all particles |
 | `:setPosition(x, y [, z])` | Set emitter position |
 | `:setEmissionRate(rate)` | Set particles per second |
@@ -1098,7 +1098,7 @@ function crayon.update(dt)
 end
 
 function crayon.draw()
-    fire:draw3d()
+    fire:draw3D()
 end
 ```
 
@@ -1202,12 +1202,17 @@ function crayon.config(t)
         transparent = false,
         borderless = false,
         alwaysOnTop = false,
+        clickThrough = false,
+        opacity = 1.0,
+        skipTaskbar = false,
+        notFocusable = false,
+        utilityWindow = false,
         scaling = "integer"           -- "integer" | "aspect" | "stretch" | "center"
     }
 
     t.modules = {
-        physics3d = true,
-        physics2d = true,
+        physics3D = true,
+        physics2D = true,
         audio = true,
         mesh3D = true,
         particles = true,
@@ -1224,13 +1229,13 @@ function crayon.config(t)
 end
 ```
 
-**Disabling a module** replaces its table with a stub that raises an error when any member is accessed. For example, `t.modules.physics3d = false` will make `crayon.physics3d` unusable at runtime.
+**Disabling a module** replaces its table with a stub that raises an error when any member is accessed. For example, `t.modules.physics3D = false` will make `crayon.physics3D` unusable at runtime.
 
 ---
 
 ## Lua Callbacks
 
-The runtime invokes these optional `crayon.*` functions:
+The runtime invokes these optional `crayon.*` functions. Only the canonical camelCase names are supported — the previous snake_case aliases have been removed.
 
 ### Lifecycle
 
@@ -1246,41 +1251,51 @@ The runtime invokes these optional `crayon.*` functions:
 
 | Callback | Args |
 |----------|------|
-| `crayon.keydown(key, isRepeat)` or `crayon.keypressed` | key, is_repeat |
-| `crayon.keyup(key)` or `crayon.keyreleased` | key |
-| `crayon.mousedown(x, y, button)` or `crayon.mousepressed` | x, y, btn |
-| `crayon.mouseup(x, y, button)` or `crayon.mousereleased` | x, y, btn |
+| `crayon.keydown(key, isRepeat)` | key, is_repeat |
+| `crayon.keyup(key)` | key |
+| `crayon.mousedown(x, y, button)` | x, y, btn |
+| `crayon.mouseup(x, y, button)` | x, y, btn |
 | `crayon.mousemoved(x, y, dx, dy)` | x, y, dx, dy |
 | `crayon.wheelmoved(dx, dy)` | dx, dy |
 | `crayon.textinput(text)` | text |
-| `crayon.gamepaddown(btn)` or `crayon.gamepadpressed` | btn |
-| `crayon.gamepadup(btn)` or `crayon.gamepadreleased` | btn |
+| `crayon.gamepaddown(btn)` | btn |
+| `crayon.gamepadup(btn)` | btn |
 | `crayon.gamepadaxis(axis, value)` | axis, value |
 
 ### Window Events
 
 | Callback | Args |
 |----------|------|
-| `crayon.windowResized(w, h)` or `crayon.resize` | w, h |
-| `crayon.focusChanged(focused)` or `crayon.focus` | bool |
+| `crayon.windowResized(w, h)` | w, h |
+| `crayon.focusChanged(focused)` | bool |
 
 ### Physics Events (3D)
 
 | Callback | Args |
 |----------|------|
-| `crayon.onCollisionEnter(bodyA, bodyB, nx, ny, nz, impulse)` or `crayon.collisionEnter` | ids, normal, impulse |
-| `crayon.onCollisionExit(bodyA, bodyB)` or `crayon.collisionExit` | ids |
-| `crayon.onTriggerEnter(sensorId, otherBodyId)` or `crayon.triggerEnter` | ids |
-| `crayon.onTriggerExit(sensorId, otherBodyId)` or `crayon.triggerExit` | ids |
+| `crayon.onCollisionEnter(bodyA, bodyB, nx, ny, nz, impulse)` | ids, normal, impulse |
+| `crayon.onCollisionExit(bodyA, bodyB)` | ids |
+| `crayon.onTriggerEnter(sensorId, otherBodyId)` | ids |
+| `crayon.onTriggerExit(sensorId, otherBodyId)` | ids |
 
 ### Physics Events (2D)
 
 | Callback | Args |
 |----------|------|
-| `crayon.collision2dEnter(bodyA, bodyB, nx, ny, impulse)` or `crayon.onCollision2dEnter` | ids, normal, impulse |
-| `crayon.collision2dExit(bodyA, bodyB)` or `crayon.onCollision2dExit` | ids |
-| `crayon.trigger2dEnter(sensorId, otherBodyId)` or `crayon.onTrigger2dEnter` | ids |
-| `crayon.trigger2dExit(sensorId, otherBodyId)` or `crayon.onTrigger2dExit` | ids |
+| `crayon.onCollision2DEnter(bodyA, bodyB, nx, ny, impulse)` | ids, normal, impulse |
+| `crayon.onCollision2DExit(bodyA, bodyB)` | ids |
+| `crayon.onTrigger2DEnter(sensorId, otherBodyId)` | ids |
+| `crayon.onTrigger2DExit(sensorId, otherBodyId)` | ids |
+
+### Drag & Drop Events
+
+| Callback | Args |
+|----------|------|
+| `crayon.dropBegin(x, y)` | x, y |
+| `crayon.dropFile(path, x, y)` | path, x, y |
+| `crayon.dropText(text, x, y)` | text, x, y |
+| `crayon.dropPosition(x, y)` | x, y |
+| `crayon.dropComplete()` | — |
 
 ---
 
@@ -1330,19 +1345,19 @@ function crayon.init()
         crt = { scanlines = 0.2, vignette = 0.15 }
     })
 
-    ground = crayon.physics3d.createPlane(0, 0, 0)
-    ball = crayon.physics3d.createSphere(0, 5, 0, 0.5)
+    ground = crayon.physics3D.createPlane(0, 0, 0)
+    ball = crayon.physics3D.createSphere(0, 5, 0, 0.5)
 end
 
 function crayon.update(dt)
-    crayon.physics3d.step(dt)
+    crayon.physics3D.step(dt)
 end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.15)
 
     local px, py, pz = ball:getPosition()
-    crayon.graphics.setCamera3d(0, py + 4, 10, -20, 0, 60)
+    crayon.graphics.setCamera3D(0, py + 4, 10, -20, 0, 60)
     crayon.graphics.setLight(0.5, -1, 0.3)
 
     crayon.graphics.setColor(0.3, 0.4, 0.5)
@@ -1363,7 +1378,7 @@ function crayon.update(dt)
         local o, d = ray.origin, ray.direction
 
         local hit, px, py, pz, nx, ny, nz, dist, body =
-            crayon.physics3d.raycast(o.x, o.y, o.z, d.x, d.y, d.z, 1000)
+            crayon.physics3D.raycast(o.x, o.y, o.z, d.x, d.y, d.z, 1000)
 
         if hit then
             print("Hit at", px, py, pz, "distance:", dist)
@@ -1383,7 +1398,7 @@ function crayon.init()
     animator:play("Idle", true)
 
     physics_skel = model:createPhysicsSkeleton()
-    pose = crayon.physics3d.createSkeletonPose(physics_skel)
+    pose = crayon.physics3D.createSkeletonPose(physics_skel)
 end
 
 function crayon.update(dt)
@@ -1394,7 +1409,7 @@ end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.15)
-    crayon.graphics.setCamera3d({ position = {0, 2, 5}, target = {0, 1, 0}, fov = 60 })
+    crayon.graphics.setCamera3D({ position = {0, 2, 5}, target = {0, 1, 0}, fov = 60 })
     crayon.graphics.drawModelSkinned(model, animator, 0, 0, 0, 0, 0, 0, 1, 1, 1, 0)
 end
 ```
@@ -1406,7 +1421,7 @@ local cloth
 
 function crayon.init()
     crayon.window.setResolution(640, 360)
-    cloth = crayon.physics3d.createSoftBodyCloth({
+    cloth = crayon.physics3D.createSoftBodyCloth({
         x = 0, y = 5, z = 0,
         width = 4, height = 4,
         segmentsX = 12, segmentsY = 12,
@@ -1417,12 +1432,12 @@ function crayon.init()
 end
 
 function crayon.update(dt)
-    crayon.physics3d.step(dt)
+    crayon.physics3D.step(dt)
 end
 
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.15)
-    crayon.graphics.setCamera3d({ position = {0, 4, 8}, target = {0, 3, 0}, fov = 60 })
+    crayon.graphics.setCamera3D({ position = {0, 4, 8}, target = {0, 3, 0}, fov = 60 })
 
     local verts = cloth:getVertices()
     local faces = cloth:getFaces()
@@ -1430,7 +1445,7 @@ function crayon.draw()
 
     for _, f in ipairs(faces) do
         local p1, p2, p3 = verts[f[1]], verts[f[2]], verts[f[3]]
-        crayon.graphics.drawTriangle3d(p1, p2, p3)
+        crayon.graphics.drawTriangle3D(p1, p2, p3)
     end
 end
 ```
@@ -1468,7 +1483,7 @@ end
 
 function crayon.draw()
     crayon.graphics.clear(0.05, 0.05, 0.1)
-    fire:draw3d()
+    fire:draw3D()
 end
 ```
 
@@ -1517,9 +1532,37 @@ end
 ```lua
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.15)
-    crayon.graphics.pushEffect("bloom", { intensity = 1.5, threshold = 0.8 })
+    crayon.graphics.pushEffect("bloom2D", { intensity = 1.5, threshold = 0.8 })
     -- ... draw scene ...
     crayon.graphics.setEffectUniform("intensity", 2.0)
     crayon.graphics.popEffect()
 end
 ```
+
+---
+
+## Migration Notes (from pre-camelCase API)
+
+The following names have been **renamed**; update any existing scripts:
+
+| Old | New |
+|---|---|
+| `crayon.physics3d` | `crayon.physics3D` |
+| `crayon.physics2d` | `crayon.physics2D` |
+| `t.modules.physics3d` / `t.modules.physics2d` | `t.modules.physics3D` / `t.modules.physics2D` |
+| `setCamera3d` / `setCamera2d` / `resetCamera2d` / `newCamera2d` | `setCamera3D` / `setCamera2D` / `resetCamera2D` / `newCamera2D` |
+| `pushMatrix2d` / `popMatrix2d` / `translate2d` / `rotate2d` / `scale2d` | `pushMatrix2D` / `popMatrix2D` / `translate2D` / `rotate2D` / `scale2D` |
+| `drawLine3d` / `drawLines3d` / `drawGrid3d` / `drawTriangle3d` / `drawQuad3d` / `drawAxes3d` / `drawRay3d` | `drawLine3D` / `drawLines3D` / `drawGrid3D` / `drawTriangle3D` / `drawQuad3D` / `drawAxes3D` / `drawRay3D` |
+| `drawSprite9slice` | `drawSprite9Slice` |
+| `playSound3d` | `playSound3D` |
+| `Particles.Emitter:draw3d()` | `Particles.Emitter:draw3D()` |
+| `"bloom2d"` | `"bloom2D"` |
+
+The following names have been **removed**:
+
+- The entire `crayon.input` alias table — use `crayon.key`, `crayon.mouse`, `crayon.gamepad` directly.
+- The `crayon.physics` alias stub — use `crayon.physics3D`.
+- Event-callback aliases: `crayon.keypressed`, `crayon.keyreleased`, `crayon.mousepressed`, `crayon.mousereleased`, `crayon.gamepadpressed`, `crayon.gamepadreleased`, `crayon.resize`, `crayon.focus`, `crayon.collisionEnter`, `crayon.collisionExit`, `crayon.triggerEnter`, `crayon.triggerExit`, `crayon.collision2dEnter`, `crayon.collision2dExit`, `crayon.trigger2dEnter`, `crayon.trigger2dExit`, `crayon.dropbegin`, `crayon.dropenter`, `crayon.dropfile`, `crayon.filedropped`, `crayon.fileDropped`, `crayon.droptext`, `crayon.dropposition`, `crayon.dropmove`, `crayon.dropcomplete`, `crayon.dropleave`.
+- `"linear_cast"` and `"ccd"` string values accepted by `Body:setMotionQuality` — use `"linearCast"` (or boolean `true`) only.
+
+C++ identifiers, metatable registry keys (e.g. `"Physics3D.Body"`), file names, and internal helpers retain their original names and are not part of the Lua surface.

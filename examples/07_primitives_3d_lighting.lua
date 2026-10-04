@@ -44,7 +44,7 @@ function crayon.update(dt)
         fov      = 50.0
     })
 
-    if crayon.input.isKeyPressed("m") then
+    if crayon.key.isPressed("m") then
         Demo07.shadingIndex = (Demo07.shadingIndex % #Demo07.shadingModes) + 1
         crayon.graphics.setShadingMode(Demo07.shadingModes[Demo07.shadingIndex])
     end

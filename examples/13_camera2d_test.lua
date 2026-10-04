@@ -36,10 +36,10 @@ function crayon.update(dt)
     -- Movement controls
     local moveX = 0
     local moveY = 0
-    if crayon.input.isKeyDown("d") or crayon.input.isKeyDown("right") then moveX = moveX + 1 end
-    if crayon.input.isKeyDown("a") or crayon.input.isKeyDown("left")  then moveX = moveX - 1 end
-    if crayon.input.isKeyDown("s") or crayon.input.isKeyDown("down")  then moveY = moveY + 1 end
-    if crayon.input.isKeyDown("w") or crayon.input.isKeyDown("up")    then moveY = moveY - 1 end
+    if crayon.key.isDown("d") or crayon.key.isDown("right") then moveX = moveX + 1 end
+    if crayon.key.isDown("a") or crayon.key.isDown("left")  then moveX = moveX - 1 end
+    if crayon.key.isDown("s") or crayon.key.isDown("down")  then moveY = moveY + 1 end
+    if crayon.key.isDown("w") or crayon.key.isDown("up")    then moveY = moveY - 1 end
 
     player.x = player.x + moveX * player.speed * dt
     player.y = player.y + moveY * player.speed * dt
@@ -55,12 +55,12 @@ function crayon.update(dt)
     cam:setTarget(player.x, player.y)
 
     -- Screen shake trigger
-    if crayon.input.isKeyPressed("space") then
+    if crayon.key.isPressed("space") then
         cam:shake(10.0, 0.4, 35.0)
     end
 
     -- Room transition test (Move to room 2 or back)
-    if crayon.input.isKeyPressed("m") then
+    if crayon.key.isPressed("m") then
         if player.x < 400 then
             cam:moveTo(600, 450, 1.2, "easeInOut")
         else
@@ -69,9 +69,9 @@ function crayon.update(dt)
     end
 
     -- Zoom controls
-    if crayon.input.isKeyDown("q") then
+    if crayon.key.isDown("q") then
         cam:setZoom(cam:getZoom() - 0.5 * dt)
-    elseif crayon.input.isKeyDown("e") then
+    elseif crayon.key.isDown("e") then
         cam:setZoom(cam:getZoom() + 0.5 * dt)
     end
 

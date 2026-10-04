@@ -46,7 +46,7 @@ function crayon.update(dt)
     end
 
     -- Advance dialogue on Space or Left Click
-    if crayon.input.isKeyPressed("space") or crayon.input.isMousePressed(1) then
+    if crayon.key.isPressed("space") or crayon.mouse.isPressed(1) then
         if not lineDone then
             -- Skip to end of current line
             visibleChars = totalChars

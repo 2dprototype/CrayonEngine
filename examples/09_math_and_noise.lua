@@ -28,7 +28,7 @@ function crayon.update(dt)
     animOffset = animOffset + dt * 0.5
 
     -- Target follows mouse
-    local mx, my = crayon.input.getMousePosition()
+    local mx, my = crayon.mouse.getPosition()
     targetPos.x = mx
     targetPos.y = my
 

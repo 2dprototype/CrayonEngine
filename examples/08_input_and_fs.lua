@@ -68,14 +68,14 @@ function crayon.update(dt)
     end
 
     -- Increase score with [S] key and persist to file
-    if crayon.input.isKeyPressed("s") then
+    if crayon.key.isPressed("s") then
         highscore = highscore + 100
         crayon.fs.writeText(savePath, tostring(highscore))
         addLog("Saved high score: " .. highscore)
     end
 
     -- Reset save with [R] key
-    if crayon.input.isKeyPressed("r") then
+    if crayon.key.isPressed("r") then
         highscore = 0
         crayon.fs.writeText(savePath, "0")
         addLog("Reset high score to 0")

@@ -94,10 +94,10 @@ function crayon.update(dt)
 
     -- Player movement in virtual (canvas) resolution: 320x240
     local speed = 110.0
-    if crayon.input.isKeyDown("left",  "a") then playerX = playerX - speed * dt end
-    if crayon.input.isKeyDown("right", "d") then playerX = playerX + speed * dt end
-    if crayon.input.isKeyDown("up",    "w") then playerY = playerY - speed * dt end
-    if crayon.input.isKeyDown("down",  "s") then playerY = playerY + speed * dt end
+    if crayon.key.isDown("left",  "a") then playerX = playerX - speed * dt end
+    if crayon.key.isDown("right", "d") then playerX = playerX + speed * dt end
+    if crayon.key.isDown("up",    "w") then playerY = playerY - speed * dt end
+    if crayon.key.isDown("down",  "s") then playerY = playerY + speed * dt end
 
     playerX = math.max(16, math.min(304, playerX))
     playerY = math.max(16, math.min(224, playerY))

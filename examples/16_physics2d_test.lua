@@ -68,8 +68,8 @@ function crayon.update(dt)
     -- Left click to spawn dynamic body at mouse position.
     -- NOTE: isMouseButtonPressed does not exist; use isMousePressed (unified table)
     --       or crayon.mouse.isPressed (mouse table).
-    if crayon.input.isMousePressed(1) then
-        local mx, my = crayon.input.getMousePosition()
+    if crayon.mouse.isPressed(1) then
+        local mx, my = crayon.mouse.getPosition()
         local b = crayon.physics2D.createBody("dynamic", mx, my)
         if math.random() > 0.5 then
             b:addBox(12, 12, 0, 0, math.random() * 3.14, 1.5, 0.3, 0.5)
@@ -82,7 +82,7 @@ function crayon.update(dt)
     end
 
     -- Space to launch an upward explosion impulse on all dynamic bodies
-    if crayon.input.isKeyPressed("space") then
+    if crayon.key.isPressed("space") then
         for _, b in ipairs(spawnedBodies) do
             if b:isValid() then
                 b:applyImpulse(math.random(-15, 15), -35)
@@ -91,7 +91,7 @@ function crayon.update(dt)
     end
 
     -- Raycast demo from mouse position down to floor
-    local mx, my = crayon.input.getMousePosition()
+    local mx, my = crayon.mouse.getPosition()
     local hit, hx, hy, nx, ny, frac, bodyId = crayon.physics2D.raycast(mx, my, mx, 235)
     if hit then
         rayHitInfo = { x1 = mx, y1 = my, x2 = hx, y2 = hy, nx = nx, ny = ny, bodyId = bodyId }

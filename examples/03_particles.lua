@@ -44,7 +44,7 @@ function crayon.mousemoved(x, y)
     mousePos.y = y
 end
 
-function crayon.mousepressed(x, y, button)
+function crayon.mousedown(x, y, button)
     -- Trigger explosive burst of sparks at cursor position
     sparkEmitter:setPosition(x, y)
     sparkEmitter:burst(40)

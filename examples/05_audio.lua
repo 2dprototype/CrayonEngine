@@ -40,16 +40,16 @@ function crayon.update(dt)
     soundSourcePos.z = math.sin(t) * 5.0
 
     -- Master volume keys
-    if crayon.input.isKeyPressed("up") then
+    if crayon.key.isPressed("up") then
         masterVol = math.min(1.0, masterVol + 0.1)
         crayon.audio.setMasterVolume(masterVol)
-    elseif crayon.input.isKeyPressed("down") then
+    elseif crayon.key.isPressed("down") then
         masterVol = math.max(0.0, masterVol - 0.1)
         crayon.audio.setMasterVolume(masterVol)
     end
 
     -- Trigger 2D SFX with slight random pitch variation
-    if crayon.input.isKeyPressed("space") and soundId > 0 then
+    if crayon.key.isPressed("space") and soundId > 0 then
         crayon.audio.playSound(soundId, {
             volume = 0.9,
             pitch  = 0.9 + math.random() * 0.3,
@@ -60,7 +60,7 @@ function crayon.update(dt)
     -- Trigger 3D spatial sound attenuated by distance from listener.
     -- NOTE: playSound3D(id, x, y, z, options) — distances live in the table,
     --       not as a positional argument.
-    if crayon.input.isKeyPressed("p") and soundId > 0 then
+    if crayon.key.isPressed("p") and soundId > 0 then
         crayon.audio.playSound3D(soundId, soundSourcePos.x, soundSourcePos.y, soundSourcePos.z, {
             volume  = 1.0,
             minDist = 1.0,

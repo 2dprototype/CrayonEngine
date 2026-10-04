@@ -41,14 +41,14 @@ function crayon.update(dt)
     -- Toggle effects with keys 1 through 7
     local keys = { "1", "2", "3", "4", "5", "6", "7" }
     for i, k in ipairs(keys) do
-        if crayon.input.isKeyPressed(k) then
+        if crayon.key.isPressed(k) then
             effectsList[i].active = not effectsList[i].active
             rebuildChain()
         end
     end
 
     -- Clear all effects with C
-    if crayon.input.isKeyPressed("c") then
+    if crayon.key.isPressed("c") then
         for _, eff in ipairs(effectsList) do
             eff.active = false
         end
