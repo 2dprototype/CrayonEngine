@@ -936,7 +936,7 @@ void MeshRenderer3D::set_spot_light_enabled(int index, bool enabled) {
     }
 }
 
-void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id) {
+void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id, const glm::vec4& tint) {
     glm::mat4 final_model = m_current_matrix * model;
 
     m_shader->bind();
@@ -995,6 +995,9 @@ void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuin
     m_shader->set_float("u_fog_end", m_retro.fog_end);
     m_shader->set_vec3("u_fog_color", m_retro.fog_color);
 
+    // Tint
+    m_shader->set_vec4("u_color", tint);
+
     // Texture
     m_shader->set_int("u_texture", 0);
     glActiveTexture(GL_TEXTURE0);
@@ -1005,7 +1008,7 @@ void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuin
     m_shader->unbind();
 }
 
-void MeshRenderer3D::draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model, const glm::mat4* bone_matrices, size_t bone_count, GLuint texture_id) {
+void MeshRenderer3D::draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model, const glm::mat4* bone_matrices, size_t bone_count, GLuint texture_id, const glm::vec4& tint) {
     glm::mat4 final_model = m_current_matrix * model;
 
     m_shader->bind();
@@ -1067,6 +1070,9 @@ void MeshRenderer3D::draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& mode
     m_shader->set_float("u_fog_end", m_retro.fog_end);
     m_shader->set_vec3("u_fog_color", m_retro.fog_color);
 
+    // Tint
+    m_shader->set_vec4("u_color", tint);
+
     // Texture
     m_shader->set_int("u_texture", 0);
     glActiveTexture(GL_TEXTURE0);
@@ -1096,37 +1102,37 @@ static glm::mat4 make_transform(const glm::vec3& pos, const glm::vec3& scale, co
 }
 
 void MeshRenderer3D::draw_cube(const glm::vec3& pos, const glm::vec3& size, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_cube) draw_mesh(*m_prim_cube, make_transform(pos, size, rot), texture_id);
+    if (m_prim_cube) draw_mesh(*m_prim_cube, make_transform(pos, size, rot), texture_id, m_active_color_3d);
 }
 
 void MeshRenderer3D::draw_plane(const glm::vec3& pos, float width, float depth, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_plane) draw_mesh(*m_prim_plane, make_transform(pos, glm::vec3(width, 1.0f, depth), rot), texture_id);
+    if (m_prim_plane) draw_mesh(*m_prim_plane, make_transform(pos, glm::vec3(width, 1.0f, depth), rot), texture_id, m_active_color_3d);
 }
 
 void MeshRenderer3D::draw_sphere(const glm::vec3& pos, float radius, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_sphere) draw_mesh(*m_prim_sphere, make_transform(pos, glm::vec3(radius * 2.0f), rot), texture_id);
+    if (m_prim_sphere) draw_mesh(*m_prim_sphere, make_transform(pos, glm::vec3(radius * 2.0f), rot), texture_id, m_active_color_3d);
 }
 
 void MeshRenderer3D::draw_cylinder(const glm::vec3& pos, float radius, float height, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_cylinder) draw_mesh(*m_prim_cylinder, make_transform(pos, glm::vec3(radius * 2.0f, height, radius * 2.0f), rot), texture_id);
+    if (m_prim_cylinder) draw_mesh(*m_prim_cylinder, make_transform(pos, glm::vec3(radius * 2.0f, height, radius * 2.0f), rot), texture_id, m_active_color_3d);
 }
 
 void MeshRenderer3D::draw_cone(const glm::vec3& pos, float radius, float height, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_cone) draw_mesh(*m_prim_cone, make_transform(pos, glm::vec3(radius * 2.0f, height, radius * 2.0f), rot), texture_id);
+    if (m_prim_cone) draw_mesh(*m_prim_cone, make_transform(pos, glm::vec3(radius * 2.0f, height, radius * 2.0f), rot), texture_id, m_active_color_3d);
 }
 
 void MeshRenderer3D::draw_pyramid(const glm::vec3& pos, float base_size, float height, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_pyramid) draw_mesh(*m_prim_pyramid, make_transform(pos, glm::vec3(base_size, height, base_size), rot), texture_id);
+    if (m_prim_pyramid) draw_mesh(*m_prim_pyramid, make_transform(pos, glm::vec3(base_size, height, base_size), rot), texture_id, m_active_color_3d);
 }
 
 void MeshRenderer3D::draw_torus(const glm::vec3& pos, float radius, float tube_radius, GLuint texture_id, const glm::vec3& rot) {
     (void)radius; (void)tube_radius;
-    if (m_prim_torus) draw_mesh(*m_prim_torus, make_transform(pos, glm::vec3(1.0f), rot), texture_id);
+    if (m_prim_torus) draw_mesh(*m_prim_torus, make_transform(pos, glm::vec3(1.0f), rot), texture_id, m_active_color_3d);
 }
 
 void MeshRenderer3D::draw_capsule(const glm::vec3& pos, float radius, float height, GLuint texture_id, const glm::vec3& rot) {
     (void)radius; (void)height;
-    if (m_prim_capsule) draw_mesh(*m_prim_capsule, make_transform(pos, glm::vec3(1.0f), rot), texture_id);
+    if (m_prim_capsule) draw_mesh(*m_prim_capsule, make_transform(pos, glm::vec3(1.0f), rot), texture_id, m_active_color_3d);
 }
 
 void MeshRenderer3D::draw_billboard(GLuint texture_id, const glm::vec3& position, const glm::vec2& size,
@@ -1166,6 +1172,7 @@ void MeshRenderer3D::draw_billboard(GLuint texture_id, const glm::vec3& position
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     m_shader->bind();
+    m_shader->set_vec4("u_color", glm::vec4(1.0f));
     m_shader->set_mat4("u_model", glm::mat4(1.0f));
     m_shader->set_mat4("u_view", m_view);
     m_shader->set_mat4("u_proj", m_proj);
@@ -1198,6 +1205,7 @@ void MeshRenderer3D::draw_line_3d(const glm::vec3& p1, const glm::vec3& p2, cons
     };
 
     m_shader->bind();
+    m_shader->set_vec4("u_color", glm::vec4(1.0f));
     m_shader->set_mat4("u_model", m_current_matrix);
     m_shader->set_mat4("u_view", m_view);
     m_shader->set_mat4("u_proj", m_proj);
@@ -1227,6 +1235,7 @@ void MeshRenderer3D::draw_lines_3d_batched(const Vertex3D* vertices, size_t coun
     if (!vertices || count < 2) return;
 
     m_shader->bind();
+    m_shader->set_vec4("u_color", glm::vec4(1.0f));
     m_shader->set_mat4("u_model", glm::mat4(1.0f));
     m_shader->set_mat4("u_view", m_view);
     m_shader->set_mat4("u_proj", m_proj);
@@ -1473,6 +1482,7 @@ void MeshRenderer3D::draw_grid_3d(float size, int divisions, float y_level, cons
     }
 
     m_shader->bind();
+    m_shader->set_vec4("u_color", glm::vec4(1.0f));
     m_shader->set_mat4("u_model", m_current_matrix);
     m_shader->set_mat4("u_view", m_view);
     m_shader->set_mat4("u_proj", m_proj);
@@ -1510,6 +1520,7 @@ void MeshRenderer3D::draw_triangle_3d(const glm::vec3& p1, const glm::vec3& p2, 
     };
 
     m_shader->bind();
+    m_shader->set_vec4("u_color", glm::vec4(1.0f));
     m_shader->set_mat4("u_model", m_current_matrix);
     m_shader->set_mat4("u_view", m_view);
     m_shader->set_mat4("u_proj", m_proj);
@@ -1587,6 +1598,7 @@ void MeshRenderer3D::draw_billboard_rot(GLuint texture_id, const glm::vec3& posi
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
     m_shader->bind();
+    m_shader->set_vec4("u_color", glm::vec4(1.0f));
     m_shader->set_mat4("u_model", glm::mat4(1.0f));
     m_shader->set_mat4("u_view", m_view);
     m_shader->set_mat4("u_proj", m_proj);

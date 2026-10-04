@@ -852,7 +852,7 @@ void Model3D::draw(MeshRenderer3D& renderer, const glm::mat4& world_transform, G
         if (!part.mesh) continue;
         glm::mat4 final_tf = world_transform * part.transform;
         GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
-        renderer.draw_mesh(*part.mesh, final_tf, tex);
+        renderer.draw_mesh(*part.mesh, world_transform * part.transform, tex, part.color);
     }
 }
 
@@ -884,7 +884,7 @@ void Model3D::draw_part(MeshRenderer3D& renderer, int part_index, const glm::mat
 
     glm::mat4 final_tf = world_transform * part.transform;
     GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
-    renderer.draw_mesh(*part.mesh, final_tf, tex);
+    renderer.draw_mesh(*part.mesh, final_tf, tex, part.color);
 }
 
 const ModelNode* Model3D::get_node(size_t index) const {
@@ -964,10 +964,10 @@ void Model3D::draw_skinned(MeshRenderer3D& renderer, const glm::mat4& world_tran
         if (!part.mesh) continue;
         GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
         if (part.is_skinned && bone_matrices && bone_count > 0) {
-            renderer.draw_mesh_skinned(*part.mesh, world_transform, bone_matrices, bone_count, tex);
+            renderer.draw_mesh_skinned(*part.mesh, world_transform, bone_matrices, bone_count, tex, part.color);
         } else {
             glm::mat4 final_tf = world_transform * part.transform;
-            renderer.draw_mesh(*part.mesh, final_tf, tex);
+            renderer.draw_mesh(*part.mesh, final_tf, tex, part.color);
         }
     }
 }

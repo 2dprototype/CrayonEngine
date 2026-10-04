@@ -649,6 +649,19 @@ static int l_model_set_part_color(lua_State* L) {
     return 0;
 }
 
+static int l_model_get_part_color(lua_State* L) {
+    auto model = check_model(L, 1);
+    if (!model) return 0;
+    size_t idx = static_cast<size_t>(luaL_checkinteger(L, 2));
+    const auto* part = model->get_part(idx);
+    const glm::vec4 c = part ? part->color : glm::vec4(1.0f);
+    lua_pushnumber(L, c.r);
+    lua_pushnumber(L, c.g);
+    lua_pushnumber(L, c.b);
+    lua_pushnumber(L, c.a);
+    return 4;
+}
+
 static int l_model_get_bounds(lua_State* L) {
     auto model = check_model(L, 1);
     if (!model) return 0;
@@ -1198,6 +1211,9 @@ static void register_model_metatable(lua_State* L) {
 
     lua_pushcfunction(L, l_model_set_part_color);
     lua_setfield(L, -2, "setPartColor");
+    
+    lua_pushcfunction(L, l_model_get_part_color);
+    lua_setfield(L, -2, "getPartColor");
 
     lua_pushcfunction(L, l_model_get_bounds);
     lua_setfield(L, -2, "getBounds");
@@ -1568,6 +1584,24 @@ static int l_graphics_set_color(lua_State* L) {
     float a = static_cast<float>(luaL_optnumber(L, 4, 1.0));
     Engine::get().set_active_color(r, g, b, a);
     return 0;
+}
+
+static int l_graphics_set_model_color(lua_State* L) {
+    float r = static_cast<float>(luaL_checknumber(L, 1));
+    float g = static_cast<float>(luaL_checknumber(L, 2));
+    float b = static_cast<float>(luaL_checknumber(L, 3));
+    float a = static_cast<float>(luaL_optnumber(L, 4, 1.0));
+    Engine::get().get_mesh_renderer().set_model_color(glm::vec4(r, g, b, a));
+    return 0;
+}
+
+static int l_graphics_get_model_color(lua_State* L) {
+    const glm::vec4& c = Engine::get().get_mesh_renderer().get_model_color();
+    lua_pushnumber(L, c.r);
+    lua_pushnumber(L, c.g);
+    lua_pushnumber(L, c.b);
+    lua_pushnumber(L, c.a);
+    return 4;
 }
 
 static int l_graphics_set_retro_effects(lua_State* L) {
@@ -3751,6 +3785,12 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_set_color);
     lua_setfield(L, -2, "setColor");
+
+    lua_pushcfunction(L, l_graphics_set_model_color);
+    lua_setfield(L, -2, "setModelColor");
+
+    lua_pushcfunction(L, l_graphics_get_model_color);
+    lua_setfield(L, -2, "getModelColor");
 
     lua_pushcfunction(L, l_graphics_set_retro_effects);
     lua_setfield(L, -2, "setRetroEffects");

@@ -146,8 +146,14 @@ public:
     void begin(const Camera& camera, float aspect);
     void end();
 
-    void draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id = 0);
-    void draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model, const glm::mat4* bone_matrices, size_t bone_count, GLuint texture_id = 0);
+    void draw_mesh(const Mesh3D& mesh, const glm::mat4& model,
+                   GLuint texture_id = 0,
+                   const glm::vec4& tint = glm::vec4(1.0f));
+
+    void draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model,
+                           const glm::mat4* bone_matrices, size_t bone_count,
+                           GLuint texture_id = 0,
+                           const glm::vec4& tint = glm::vec4(1.0f));
     void draw_model(const Model3D& model, const glm::mat4& transform, GLuint override_texture = 0);
     void draw_model_skinned(const Model3D& model, const glm::mat4& transform, const glm::mat4* bone_matrices, size_t bone_count, GLuint override_texture = 0);
 
@@ -228,6 +234,13 @@ public:
 
     void set_shading_mode(ShadingMode mode) { m_shading_mode = mode; }
     ShadingMode get_shading_mode() const { return m_shading_mode; }
+    
+    // Frame-wide tint applied by the procedural primitive helpers
+    // (draw_cube, draw_sphere, ...). Does not affect draw_model* — those
+    // use each part's own color. Not to be confused with setColor(), which
+    // is 2D-only.
+    void set_model_color(const glm::vec4& c) { m_active_color_3d = c; }
+    const glm::vec4& get_model_color() const { return m_active_color_3d; }
 
     GLuint get_fallback_texture_id() const;
 
@@ -251,6 +264,7 @@ private:
     SpotLight m_spot_lights[2];
     ShadingMode m_shading_mode = ShadingMode::Gouraud;
     RetroEffects m_retro;
+    glm::vec4 m_active_color_3d{1.0f};
 
     // Pre-allocated procedural meshes for fast primitive rendering
     std::shared_ptr<Mesh3D> m_prim_cube;

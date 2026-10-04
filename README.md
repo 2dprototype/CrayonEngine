@@ -118,8 +118,8 @@ function crayon.config(t)
     }
 
     t.modules = {
-        physics3d = true,
-        physics2d = true,
+        physics3D = true,
+        physics2D = true,
         audio = true,
         mesh3D = true,
         particles = true,
@@ -153,20 +153,20 @@ crayon.graphics.drawCircle("fill", 100, 100, 30)
 crayon.graphics.drawText("Score: " .. score, 10, 10, 2)
 
 -- 2D Camera
-crayon.graphics.setCamera2d({ x = 0, y = 0, zoom = 1.0, angle = 0 })
+crayon.graphics.setCamera2D({ x = 0, y = 0, zoom = 1.0, angle = 0 })
 
 -- Transforms
-crayon.graphics.pushMatrix2d()
-crayon.graphics.translate2d(100, 100)
-crayon.graphics.rotate2d(1.57)
+crayon.graphics.pushMatrix2D()
+crayon.graphics.translate2D(100, 100)
+crayon.graphics.rotate2D(1.57)
 crayon.graphics.drawSprite(tex, 0, 0, 32, 32)
-crayon.graphics.popMatrix2d()
+crayon.graphics.popMatrix2D()
 ```
 
 ### 3D Rendering
 ```lua
 -- 3D Camera
-crayon.graphics.setCamera3d({
+crayon.graphics.setCamera3D({
     position = {0, 3, 8},
     target   = {0, 0, 0},
     fov      = 60,
@@ -197,9 +197,9 @@ crayon.graphics.drawSphere(0, 0, 0, 0.5)
 crayon.graphics.popMatrix()
 
 -- Lines & Debug
-crayon.graphics.drawLine3d(x1, y1, z1, x2, y2, z2)
-crayon.graphics.drawGrid3d(20, 20, 0)
-crayon.graphics.drawAxes3d(0, 0, 0, 1)
+crayon.graphics.drawLine3D(x1, y1, z1, x2, y2, z2)
+crayon.graphics.drawGrid3D(20, 20, 0)
+crayon.graphics.drawAxes3D(0, 0, 0, 1)
 ```
 
 ### Retro Effects
@@ -248,7 +248,7 @@ local animator = model:createAnimator()
 animator:play("Idle", true)
 
 local physics_skel = model:createPhysicsSkeleton()
-local pose         = crayon.physics3d.createSkeletonPose(physics_skel)
+local pose         = crayon.physics3D.createSkeletonPose(physics_skel)
 
 function crayon.update(dt)
     animator:update(dt)
@@ -266,9 +266,9 @@ end
 ### Physics3D Bodies
 ```lua
 -- Create bodies
-local box    = crayon.physics3d.createBox(0, 2, 0, 0.5, 0.5, 0.5, "dynamic", 0.5, 0.2)
-local sphere = crayon.physics3d.createSphere(0, 5, 0, 0.5, "dynamic", 0.5, 0.5)
-local floor  = crayon.physics3d.createPlane(0, -0.5, 0, 0, 1, 0, 50)
+local box    = crayon.physics3D.createBox(0, 2, 0, 0.5, 0.5, 0.5, "dynamic", 0.5, 0.2)
+local sphere = crayon.physics3D.createSphere(0, 5, 0, 0.5, "dynamic", 0.5, 0.5)
+local floor  = crayon.physics3D.createPlane(0, -0.5, 0, 0, 1, 0, 50)
 
 -- Motion types: "static", "kinematic", "dynamic"
 box:setMotionType("kinematic")
@@ -302,17 +302,17 @@ box:destroy()
 ### Physics3D Constraints
 ```lua
 -- Point constraint
-local c1 = crayon.physics3d.createPointConstraint(body1, body2, px, py, pz)
+local c1 = crayon.physics3D.createPointConstraint(body1, body2, px, py, pz)
 
 -- Hinge constraint (pivot + axis)
-local c2 = crayon.physics3d.createHingeConstraint(
+local c2 = crayon.physics3D.createHingeConstraint(
     body1, body2,
     px, py, pz,    -- pivot
     ax, ay, az     -- axis
 )
 
 -- Distance constraint
-local c3 = crayon.physics3d.createDistanceConstraint(
+local c3 = crayon.physics3D.createDistanceConstraint(
     body1, body2,
     p1x, p1y, p1z,
     p2x, p2y, p2z,
@@ -320,49 +320,49 @@ local c3 = crayon.physics3d.createDistanceConstraint(
 )
 
 -- Fixed constraint
-local c4 = crayon.physics3d.createFixedConstraint(body1, body2)
+local c4 = crayon.physics3D.createFixedConstraint(body1, body2)
 
 -- Destroy
-crayon.physics3d.destroyConstraint(c1)
+crayon.physics3D.destroyConstraint(c1)
 ```
 
 ### Physics3D Queries
 ```lua
 -- Raycast (returns hit + hit data + body handle)
-local hit, hx, hy, hz, nx, ny, nz, dist, body = crayon.physics3d.raycast(
+local hit, hx, hy, hz, nx, ny, nz, dist, body = crayon.physics3D.raycast(
     ox, oy, oz,    -- origin
     dx, dy, dz,    -- direction
     max_dist
 )
 
 -- Overlap sphere
-local hits = crayon.physics3d.overlapSphere(cx, cy, cz, radius)
+local hits = crayon.physics3D.overlapSphere(cx, cy, cz, radius)
 for _, body in ipairs(hits) do
     print("Body in sphere:", body:getId())
 end
 
 -- Debug visualization
-crayon.physics3d.drawDebug(0.2, 1, 0.4, 1, 0.5, 0.5, 0.5, 1)
+crayon.physics3D.drawDebug(0.2, 1, 0.4, 1, 0.5, 0.5, 0.5, 1)
 ```
 
 ### Physics3D World
 ```lua
-crayon.physics3d.setGravity(0, -9.81, 0)
-crayon.physics3d.step(dt)                -- step the simulation
-crayon.physics3d.getBodyCount()          -- returns total, active
-crayon.physics3d.getBody(id)             -- returns body or nil
-crayon.physics3d.destroyAll()            -- clears the world
+crayon.physics3D.setGravity(0, -9.81, 0)
+crayon.physics3D.step(dt)                -- step the simulation
+crayon.physics3D.getBodyCount()          -- returns total, active
+crayon.physics3D.getBody(id)             -- returns body or nil
+crayon.physics3D.destroyAll()            -- clears the world
 ```
 
 ### Physics2D Bodies
 ```lua
-crayon.physics2d.setGravity(0, 980)
-crayon.physics2d.setMeterScale(32.0)
+crayon.physics2D.setGravity(0, 980)
+crayon.physics2D.setMeterScale(32.0)
 
-local ground = crayon.physics2d.createBody("static", 160, 220)
+local ground = crayon.physics2D.createBody("static", 160, 220)
 ground:addBox(320, 20)
 
-local box = crayon.physics2d.createBody("dynamic", 160, 100)
+local box = crayon.physics2D.createBody("dynamic", 160, 100)
 box:addBox(20, 20, 0, 0, 0, 1.0, 0.3, 0.1)
 
 local bx, by = box:getPosition()
@@ -372,7 +372,7 @@ box:applyImpulse(0, 200)
 
 ### Physics2D Joints
 ```lua
-local j = crayon.physics2d.createRevoluteJoint(
+local j = crayon.physics2D.createRevoluteJoint(
     bodyA, bodyB,
     ax, ay,
     true, -1.57, 1.57,     -- enableLimit, lower, upper
@@ -471,7 +471,7 @@ crayon.audio.playSound(coin, { volume = 0.8, pitch = 1.0 })
 -- Positional 3D audio
 crayon.audio.setListenerPosition(0, 2, 0)
 crayon.audio.setListenerOrientation(0, 0, -1, 0, 1, 0)
-crayon.audio.playSound3d(coin, 5, 1, 3, { volume = 1.0, minDist = 1, maxDist = 25 })
+crayon.audio.playSound3D(coin, 5, 1, 3, { volume = 1.0, minDist = 1, maxDist = 25 })
 
 -- Music
 crayon.audio.playMusic("bgm.ogg", { loop = true, fadeIn = 2.0 })
@@ -495,7 +495,7 @@ local fire = crayon.particles.createEmitter({
     sizeEnd      = 0.1,
     gravity      = -2.0,
     blendMode    = "additive",
-    is3d         = true
+    is3D         = true
 })
 fire:setPosition(0, 1, 0)
 
@@ -507,7 +507,7 @@ function crayon.update(dt)
 end
 
 function crayon.draw()
-    fire:draw3d()
+    fire:draw3D()
 end
 ```
 
@@ -583,10 +583,10 @@ The runtime invokes these optional `crayon.*` functions if they are defined:
 | `crayon.onCollisionExit(a, b)` | body ids |
 | `crayon.onTriggerEnter(sensor, other)` | body ids |
 | `crayon.onTriggerExit(sensor, other)` | body ids |
-| `crayon.collision2dEnter(a, b, nx, ny, impulse)` | body ids + contact info |
-| `crayon.collision2dExit(a, b)` | body ids |
-| `crayon.trigger2dEnter(sensor, other)` | body ids |
-| `crayon.trigger2dExit(sensor, other)` | body ids |
+| `crayon.collision2DEnter(a, b, nx, ny, impulse)` | body ids + contact info |
+| `crayon.collision2DExit(a, b)` | body ids |
+| `crayon.trigger2DEnter(sensor, other)` | body ids |
+| `crayon.trigger2DExit(sensor, other)` | body ids |
 
 ## Build Requirements
 

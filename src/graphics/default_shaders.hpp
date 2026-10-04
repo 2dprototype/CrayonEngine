@@ -112,6 +112,7 @@ in vec3 v_view_pos;
 
 uniform sampler2D u_texture;
 uniform float u_affine_blend; // 0.0 = perspective correct, 1.0 = affine
+uniform vec4 u_color; 
 
 // Directional Light
 uniform vec3 u_light_dir;
@@ -205,6 +206,7 @@ void main() {
     }
 
     vec4 lit_color = vec4(tex.rgb * v_color.rgb * lighting, tex.a * v_color.a);
+    lit_color *= u_color;
 
     if (u_fog_enabled != 0) {
         float dist = length(v_view_pos);
