@@ -58,8 +58,8 @@ end
 
 function crayon.update(dt)
     -- Unified input polling
-    mouseState.x, mouseState.y = crayon.input.getMousePosition()
-    mouseState.down = crayon.input.isMouseDown(1)
+    mouseState.x, mouseState.y = crayon.mouse.getPosition()
+    mouseState.down = crayon.mouse.isDown(1)
 
     -- Detect any key pressed
     local pressed = crayon.key.getPressedKeys()

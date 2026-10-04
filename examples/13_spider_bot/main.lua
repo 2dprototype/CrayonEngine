@@ -519,7 +519,7 @@ end
 -- ---------------------------------------------------------------------------
 
 -- A drag has entered the window.
-function crayon.dropbegin(x, y)
+function crayon.dropBegin(x, y)
     drag.active = true
     drag.x, drag.y = x, y
     drag.count = 0

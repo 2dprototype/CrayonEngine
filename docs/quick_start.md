@@ -120,7 +120,7 @@ Access via: `crayon.window`
 | `showCursor(show)` | Show/hide cursor |
 | `isCursorVisible()` | Returns cursor visibility |
 
-### Overlay Flags (see config for creation-time flags)
+### Overlay Flags
 
 | Function | Description |
 |----------|-------------|
@@ -389,7 +389,7 @@ Alternative: `setCamera3D(x, y, z [, yaw, pitch, fov])` — sets position and or
 - `:isValid()`
 - `:getNodeCount()` / `:getNode(idx_or_name)` / `:getNodes()`
 - `:getPartCount()` / `:getPartName(idx)` → name, material_name
-- `:getPartTexture(idx)` / `:setPartTexture(idx, tex)` / `:setPartColor(idx, r, g, b [, a])`
+- `:getPartTexture(idx)` / `:setPartTexture(idx, tex)` / `:setPartColor(idx, r, g, b [, a])` / `:getPartColor(idx)`
 - `:getBounds()` → minX, minY, minZ, maxX, maxY, maxZ
 - `:getCenter()` → cx, cy, cz
 - `:getSize()` → sx, sy, sz
@@ -1012,7 +1012,7 @@ Access via: `crayon.audio`
 | `loadSound(path)` | Load a sound effect, returns ID |
 | `unloadSound(id)` | Unload a sound, returns bool |
 | `playSound(id [, volume, pitch, pan, loop])` | Play a sound effect, returns voice ID |
-| `playSound(id, opts)` | Play with `{volume, pitch, pan, loop}` table |
+| `playSound(id, opts)` | Play with `{volume, pitch, pan, loop, priority}` table |
 | `playSound3D(id, x, y, z [, opts])` | Positional 3D sound. Opts: `{volume, pitch, minDist, maxDist}` |
 | `stopSound(voiceId)` | Stop a specific voice |
 | `stopAllSounds()` | Stop all playing sounds |
@@ -1038,10 +1038,82 @@ Access via: `crayon.audio`
 | `setListenerPosition(x, y, z)` | 3D audio listener position |
 | `setListenerOrientation(fx, fy, fz [, ux, uy, uz])` | Listener forward and up vectors |
 
+### Procedural Sound
+
+| Function | Description |
+|----------|-------------|
+| `createSound(opts)` | Create a procedural sound from a wave template |
+| `createBuffer(frames, callback)` | Bake a sound by sampling `callback(t, i)` per frame |
+
+**Sound Template Options:**
+```lua
+{
+    wave = "sine",       -- "sample", "sine", "square", "saw", "triangle", "noise"
+    freq = 440,          -- base frequency in Hz
+    duration = 1.0,      -- seconds
+    envelope = {         -- ADSR
+        attack = 0.01, decay = 0.1, sustain = 0.7, release = 0.3
+    },
+    filter = {           -- optional lowpass/highpass
+        cutoff = 1000.0,
+        highpass = false,  -- or type = "highpass"
+    },
+    pitchSweep = {       -- optional frequency sweep
+        from = 1000.0, to = 100.0, time = 0.5
+    }
+}
+```
+
+### Live Voice Control
+
+| Function | Description |
+|----------|-------------|
+| `setVoiceGain(voiceId, gain, rampTime)` | Set gain with ramp |
+| `setVoiceVolume(voiceId, volume)` | Set volume |
+| `setVoicePitch(voiceId, pitch)` | Set pitch |
+| `setVoicePan(voiceId, pan)` | Set pan (-1 to 1) |
+| `setVoicePosition(voiceId, x, y, z)` | Set 3D position |
+| `setVoicePriority(voiceId, priority)` | Set voice priority |
+| `setVoiceLoop(voiceId, loop)` | Set loop flag |
+
+### Custom Block Generators
+
+| Function | Description |
+|----------|-------------|
+| `setBlockGenerator(voiceId, blockSize, callback)` | Attach a per-block audio callback. Returns the registry ref |
+| `clearBlockGenerator(voiceId [, ref])` | Remove callback (unref optional) |
+
+The callback signature is `function(tStart, sampleRate, frames) -> table` where the table contains `frames` float samples.
+
+```lua
+local voice = crayon.audio.playSound(crayon.audio.loadSound("dummy.wav"))
+crayon.audio.setBlockGenerator(voice, 512, function(t, sr, n)
+    local out = {}
+    for i = 0, n - 1 do
+        out[i + 1] = math.sin((t + i / sr) * 440.0 * 6.28318) * 0.5
+    end
+    return out
+end)
+```
+
+### Stats
+
+| Function | Description |
+|----------|-------------|
+| `getActiveVoiceCount()` | Number of currently playing voices |
+| `getMaxVoices()` | Voice pool size |
+
 ```lua
 local coin = crayon.audio.loadSound("coin.wav")
 crayon.audio.playSound(coin, { volume = 0.8, pitch = 1.0 })
 crayon.audio.playMusic("bgm.ogg", { loop = true, fadeIn = 2.0 })
+
+-- Procedural blip
+local blip = crayon.audio.createSound({
+    wave = "square", freq = 880, duration = 0.1,
+    envelope = { attack = 0.001, decay = 0.02, sustain = 0.4, release = 0.05 }
+})
+crayon.audio.playSound(blip)
 ```
 
 ---
@@ -1178,6 +1250,21 @@ end
 
 ---
 
+## Print Module
+Access via: `crayon.print`
+
+Pretty-prints Lua values with ANSI colors, cycle detection, and proper table formatting.
+
+| Function | Description |
+|----------|-------------|
+| `print(...)` | Print values to the console with color-coded output |
+
+```lua
+crayon.print("Hello", {x = 1, y = 2}, {1, 2, 3}, true, nil)
+```
+
+---
+
 ## Configuration
 
 ### `crayon.config(t)`
@@ -1235,7 +1322,7 @@ end
 
 ## Lua Callbacks
 
-The runtime invokes these optional `crayon.*` functions. Only the canonical camelCase names are supported — the previous snake_case aliases have been removed.
+The runtime invokes these optional `crayon.*` functions. Only the canonical camelCase names are supported.
 
 ### Lifecycle
 
@@ -1539,6 +1626,29 @@ function crayon.draw()
 end
 ```
 
+### Example 9: Procedural Audio Block Generator
+
+```lua
+local voice
+
+function crayon.init()
+    local src = crayon.audio.loadSound("placeholder.wav")
+    voice = crayon.audio.playSound(src)
+    crayon.audio.setBlockGenerator(voice, 256, function(tStart, sampleRate, frames)
+        local out = {}
+        for i = 0, frames - 1 do
+            local t = tStart + i / sampleRate
+            out[i + 1] = math.sin(t * 220.0 * 6.28318) * math.exp(-t * 2.0) * 0.6
+        end
+        return out
+    end)
+end
+
+function crayon.quit()
+    crayon.audio.clearBlockGenerator(voice)
+end
+```
+
 ---
 
 ## Migration Notes (from pre-camelCase API)
@@ -1566,3 +1676,42 @@ The following names have been **removed**:
 - `"linear_cast"` and `"ccd"` string values accepted by `Body:setMotionQuality` — use `"linearCast"` (or boolean `true`) only.
 
 C++ identifiers, metatable registry keys (e.g. `"Physics3D.Body"`), file names, and internal helpers retain their original names and are not part of the Lua surface.
+
+---
+
+## Changes in this revision
+
+Based on the current `bind_*.cpp` sources, the docs above were updated to reflect:
+
+- **Audio** (`bind_audio.cpp`):
+  - Added `createSound` procedural template (`wave`, `freq`, `duration`, `envelope`, `filter`, `pitchSweep`).
+  - Added `createBuffer(frames, callback)` for baked procedural audio.
+  - Added live voice control: `setVoiceGain`, `setVoiceVolume`, `setVoicePitch`, `setVoicePan`, `setVoicePosition`, `setVoicePriority`, `setVoiceLoop`.
+  - Added custom block generator API: `setBlockGenerator(voiceId, blockSize, callback)` and `clearBlockGenerator(voiceId [, ref])` with callback signature `(tStart, sampleRate, frames) -> table`.
+  - Added stats: `getActiveVoiceCount`, `getMaxVoices`.
+  - `playSound` option table also accepts `priority`.
+  - Added migration note for procedural audio, plus **Example 9: Procedural Audio Block Generator**.
+
+- **Print** (`bind_print.cpp`):
+  - Added a new **Print Module** section documenting `crayon.print(...)` with color-coded, cycle-safe table output.
+
+- **Physics3D** (`bind_physics3d.cpp`):
+  - `createSoftBody*` factory signatures documented with alternative `opts` table forms.
+  - Confirmed world-level helper exports `setMotionQuality` and `setPlanarLock` (exposed on `crayon.physics3D` as well as on Body).
+  - `Body:setMotionQuality` only accepts `true`/`"linearCast"` string — no `"linear_cast"`/`"ccd"` (matches existing migration note).
+  - All vehicle/skeleton/ragdoll/soft-body method tables verified against source.
+
+- **Graphics** (`bind_graphics.cpp`):
+  - `getCameraRay` returns `{origin={x,y,z}, direction={x,y,z}}` (verified).
+  - Post-process built-in list matches `default_shaders` usage in the binding.
+  - All `draw*` signatures verified including `drawBillboardRot`, `drawSkeleton`, `drawSegmentedMesh`, `drawTextureRot`, `drawRoundedRectEx`, `drawPie`, `drawGradient*`, `drawTextMarkup`, `measureTextMarkup`.
+  - `Model:getPartColor` / `setPartColor` documented.
+  - `Animator:crossFadeFromCurrentPose`, `setUpdateRate`, `applyToPhysicsPose`, `capturePhysicsPose`, `getModel` documented.
+
+- **Physics2D** (`bind_physics2d.cpp`):
+  - Full body & joint method tables confirmed.
+
+- **Input** (`bind_input.cpp`):
+  - Key/mouse/gamepad modules confirmed; no `crayon.input` alias.
+
+If any of these details conflict with earlier sections, this revision is authoritative — the source-of-truth is the current `bind_*.cpp` files.

@@ -1,4 +1,3 @@
-
 # Crayon Engine
 
 A lightweight 2D/3D game engine with retro aesthetics, modern physics, and Lua scripting. Built with C++20, OpenGL 3.3, SDL3, and Jolt Physics.
@@ -17,15 +16,15 @@ A lightweight 2D/3D game engine with retro aesthetics, modern physics, and Lua s
 - **3D Lighting** — Directional light + 4 point lights + 4 spot lights
 - **Shading Modes** — Gouraud, Flat, Unlit
 - **3D Physics** — Jolt Physics with rigid bodies, constraints, raycasting, sensors, characters, vehicles, ragdolls, skeletons, and soft bodies
-- **2D Physics** — Box2D-style rigid bodies, joints, and fixtures
+- **2D Physics** — (Box2D) rigid bodies, joints, and fixtures
 - **Post-Processing** — Stackable effect chain with custom shaders and uniforms
 - **Particles** — CPU particle emitters with 2D/3D rendering
-- **Audio** — SFX, positional 3D audio, streamed music, per-channel volume
+- **Audio** — SFX, positional 3D audio, streamed music, per-channel volume, **procedural sound synthesis**, and **live Lua-driven block generators**
 - **Input** — Keyboard, mouse, gamepad, text input, clipboard
+- **Pretty Printer** — Colorized, cycle-safe `crayon.print(...)` for debugging tables
 - **Project System** — `.crayonproj` manifests for games and demos
 - **Hot Reload** — Instant script reload on file change or F5
 - **Asset Loading** — PNG/JPG textures, OBJ/GLTF/GLB models, procedural meshes
-- **Cross-Platform** — Windows, Linux, macOS
 
 ## Quick Start
 
@@ -90,7 +89,7 @@ function crayon.draw()
 end
 ```
 
-> **Note:** All engine APIs use **camelCase** (e.g. `setResolution`, `drawRect`, `isPressed`). Body, model, and other object handles expose methods via `:` (e.g. `body:getPosition()`).
+> **Note:** All engine APIs use **camelCase** (e.g. `setResolution`, `drawRect`, `isPressed`). Body, model, and other object handles expose methods via `:` (e.g. `body:getPosition()`). Numeric suffixes use a capital `D` — `setCamera3D`, `drawLine2D`, `physics3D`.
 
 ## Configuration
 
@@ -114,6 +113,11 @@ function crayon.config(t)
         transparent = false,
         borderless = false,
         alwaysOnTop = false,
+        clickThrough = false,
+        opacity = 1.0,
+        skipTaskbar = false,
+        notFocusable = false,
+        utilityWindow = false,
         scaling = "integer"           -- "integer" | "aspect" | "stretch" | "center"
     }
 
@@ -148,19 +152,30 @@ crayon.graphics.drawSprite(tex, x, y, 32, 32, angle, 16, 16)
 crayon.graphics.setColor(1, 0, 0, 1)
 crayon.graphics.drawRect("fill", 10, 10, 50, 50)
 crayon.graphics.drawCircle("fill", 100, 100, 30)
+crayon.graphics.drawRoundedRect("fill", 10, 10, 80, 40, 8, 12)
+crayon.graphics.drawGradientH(10, 60, 100, 30, {1,0,0,1}, {0,0,1,1})
 
 -- Text
 crayon.graphics.drawText("Score: " .. score, 10, 10, 2)
 
+-- Rich text markup
+crayon.graphics.drawTextMarkup("[wave]Hello[/wave] [color=1,0,0]World[/color]", 10, 10, {
+    scale = 2, wrapWidth = 200, align = "center"
+})
+
 -- 2D Camera
 crayon.graphics.setCamera2D({ x = 0, y = 0, zoom = 1.0, angle = 0 })
 
--- Transforms
+-- Transform stack (2D)
 crayon.graphics.pushMatrix2D()
 crayon.graphics.translate2D(100, 100)
 crayon.graphics.rotate2D(1.57)
 crayon.graphics.drawSprite(tex, 0, 0, 32, 32)
 crayon.graphics.popMatrix2D()
+
+-- Scissor stack
+crayon.graphics.pushScissor(10, 10, 100, 100)
+crayon.graphics.popScissor()
 ```
 
 ### 3D Rendering
@@ -177,6 +192,7 @@ crayon.graphics.setCamera3D({
 -- Lighting
 crayon.graphics.setLight(-0.5, -1, -0.7, 1, 0.95, 0.9, 0.25, 0.25, 0.3)
 crayon.graphics.setPointLight(0, 0, 5, 0, 1, 1, 1, 10, 1)
+crayon.graphics.setSpotLight(0, 0, 5, 0, 0, -1, 0, 15, 1, 1, 1, 1, 15, 25)
 crayon.graphics.setShadingMode("gouraud")
 
 -- 3D Objects
@@ -200,6 +216,7 @@ crayon.graphics.popMatrix()
 crayon.graphics.drawLine3D(x1, y1, z1, x2, y2, z2)
 crayon.graphics.drawGrid3D(20, 20, 0)
 crayon.graphics.drawAxes3D(0, 0, 0, 1)
+crayon.graphics.drawCubeWires(0, 1, 0, 1, 1, 1)
 ```
 
 ### Retro Effects
@@ -224,11 +241,16 @@ crayon.graphics.setRetroEffects({
 
 ### Post-Processing
 ```lua
-crayon.graphics.pushEffect("bloom", { intensity = 1.5, threshold = 0.8 })
+crayon.graphics.pushEffect("bloom2D", { intensity = 1.5, threshold = 0.8 })
 -- ... draw scene ...
 crayon.graphics.setEffectUniform("intensity", 2.0)
 crayon.graphics.popEffect()
+
+-- Update by name
+crayon.graphics.setEffectUniform("bloom2D", "threshold", 0.9)
 ```
+
+**Built-in effects:** `"chromatic"`, `"vignette"`, `"dissolve"`, `"vhs"`, `"bloom2D"`, `"pixelate"`, `"radialBlur"`, `"filmGrain"`.
 
 ### Canvas
 ```lua
@@ -239,6 +261,17 @@ canvas:renderTo(function()
     crayon.graphics.drawCircle("fill", 160, 120, 50)
 end)
 crayon.graphics.drawSprite(canvas:getTexture(), 0, 0)
+```
+
+### Camera2D Object
+```lua
+local cam = crayon.graphics.newCamera2D(160, 120, 2.0)
+cam:setTarget(player.x, player.y)
+cam:setDeadzone(40, 30)
+cam:setBounds(0, 0, 640, 480)
+cam:shake(5.0, 0.3)
+cam:update(dt)
+cam:apply()
 ```
 
 ### Skeletal Animation
@@ -293,6 +326,7 @@ box:setGravityFactor(1.0)
 box:setDamping(0.1, 0.1)
 box:setSensor(false)
 box:setMotionQuality("linearCast")  -- enable CCD
+box:setPlanarLock("xz")             -- constrain to XZ plane
 
 -- Lifetime
 box:isValid()
@@ -354,6 +388,113 @@ crayon.physics3D.getBody(id)             -- returns body or nil
 crayon.physics3D.destroyAll()            -- clears the world
 ```
 
+### Physics3D Characters
+```lua
+local hero = crayon.physics3D.createCharacter({
+    pos = {0, 1, 0},
+    radius = 0.4,
+    halfHeight = 0.6,
+    mass = 80.0,
+    maxSlopeAngleDeg = 45
+})
+
+if hero:isSupported() then
+    print("Grounded:", hero:getGroundState())
+end
+local nx, ny, nz = hero:getGroundNormal()
+local bx, by, bz = hero:getPosition()
+hero:setPosition(bx, by + 0.1, bz)
+
+-- Virtual character (kinematic, driven by user velocity)
+local ghost = crayon.physics3D.createCharacterVirtual({
+    pos = {0, 1, 0}, radius = 0.4, halfHeight = 0.6,
+    stepHeight = 0.4, innerBody = true
+})
+ghost:setLinearVelocity(0, 0, -3)
+ghost:update(dt)
+```
+
+### Physics3D Vehicles
+```lua
+local chassis = crayon.physics3D.createBox(0, 1, 0, 1, 0.3, 0.5, "dynamic", 0.5, 0.2)
+
+local car = crayon.physics3D.createWheeledVehicle({
+    chassis = chassis,
+    engineMaxTorque = 500,
+    engineMinRpm = 1000,
+    engineMaxRpm = 6000,
+    wheels = {
+        { position = {-0.7, -0.3,  0.5}, radius = 0.3, isFront = true,  isDrive = true },
+        { position = { 0.7, -0.3,  0.5}, radius = 0.3, isFront = true,  isDrive = false },
+        { position = {-0.7, -0.3, -0.5}, radius = 0.3, isFront = false, isDrive = true },
+        { position = { 0.7, -0.3, -0.5}, radius = 0.3, isFront = false, isDrive = false },
+    }
+})
+
+car:setInputWheeled(1.0, 0.2, 0.0, false)
+print(car:getSpeedKmh(), car:getEngineRpm(), car:getTransmissionGear())
+```
+
+### Physics3D Ragdolls
+```lua
+local ragdoll = crayon.physics3D.createRagdoll({
+    stabilize = true,
+    parts = {
+        { name = "Hips",  parentJointIndex = -1, shapeType = "capsule",
+          position = {0, 1.0, 0}, halfHeight = 0.1, radius = 0.12,
+          motion = "kinematic", mass = 8.0 },
+        { name = "Spine", parentJointIndex = 0, shapeType = "capsule",
+          position = {0, 0.25, 0}, halfHeight = 0.15, radius = 0.12,
+          motion = "dynamic", mass = 10.0, enableMotors = true,
+          motorSpringK = 200, motorDampingC = 20, motorMaxTorque = 80 }
+    }
+})
+
+ragdoll:addImpulse(0, 5, 0)
+ragdoll:driveToPoseMotorsVelocity(prevPose, targetPose, dt)
+local px, py, pz, qx, qy, qz, qw = ragdoll:getRootTransform()
+```
+
+### Physics3D Soft Bodies
+```lua
+-- Cloth
+local cloth = crayon.physics3D.createSoftBodyCloth({
+    x = 0, y = 5, z = 0, width = 4, height = 4,
+    segmentsX = 12, segmentsY = 12,
+    compliance = 0.0, bendCompliance = 0.01,
+    pinCorners = true
+})
+
+-- Pressurized sphere (balloon)
+local balloon = crayon.physics3D.createSoftBodySphere({
+    x = 0, y = 3, z = 0, radius = 1.0,
+    rings = 10, sectors = 16,
+    pressure = 800.0
+})
+
+-- Soft cube
+local jello = crayon.physics3D.createSoftBodyCube({
+    x = 0, y = 2, z = 0, size = 1.5,
+    gridSize = 4, compliance = 0.0005
+})
+
+-- Rod / rope
+local rope = crayon.physics3D.createSoftBodyRod({
+    points = { {0,5,0}, {0,4,0}, {0,3,0}, {0,2,0} },
+    stretchCompliance = 0.0,
+    bendTwistCompliance = 0.001,
+    pinRoot = true
+})
+
+-- Read & write vertices
+local px, py, pz, vx, vy, vz, inv_m = cloth:getVertex(1)
+cloth:applyForce(0, -9.81, 0)
+cloth:applyImpulse(10, 0, 0, 0, 0, 0)  -- impulse to a single vertex
+
+-- Skin to a skeleton
+cloth:skinVertices(jointMatrices, false)
+```
+
 ### Physics2D Bodies
 ```lua
 crayon.physics2D.setGravity(0, 980)
@@ -362,12 +503,17 @@ crayon.physics2D.setMeterScale(32.0)
 local ground = crayon.physics2D.createBody("static", 160, 220)
 ground:addBox(320, 20)
 
-local box = crayon.physics2D.createBody("dynamic", 160, 100)
+local box = crayon.physics2D.createBody("dynamic", 160, 100, {
+    fixedRotation = false,
+    linearDamping = 0.05,
+    gravityScale = 1.0
+})
 box:addBox(20, 20, 0, 0, 0, 1.0, 0.3, 0.1)
 
 local bx, by = box:getPosition()
 box:setLinearVelocity(50, 0)
 box:applyImpulse(0, 200)
+box:setAwake(true)
 ```
 
 ### Physics2D Joints
@@ -384,13 +530,14 @@ j:destroy()
 
 ## Input API Examples
 
-Input is split into `crayon.key`, `crayon.mouse`, `crayon.gamepad`, and a unified `crayon.input` namespace.
+Input is split into three independent sub-tables: `crayon.key`, `crayon.mouse`, and `crayon.gamepad`. The legacy `crayon.input` alias table has been **removed** — use the sub-tables directly.
 
 ```lua
 -- Keyboard (crayon.key)
 if crayon.key.isDown("w") then moveForward() end
 if crayon.key.isPressed("space") then jump() end
 if crayon.key.isReleased("shift") then stopSprint() end
+if crayon.key.isDown("w", "up") then moveForward() end   -- any-of semantics
 
 if crayon.key.isShiftDown() and crayon.key.isPressed("s") then
     print("Shift+S pressed!")
@@ -413,12 +560,7 @@ crayon.key.setClipboard("Hello!")
 if crayon.gamepad.isDown(0) then fire() end             -- A button
 local lx = crayon.gamepad.getAxis("leftx")
 local ly = crayon.gamepad.getAxis("lefty")
-
--- Unified aliases (crayon.input)
-if crayon.input.isKeyDown("w") then moveForward() end
-if crayon.input.isKeyPressed("space") then jump() end
-if crayon.input.isMousePressed("left") then shoot() end
-local umx, umy = crayon.input.getMousePosition()
+print(crayon.gamepad.getCount(), crayon.gamepad.getName(0))
 ```
 
 ## Window API Examples
@@ -466,7 +608,7 @@ local dw, dh = crayon.window.getDisplaySize()
 ```lua
 -- Sound effects
 local coin = crayon.audio.loadSound("coin.wav")
-crayon.audio.playSound(coin, { volume = 0.8, pitch = 1.0 })
+crayon.audio.playSound(coin, { volume = 0.8, pitch = 1.0, priority = 5 })
 
 -- Positional 3D audio
 crayon.audio.setListenerPosition(0, 2, 0)
@@ -483,6 +625,59 @@ crayon.audio.setMasterVolume(0.9)
 crayon.audio.setSfxVolume(0.7)
 ```
 
+### Procedural Sound
+
+```lua
+-- One-shot synth voice from a wave template
+local blip = crayon.audio.createSound({
+    wave = "square", freq = 880, duration = 0.12,
+    envelope = { attack = 0.001, decay = 0.03, sustain = 0.4, release = 0.08 },
+    filter   = { cutoff = 3000, highpass = true },
+    pitchSweep = { from = 1200, to = 400, time = 0.1 }
+})
+crayon.audio.playSound(blip)
+
+-- Bake a buffer by sampling a Lua function
+local pad = crayon.audio.createBuffer(44100, function(t, i)
+    return math.sin(t * 220.0 * 6.28318) * 0.4
+end)
+crayon.audio.playSound(pad)
+```
+
+### Live Block Generator
+
+```lua
+local voice = crayon.audio.playSound(crayon.audio.loadSound("placeholder.wav"))
+
+crayon.audio.setBlockGenerator(voice, 256, function(tStart, sampleRate, frames)
+    local out = {}
+    for i = 0, frames - 1 do
+        local t = tStart + i / sampleRate
+        out[i + 1] = math.sin(t * 220.0 * 6.28318) * math.exp(-t * 2.0) * 0.6
+    end
+    return out
+end)
+
+-- Later:
+crayon.audio.clearBlockGenerator(voice)
+```
+
+### Live Voice Control
+
+```lua
+crayon.audio.setVoiceGain(voice, 0.5, 0.25)   -- gain, ramp seconds
+crayon.audio.setVoicePitch(voice, 0.8)
+crayon.audio.setVoicePan(voice, -0.5)
+crayon.audio.setVoicePosition(voice, 5, 1, 3)
+crayon.audio.setVoiceLoop(voice, true)
+```
+
+### Audio Stats
+
+```lua
+print(crayon.audio.getActiveVoiceCount(), "/", crayon.audio.getMaxVoices())
+```
+
 ## Particles API Examples
 
 ```lua
@@ -495,7 +690,7 @@ local fire = crayon.particles.createEmitter({
     sizeEnd      = 0.1,
     gravity      = -2.0,
     blendMode    = "additive",
-    is3D         = true
+    is3d         = true
 })
 fire:setPosition(0, 1, 0)
 
@@ -556,6 +751,19 @@ end
 local save_dir = crayon.fs.getSaveDir("MyStudio", "MyGame")
 ```
 
+## Print API
+
+`crayon.print(...)` is a colorized, cycle-safe pretty-printer for Lua values, ideal for debugging nested tables.
+
+```lua
+crayon.print("player", { hp = 100, pos = {1, 2, 3}, alive = true })
+-- player {
+--   alive = true,
+--   hp = 100,
+--   pos = { 1, 2, 3 }
+-- }
+```
+
 ## Lua Callbacks
 
 The runtime invokes these optional `crayon.*` functions if they are defined:
@@ -583,10 +791,15 @@ The runtime invokes these optional `crayon.*` functions if they are defined:
 | `crayon.onCollisionExit(a, b)` | body ids |
 | `crayon.onTriggerEnter(sensor, other)` | body ids |
 | `crayon.onTriggerExit(sensor, other)` | body ids |
-| `crayon.collision2DEnter(a, b, nx, ny, impulse)` | body ids + contact info |
-| `crayon.collision2DExit(a, b)` | body ids |
-| `crayon.trigger2DEnter(sensor, other)` | body ids |
-| `crayon.trigger2DExit(sensor, other)` | body ids |
+| `crayon.onCollision2DEnter(a, b, nx, ny, impulse)` | body ids + contact info |
+| `crayon.onCollision2DExit(a, b)` | body ids |
+| `crayon.onTrigger2DEnter(sensor, other)` | body ids |
+| `crayon.onTrigger2DExit(sensor, other)` | body ids |
+| `crayon.dropBegin(x, y)` | x, y |
+| `crayon.dropFile(path, x, y)` | path, x, y |
+| `crayon.dropText(text, x, y)` | text, x, y |
+| `crayon.dropPosition(x, y)` | x, y |
+| `crayon.dropComplete()` | — |
 
 ## Build Requirements
 
