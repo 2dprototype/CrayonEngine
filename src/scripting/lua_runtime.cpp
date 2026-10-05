@@ -118,6 +118,12 @@ void LuaRuntime::register_modules(const ModulesConfig& modules) {
         register_disabled_stub(m_L, "physics2D");
     }
 
+    if (modules.physics4d) {
+        register_physics4d_bindings(m_L);
+    } else {
+        register_disabled_stub(m_L, "physics4D");
+    }
+
     if (modules.particles) {
         register_particle_bindings(m_L);
     } else {
@@ -199,6 +205,8 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_setfield(m_L, -2, "physics3D");
     lua_pushboolean(m_L, config.modules.physics2d);
     lua_setfield(m_L, -2, "physics2D");
+    lua_pushboolean(m_L, config.modules.physics4d);
+    lua_setfield(m_L, -2, "physics4D");
     lua_pushboolean(m_L, config.modules.audio);
     lua_setfield(m_L, -2, "audio");
     lua_pushboolean(m_L, config.modules.mesh3d);
@@ -387,6 +395,10 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
         if (lua_isboolean(m_L, -1)) config.modules.physics2d = lua_toboolean(m_L, -1);
         lua_pop(m_L, 1);
 
+        lua_getfield(m_L, -1, "physics4D");
+        if (lua_isboolean(m_L, -1)) config.modules.physics4d = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
         lua_getfield(m_L, -1, "audio");
         if (lua_isboolean(m_L, -1)) config.modules.audio = lua_toboolean(m_L, -1);
         lua_pop(m_L, 1);
@@ -449,11 +461,12 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_pop(m_L, 1); // pop table t
     lua_pop(m_L, 1); // pop err_func
 
-    CRAYON_LOG_INFO("Configuration loaded from '{}': Title='{}', Win={}x{}, Virt={}x{}, Physics3D={}, Physics2D={}, Audio={}, Mesh3D={}",
+    CRAYON_LOG_INFO("Configuration loaded from '{}': Title='{}', Win={}x{}, Virt={}x{}, Physics3D={}, Physics2D={}, Physics4D={}, Audio={}, Mesh3D={}",
         filepath, config.window.title, config.window.width, config.window.height,
         config.window.virtual_width, config.window.virtual_height,
         config.modules.physics3d ? "ON" : "OFF",
         config.modules.physics2d ? "ON" : "OFF",
+        config.modules.physics4d ? "ON" : "OFF",
         config.modules.audio ? "ON" : "OFF",
         config.modules.mesh3d ? "ON" : "OFF");
 
@@ -849,6 +862,71 @@ void LuaRuntime::call_trigger_exit(uint32_t sensor_id, uint32_t other_body_id) {
         if (lua_pcall(m_L, 2, 0, err_func) != 0) {
             const char* err = lua_tostring(m_L, -1);
             CRAYON_LOG_ERROR("Error in crayon.onTriggerExit():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_collision4d_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float nz, float nw, float impulse) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "onCollision4DEnter")) {
+        lua_pushinteger(m_L, body_a);
+        lua_pushinteger(m_L, body_b);
+        lua_pushnumber(m_L, nx);
+        lua_pushnumber(m_L, ny);
+        lua_pushnumber(m_L, nz);
+        lua_pushnumber(m_L, nw);
+        lua_pushnumber(m_L, impulse);
+        if (lua_pcall(m_L, 7, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.onCollision4DEnter():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_collision4d_exit(uint32_t body_a, uint32_t body_b) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "onCollision4DExit")) {
+        lua_pushinteger(m_L, body_a);
+        lua_pushinteger(m_L, body_b);
+        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.onCollision4DExit():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_trigger4d_enter(uint32_t sensor_id, uint32_t other_body_id) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "onTrigger4DEnter")) {
+        lua_pushinteger(m_L, sensor_id);
+        lua_pushinteger(m_L, other_body_id);
+        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.onTrigger4DEnter():\n{}", err ? err : "unknown error");
+            lua_pop(m_L, 1);
+        }
+    }
+    lua_pop(m_L, 1);
+}
+
+void LuaRuntime::call_trigger4d_exit(uint32_t sensor_id, uint32_t other_body_id) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    if (get_crayon_func(m_L, "onTrigger4DExit")) {
+        lua_pushinteger(m_L, sensor_id);
+        lua_pushinteger(m_L, other_body_id);
+        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
+            const char* err = lua_tostring(m_L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.onTrigger4DExit():\n{}", err ? err : "unknown error");
             lua_pop(m_L, 1);
         }
     }

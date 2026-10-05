@@ -43,6 +43,13 @@ include_directories(
     vendor/imgui/backends
 )
 
+# hv4d: the standalone 4D physics library (lives in vendor/, deliberately NOT part of src/).
+# Provides the `hypervis4d` static-library target and its public include directory.
+if(NOT TARGET hypervis4d)
+    set(HV4D_BUILD_TESTS OFF CACHE BOOL "" FORCE)
+    add_subdirectory(vendor/hypervis4d)
+endif()
+
 file(GLOB_RECURSE BOX2D_SOURCES
     "vendor/box2d/src/*.cpp"
 )
@@ -72,6 +79,7 @@ set(ENGINE_SOURCES
     src/graphics/rich_text.cpp
     src/physics/physics_system.cpp
     src/physics/physics2d_system.cpp
+    src/physics/physics4d_system.cpp
     src/scripting/lua_runtime.cpp
     src/scripting/bind_window.cpp
     src/scripting/bind_graphics.cpp
@@ -80,6 +88,7 @@ set(ENGINE_SOURCES
     src/scripting/bind_audio.cpp
     src/scripting/bind_physics3d.cpp
     src/scripting/bind_physics2d.cpp
+    src/scripting/bind_physics4d.cpp
     src/scripting/bind_particles.cpp
     src/scripting/bind_math.cpp
     src/scripting/bind_fs.cpp
@@ -135,6 +144,7 @@ if(BUILD_CRAYON)
     )
 
     target_link_libraries(crayon PRIVATE
+        hypervis4d
         ${CMAKE_CURRENT_SOURCE_DIR}/vendor/JoltPhysics/lib/libJolt.a
         ${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/lib/libSDL3.dll.a
         ${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/lib/libluajit-5.1.dll.a

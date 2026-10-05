@@ -3,7 +3,6 @@
 #include <memory>
 #include <string>
 #include <unordered_map>
-#include <unordered_set>
 #include <chrono>
 #include <filesystem>
 #include "engine_config.hpp"
@@ -23,6 +22,7 @@ namespace crayon {
 class LuaRuntime;
 class PhysicsSystem;
 class Physics2DSystem;
+class Physics4DSystem;
 class Model3D;
 
 class Engine {
@@ -55,6 +55,8 @@ public:
     PhysicsSystem& get_physics() { return *m_physics; }
     bool has_physics2d() const { return m_physics2d != nullptr; }
     Physics2DSystem& get_physics2d() { return *m_physics2d; }
+    bool has_physics4d() const { return m_physics4d != nullptr; }
+    Physics4DSystem& get_physics4d() { return *m_physics4d; }
     PostProcessChain& get_post_process_chain() { return m_post_process_chain; }
     const EngineConfig& get_config() const { return m_config; }
     EngineConfig& get_config() { return m_config; }
@@ -113,9 +115,10 @@ private:
     float m_physics_accumulator = 0.0f;
     std::unique_ptr<Physics2DSystem> m_physics2d;
     float m_physics2d_accumulator = 0.0f;
+    std::unique_ptr<Physics4DSystem> m_physics4d;
+    float m_physics4d_accumulator = 0.0f;
 
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_texture_cache;
-    std::unordered_set<std::string> m_texture_failed; // paths that failed to load (don't hit disk again every call)
     std::unordered_map<GLuint, std::pair<int, int>> m_texture_sizes;
     std::unordered_map<std::string, std::shared_ptr<Mesh3D>> m_mesh_cache;
     std::unordered_map<std::string, std::shared_ptr<Model3D>> m_model_cache;
@@ -132,8 +135,6 @@ private:
     int m_frame_count = 0;
     double m_fps_timer = 0.0;
 
-    float m_hot_reload_timer = 0.0f;   // throttles the script mtime poll
-    bool m_shutdown_done = false;      // shutdown() is called explicitly and again by the destructor
     bool m_hot_reload_requested = false;
     bool m_running = false;
     bool m_paused = false;

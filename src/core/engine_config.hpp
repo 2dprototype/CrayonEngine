@@ -33,6 +33,7 @@ struct WindowConfig {
 struct ModulesConfig {
     bool physics3d = true;
     bool physics2d = true;
+    bool physics4d = true;   // hv4d: 4D rigid-body physics (vendor/hypervis4d)
     bool audio = true;
     bool mesh3d = true;
     bool particles = true;

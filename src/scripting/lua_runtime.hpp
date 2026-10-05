@@ -64,6 +64,12 @@ public:
     void call_trigger2d_enter(uint32_t sensor_id, uint32_t other_body_id);
     void call_trigger2d_exit(uint32_t sensor_id, uint32_t other_body_id);
 
+    // 4D physics (hv4d) events -> crayon.onCollision4DEnter / onCollision4DExit / onTrigger4DEnter / onTrigger4DExit
+    void call_collision4d_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float nz, float nw, float impulse);
+    void call_collision4d_exit(uint32_t body_a, uint32_t body_b);
+    void call_trigger4d_enter(uint32_t sensor_id, uint32_t other_body_id);
+    void call_trigger4d_exit(uint32_t sensor_id, uint32_t other_body_id);
+
     bool run_config_phase(const std::string& filepath, struct EngineConfig& config);
     
 
@@ -86,6 +92,7 @@ void register_time_bindings(lua_State* L);
 void register_audio_bindings(lua_State* L);
 void register_physics3d_bindings(lua_State* L);
 void register_physics2d_bindings(lua_State* L);
+void register_physics4d_bindings(lua_State* L);
 void register_particle_bindings(lua_State* L);
 void register_math_bindings(lua_State* L);
 void register_fs_bindings(lua_State* L);
