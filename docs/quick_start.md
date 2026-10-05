@@ -12,13 +12,14 @@ Crayon Engine is a 2D/3D game engine with retro aesthetics, modern physics, and 
 4. [Graphics Module](#graphics-module)
 5. [Physics3D Module](#physics3d-module)
 6. [Physics2D Module](#physics2d-module)
-7. [Audio Module](#audio-module)
-8. [Particles Module](#particles-module)
-9. [Math Module](#math-module)
-10. [File System Module](#file-system-module)
-11. [Configuration (`crayon.config`)](#configuration)
-12. [Lua Callbacks](#lua-callbacks)
-13. [Complete Examples](#complete-examples)
+7. [Physics4D Module](#physics4d-module)
+8. [Audio Module](#audio-module)
+9. [Particles Module](#particles-module)
+10. [Math Module](#math-module)
+11. [File System Module](#file-system-module)
+12. [Configuration (`crayon.config`)](#configuration)
+13. [Lua Callbacks](#lua-callbacks)
+14. [Complete Examples](#complete-examples)
 
 ---
 
@@ -120,7 +121,7 @@ Access via: `crayon.window`
 | `showCursor(show)` | Show/hide cursor |
 | `isCursorVisible()` | Returns cursor visibility |
 
-### Overlay Flags
+### Overlay Flags (see config for creation-time flags)
 
 | Function | Description |
 |----------|-------------|
@@ -389,7 +390,7 @@ Alternative: `setCamera3D(x, y, z [, yaw, pitch, fov])` — sets position and or
 - `:isValid()`
 - `:getNodeCount()` / `:getNode(idx_or_name)` / `:getNodes()`
 - `:getPartCount()` / `:getPartName(idx)` → name, material_name
-- `:getPartTexture(idx)` / `:setPartTexture(idx, tex)` / `:setPartColor(idx, r, g, b [, a])` / `:getPartColor(idx)`
+- `:getPartTexture(idx)` / `:setPartTexture(idx, tex)` / `:setPartColor(idx, r, g, b [, a])`
 - `:getBounds()` → minX, minY, minZ, maxX, maxY, maxZ
 - `:getCenter()` → cx, cy, cz
 - `:getSize()` → sx, sy, sz
@@ -1002,6 +1003,145 @@ end
 
 ---
 
+## Physics4D Module
+Access via: `crayon.physics4D`
+
+A real 4D rigid-body engine (the **hv4d** library in `vendor/hypervis4d`, a C++ re-creation of the
+*hypervis* 4D physics engine). Bodies live in a world with four spatial axes `x, y, z, w` (`y` is up;
+`w` is the extra dimension). Since you can only *see* 3D, the engine renders the **3D slice** where the
+world meets a hyperplane (by default `w = sliceW`): move the slice to scan through the objects.
+
+* Shapes: the six regular 4-polytopes — `"5cell"`, `"8cell"` (tesseract), `"16cell"`, `"24cell"`,
+  `"120cell"`, `"600cell"` — plus hyperspheres and half-spaces (infinite walls/floors).
+* Rotations are **bivectors** (rotation *planes*), not quaternions. Order everywhere is
+  `xy, xz, xw, yz, yw, zw`. `xy, xz, yz` are ordinary 3D rotations; `xw, yw, zw` turn an object
+  "into" the 4th axis (this is what makes a cross-section morph as it spins).
+* The engine steps the world at a fixed 60 Hz automatically.
+
+### Body Creation
+
+| Function | Description |
+|----------|-------------|
+| `createPolytope(shape, x, y, z, w [, scale] [, opts])` | Convex 4-polytope. `scale` = circumradius (default 1) |
+| `createTesseract(x, y, z, w [, edgeLength] [, opts])` | Shortcut for `"8cell"` (scale = edge length) |
+| `createHypersphere(x, y, z, w [, radius] [, opts])` | Hypersphere (default radius 0.5) |
+| `createHalfSpace(px, py, pz, pw, nx, ny, nz, nw [, opts])` | Static infinite wall; the normal points to the *empty* side |
+| `createArena([halfSize=10, friction=0.4, restitution=0.4])` | Floor at `y=0` + walls at `±halfSize` on `x`, `z`, `w` |
+| `getShapes()` | List of valid polytope names |
+
+**Options** (`opts`, all optional):
+```lua
+{ type = "dynamic" | "static" | "sensor",   -- "sensor": static trigger volume, no collision response
+  mass = 1.0, restitution = 0.2, friction = 0.4, sensor = false,
+  linearDamping = 0, angularDamping = 0, gravityScale = 1,
+  scale = 1,                                 -- (polytopes) same as the positional argument
+  rotation = {xy, xz, xw, yz, yw, zw},       -- initial orientation (plane angles, radians)
+  velocity = {vx, vy, vz, vw},
+  angularVelocity = {xy, xz, xw, yz, yw, zw} }
+```
+
+### World Operations
+
+| Function | Description |
+|----------|-------------|
+| `destroyBody(body_or_id)` / `destroyAll()` | Remove bodies |
+| `getBody(id)` / `getBodyCount()` | Look up a body handle / count bodies |
+| `setGravity(gx, gy, gz, gw)` / `getGravity()` | World gravity (default `0, -9.8, 0, 0`) |
+| `setSolverIterations(n)` | Contact solver iterations (default 20) |
+| `step(dt)` | Manual step (the engine already steps at 60 Hz) |
+| `raycast(ox,oy,oz,ow, dx,dy,dz,dw [, maxDist])` | `hit, px,py,pz,pw, nx,ny,nz,nw, distance, bodyId` (just `false` on a miss) |
+| `overlapSphere(x, y, z, w, radius)` | Table of body ids overlapping a hypersphere |
+| `testOverlap(bodyA, bodyB)` | Exact GJK+EPA test. Overlap: `true, depth, nx,ny,nz,nw`. Apart: `false, distance, dx,dy,dz,dw` (A → B). No half-spaces |
+
+### Slice Control
+
+| Function | Description |
+|----------|-------------|
+| `setSlice(w)` / `getSlice()` | Slice at constant `w` (the default `w = 0`) |
+| `setSliceHyperplane(nx,ny,nz,nw [, bx,by,bz,bw])` | Any hyperplane: a normal plus a point on it |
+| `getSliceNormal()` | Current slice normal |
+| `sliceToWorld(x, y, z)` | 3D slice-space point → 4D world point |
+| `sliceDirectionToWorld(x, y, z)` | 3D slice-space direction → 4D direction |
+| `worldToSlice(x, y, z, w)` | `sx, sy, sz, distanceToSlice` |
+
+Use `sliceToWorld` / `sliceDirectionToWorld` to turn `crayon.graphics.getCameraRay()` into a 4D ray for
+mouse picking (see `examples/19_physics4d.lua`).
+
+### Debug Rendering
+
+`drawDebug([flags])` draws everything through the 3D renderer — call it from `crayon.draw()` after
+`setCamera3D`:
+
+```lua
+crayon.physics4D.drawDebug({
+    shapes = true,       -- wireframe of each body's current 3D cross-section
+    fill = false,        -- lit, filled cross-section surfaces
+    projection = false,  -- ghost wireframe of the *whole* 4D body, fading with distance from the slice
+    contacts = true,     -- contact points + normals (projected into the slice)
+    bounds = false,      -- bounding hyperspheres
+    velocities = false,  -- velocity arrows (a +/- cross marks motion along the slice normal, i.e. w)
+    planes = true,       -- grid patches for half-spaces
+    color = {0.2, 1, 0.4, 1}, staticColor = {...}, sensorColor = {...}, contactColor = {...},
+    projectionRange = 3.0, planeExtent = 8.0, planeDivisions = 8,
+})
+```
+
+### Physics4D.Body
+
+| Method | Description |
+|--------|-------------|
+| `:getId()` / `:isValid()` / `:destroy()` | Identity & lifetime |
+| `:getPosition()` / `:setPosition(x,y,z,w)` | Position (4 values) |
+| `:getLinearVelocity()` / `:setLinearVelocity(x,y,z,w)` | Linear velocity (`getVelocity`/`setVelocity` are aliases) |
+| `:getAngularVelocity()` / `:setAngularVelocity(xy,xz,xw,yz,yw,zw)` | Angular velocity bivector (body frame) |
+| `:getRotor()` | Orientation rotor: `s, xy,xz,xw,yz,yw,zw, xyzw` |
+| `:setRotation(xy,xz,xw,yz,yw,zw)` / `:rotateBy(...)` / `:resetRotation()` | Set / add a rotation / identity |
+| `:localToWorld(x,y,z,w)` / `:worldToLocal(x,y,z,w)` / `:localDirectionToWorld(...)` | Frame conversion |
+| `:applyImpulse(ix,iy,iz,iw [, px,py,pz,pw])` | Impulse (optional world point → also spins the body) |
+| `:applyForce(fx,fy,fz,fw)` / `:applyTorque(xy,xz,xw,yz,yw,zw)` | Applied on the next step |
+| `:getMass()` / `:setMass(m)` | Mass (inertia is recomputed from the shape) |
+| `:isStatic()` / `:setStatic(bool)` | Static ↔ dynamic (original mass is kept) |
+| `:isSensor()` / `:setSensor(bool)` | Sensors report overlaps (trigger events) but never push |
+| `:getRestitution()` / `:setRestitution(r)` / `:getFriction()` / `:setFriction(f)` | Material |
+| `:getGravityScale()` / `:setGravityScale(s)` / `:setDamping(linear [, angular])` | Dynamics tweaks |
+| `:getShape()` | `"8cell"`, `"600cell"`, …, `"hypersphere"`, `"halfspace"` |
+| `:getRadius()` / `:getHalfSpaceNormal()` / `:getVertices()` | Shape info (world-space vertices, flat `{x,y,z,w,...}`) |
+| `:getSliceSegments()` / `:getSliceTriangles()` / `:getSliceSphere()` | The body's current cross-section as raw 3D geometry, for custom rendering |
+| `:distanceToSlice()` | Signed distance of the body's centre from the slice |
+
+### Physics4D Callbacks
+
+```lua
+function crayon.onCollision4DEnter(a, b, nx, ny, nz, nw, impulse) end  -- normal points a -> b
+function crayon.onCollision4DExit(a, b) end
+function crayon.onTrigger4DEnter(sensor, other) end
+function crayon.onTrigger4DExit(sensor, other) end
+```
+
+### Physics4D Example
+
+```lua
+local P = crayon.physics4D
+P.createArena(6.0)                                   -- floor + walls (x, z and w)
+
+local box  = P.createTesseract(0, 3, 0, 0.4)         -- 4D box, slightly off the w = 0 slice
+local ball = P.createHypersphere(2, 1, 0, 0, 0.5)
+ball:setLinearVelocity(-3, 2, 0, 0)
+
+function crayon.update(dt)
+    P.setSlice(math.sin(crayon.time.getTime()) * 1.5) -- sweep the slice through the objects
+    box:rotateBy(0, 0, 0.01, 0, 0, 0)                 -- spin in the xw plane (impossible in 3D)
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0.05, 0.06, 0.1)
+    crayon.graphics.setCamera3D({ position = {0, 6, 12}, target = {0, 1, 0}, up = {0, 1, 0}, fov = 50 })
+    P.drawDebug({ fill = true, projection = true })
+end
+```
+
+---
+
 ## Audio Module
 Access via: `crayon.audio`
 
@@ -1012,7 +1152,7 @@ Access via: `crayon.audio`
 | `loadSound(path)` | Load a sound effect, returns ID |
 | `unloadSound(id)` | Unload a sound, returns bool |
 | `playSound(id [, volume, pitch, pan, loop])` | Play a sound effect, returns voice ID |
-| `playSound(id, opts)` | Play with `{volume, pitch, pan, loop, priority}` table |
+| `playSound(id, opts)` | Play with `{volume, pitch, pan, loop}` table |
 | `playSound3D(id, x, y, z [, opts])` | Positional 3D sound. Opts: `{volume, pitch, minDist, maxDist}` |
 | `stopSound(voiceId)` | Stop a specific voice |
 | `stopAllSounds()` | Stop all playing sounds |
@@ -1038,82 +1178,10 @@ Access via: `crayon.audio`
 | `setListenerPosition(x, y, z)` | 3D audio listener position |
 | `setListenerOrientation(fx, fy, fz [, ux, uy, uz])` | Listener forward and up vectors |
 
-### Procedural Sound
-
-| Function | Description |
-|----------|-------------|
-| `createSound(opts)` | Create a procedural sound from a wave template |
-| `createBuffer(frames, callback)` | Bake a sound by sampling `callback(t, i)` per frame |
-
-**Sound Template Options:**
-```lua
-{
-    wave = "sine",       -- "sample", "sine", "square", "saw", "triangle", "noise"
-    freq = 440,          -- base frequency in Hz
-    duration = 1.0,      -- seconds
-    envelope = {         -- ADSR
-        attack = 0.01, decay = 0.1, sustain = 0.7, release = 0.3
-    },
-    filter = {           -- optional lowpass/highpass
-        cutoff = 1000.0,
-        highpass = false,  -- or type = "highpass"
-    },
-    pitchSweep = {       -- optional frequency sweep
-        from = 1000.0, to = 100.0, time = 0.5
-    }
-}
-```
-
-### Live Voice Control
-
-| Function | Description |
-|----------|-------------|
-| `setVoiceGain(voiceId, gain, rampTime)` | Set gain with ramp |
-| `setVoiceVolume(voiceId, volume)` | Set volume |
-| `setVoicePitch(voiceId, pitch)` | Set pitch |
-| `setVoicePan(voiceId, pan)` | Set pan (-1 to 1) |
-| `setVoicePosition(voiceId, x, y, z)` | Set 3D position |
-| `setVoicePriority(voiceId, priority)` | Set voice priority |
-| `setVoiceLoop(voiceId, loop)` | Set loop flag |
-
-### Custom Block Generators
-
-| Function | Description |
-|----------|-------------|
-| `setBlockGenerator(voiceId, blockSize, callback)` | Attach a per-block audio callback. Returns the registry ref |
-| `clearBlockGenerator(voiceId [, ref])` | Remove callback (unref optional) |
-
-The callback signature is `function(tStart, sampleRate, frames) -> table` where the table contains `frames` float samples.
-
-```lua
-local voice = crayon.audio.playSound(crayon.audio.loadSound("dummy.wav"))
-crayon.audio.setBlockGenerator(voice, 512, function(t, sr, n)
-    local out = {}
-    for i = 0, n - 1 do
-        out[i + 1] = math.sin((t + i / sr) * 440.0 * 6.28318) * 0.5
-    end
-    return out
-end)
-```
-
-### Stats
-
-| Function | Description |
-|----------|-------------|
-| `getActiveVoiceCount()` | Number of currently playing voices |
-| `getMaxVoices()` | Voice pool size |
-
 ```lua
 local coin = crayon.audio.loadSound("coin.wav")
 crayon.audio.playSound(coin, { volume = 0.8, pitch = 1.0 })
 crayon.audio.playMusic("bgm.ogg", { loop = true, fadeIn = 2.0 })
-
--- Procedural blip
-local blip = crayon.audio.createSound({
-    wave = "square", freq = 880, duration = 0.1,
-    envelope = { attack = 0.001, decay = 0.02, sustain = 0.4, release = 0.05 }
-})
-crayon.audio.playSound(blip)
 ```
 
 ---
@@ -1250,21 +1318,6 @@ end
 
 ---
 
-## Print Module
-Access via: `crayon.print`
-
-Pretty-prints Lua values with ANSI colors, cycle detection, and proper table formatting.
-
-| Function | Description |
-|----------|-------------|
-| `print(...)` | Print values to the console with color-coded output |
-
-```lua
-crayon.print("Hello", {x = 1, y = 2}, {1, 2, 3}, true, nil)
-```
-
----
-
 ## Configuration
 
 ### `crayon.config(t)`
@@ -1300,6 +1353,7 @@ function crayon.config(t)
     t.modules = {
         physics3D = true,
         physics2D = true,
+        physics4D = true,
         audio = true,
         mesh3D = true,
         particles = true,
@@ -1322,7 +1376,7 @@ end
 
 ## Lua Callbacks
 
-The runtime invokes these optional `crayon.*` functions. Only the canonical camelCase names are supported.
+The runtime invokes these optional `crayon.*` functions. Only the canonical camelCase names are supported — the previous snake_case aliases have been removed.
 
 ### Lifecycle
 
@@ -1373,6 +1427,15 @@ The runtime invokes these optional `crayon.*` functions. Only the canonical came
 | `crayon.onCollision2DExit(bodyA, bodyB)` | ids |
 | `crayon.onTrigger2DEnter(sensorId, otherBodyId)` | ids |
 | `crayon.onTrigger2DExit(sensorId, otherBodyId)` | ids |
+
+### Physics Events (4D)
+
+| Callback | Args |
+|----------|------|
+| `crayon.onCollision4DEnter(bodyA, bodyB, nx, ny, nz, nw, impulse)` | ids, 4D normal (A → B), impulse |
+| `crayon.onCollision4DExit(bodyA, bodyB)` | ids |
+| `crayon.onTrigger4DEnter(sensorId, otherBodyId)` | ids |
+| `crayon.onTrigger4DExit(sensorId, otherBodyId)` | ids |
 
 ### Drag & Drop Events
 
@@ -1626,29 +1689,6 @@ function crayon.draw()
 end
 ```
 
-### Example 9: Procedural Audio Block Generator
-
-```lua
-local voice
-
-function crayon.init()
-    local src = crayon.audio.loadSound("placeholder.wav")
-    voice = crayon.audio.playSound(src)
-    crayon.audio.setBlockGenerator(voice, 256, function(tStart, sampleRate, frames)
-        local out = {}
-        for i = 0, frames - 1 do
-            local t = tStart + i / sampleRate
-            out[i + 1] = math.sin(t * 220.0 * 6.28318) * math.exp(-t * 2.0) * 0.6
-        end
-        return out
-    end)
-end
-
-function crayon.quit()
-    crayon.audio.clearBlockGenerator(voice)
-end
-```
-
 ---
 
 ## Migration Notes (from pre-camelCase API)
@@ -1676,42 +1716,3 @@ The following names have been **removed**:
 - `"linear_cast"` and `"ccd"` string values accepted by `Body:setMotionQuality` — use `"linearCast"` (or boolean `true`) only.
 
 C++ identifiers, metatable registry keys (e.g. `"Physics3D.Body"`), file names, and internal helpers retain their original names and are not part of the Lua surface.
-
----
-
-## Changes in this revision
-
-Based on the current `bind_*.cpp` sources, the docs above were updated to reflect:
-
-- **Audio** (`bind_audio.cpp`):
-  - Added `createSound` procedural template (`wave`, `freq`, `duration`, `envelope`, `filter`, `pitchSweep`).
-  - Added `createBuffer(frames, callback)` for baked procedural audio.
-  - Added live voice control: `setVoiceGain`, `setVoiceVolume`, `setVoicePitch`, `setVoicePan`, `setVoicePosition`, `setVoicePriority`, `setVoiceLoop`.
-  - Added custom block generator API: `setBlockGenerator(voiceId, blockSize, callback)` and `clearBlockGenerator(voiceId [, ref])` with callback signature `(tStart, sampleRate, frames) -> table`.
-  - Added stats: `getActiveVoiceCount`, `getMaxVoices`.
-  - `playSound` option table also accepts `priority`.
-  - Added migration note for procedural audio, plus **Example 9: Procedural Audio Block Generator**.
-
-- **Print** (`bind_print.cpp`):
-  - Added a new **Print Module** section documenting `crayon.print(...)` with color-coded, cycle-safe table output.
-
-- **Physics3D** (`bind_physics3d.cpp`):
-  - `createSoftBody*` factory signatures documented with alternative `opts` table forms.
-  - Confirmed world-level helper exports `setMotionQuality` and `setPlanarLock` (exposed on `crayon.physics3D` as well as on Body).
-  - `Body:setMotionQuality` only accepts `true`/`"linearCast"` string — no `"linear_cast"`/`"ccd"` (matches existing migration note).
-  - All vehicle/skeleton/ragdoll/soft-body method tables verified against source.
-
-- **Graphics** (`bind_graphics.cpp`):
-  - `getCameraRay` returns `{origin={x,y,z}, direction={x,y,z}}` (verified).
-  - Post-process built-in list matches `default_shaders` usage in the binding.
-  - All `draw*` signatures verified including `drawBillboardRot`, `drawSkeleton`, `drawSegmentedMesh`, `drawTextureRot`, `drawRoundedRectEx`, `drawPie`, `drawGradient*`, `drawTextMarkup`, `measureTextMarkup`.
-  - `Model:getPartColor` / `setPartColor` documented.
-  - `Animator:crossFadeFromCurrentPose`, `setUpdateRate`, `applyToPhysicsPose`, `capturePhysicsPose`, `getModel` documented.
-
-- **Physics2D** (`bind_physics2d.cpp`):
-  - Full body & joint method tables confirmed.
-
-- **Input** (`bind_input.cpp`):
-  - Key/mouse/gamepad modules confirmed; no `crayon.input` alias.
-
-If any of these details conflict with earlier sections, this revision is authoritative — the source-of-truth is the current `bind_*.cpp` files.
