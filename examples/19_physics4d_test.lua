@@ -66,9 +66,9 @@ local dbgTbl = {
     planes = true,
     fill = true,
     projection = false,
-    contacts = false,
-    bounds = false,
-    velocities = false,
+    contacts = true,
+    bounds = true,
+    velocities = true,
     projectionRange = 1.6,
 }
 
@@ -102,14 +102,20 @@ end
 -- ---------------------------------------------------------------------------
 -- Lifecycle
 -- ---------------------------------------------------------------------------
+
+function crayon.config(t)
+    t.window.height = 240*2
+    t.window.width = 320*2
+end
+
 function crayon.init()
     P = crayon.physics4D
     G = crayon.graphics
     K = crayon.key
 
     crayon.window.setTitle("20 - 4D Shapes Gallery")
-    crayon.window.setResolution(320, 240)
-    crayon.window.setMinSize(320, 240)
+    crayon.window.setResolution(320*2, 240*2)
+    crayon.window.setMinSize(320*2, 240*2)
 
     buildScene()
 end
@@ -140,9 +146,11 @@ function crayon.update(dt)
         if sliceW < -4.0 then sliceW = -4.0; scanDir = -scanDir end
     else
         if K.isDown("q") then sliceW = sliceW - 4.0 * dt
-                              if sliceW < -4.0 then sliceW = -4.0 end end
+            if sliceW < -4.0 then sliceW = -4.0 end 
+        end
         if K.isDown("e") then sliceW = sliceW + 4.0 * dt
-                              if sliceW >  4.0 then sliceW =  4.0 end end
+            if sliceW >  4.0 then sliceW =  4.0 end
+        end
     end
     P.setSlice(sliceW)
 
