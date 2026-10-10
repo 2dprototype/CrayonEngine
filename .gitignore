@@ -1,10 +1,9 @@
-# Build outputs
+# Build outputs (root and build directories)
 /build
 *.exe
-*.dll
+/*.dll
 *.o
 *.obj
-*.a
 *.so
 *.apk
 *.aab
@@ -12,12 +11,15 @@
 # Local / temporary
 /ignore
 blueprint.md
-/vendor
 /models
 imgui.ini
 *.txt
 !CMakeLists.txt
 *.zip
+
+# Vendor dependencies: ignore temporary source repos, keep core libraries & prebuilts
+/vendor/luajit-src/
+/vendor/sdl3-src/
 
 # Android & Gradle
 .gradle/
