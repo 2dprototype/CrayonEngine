@@ -1,6 +1,8 @@
 #include "lua_runtime.hpp"
 #include "../core/log.hpp"
 #include "../core/engine_config.hpp"
+#include <filesystem>
+
 
 namespace crayon {
 
@@ -480,6 +482,15 @@ int LuaRuntime::push_error_handler() {
 
 bool LuaRuntime::load_script(const std::string& filepath) {
     if (!m_L) return false;
+
+    // Prepend script's folder to package.path so require() resolves relative modules
+    std::error_code ec;
+    std::filesystem::path script_dir = std::filesystem::path(filepath).parent_path();
+    if (!script_dir.empty()) {
+        std::string dir_str = script_dir.generic_string();
+        std::string path_cmd = "package.path = '" + dir_str + "/?.lua;' .. '" + dir_str + "/?/init.lua;' .. package.path";
+        luaL_dostring(m_L, path_cmd.c_str());
+    }
 
     int err_func = push_error_handler();
 

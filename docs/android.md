@@ -65,23 +65,33 @@ You also need Android Studio (or the command-line SDK) with CMake 3.22+ installe
 
 ## Build and run
 
-```bash
-# 0. ./android/setup_deps.sh   (once)
-# 1. put your game in android/app/src/main/assets/game/   (main.lua and/or .crayonproj, plus assets)
-#    A touch smoke-test main.lua is already there.
-# 2. open android/ in Android Studio and press Run, or:
-cd android
-gradle wrapper            # once, generates ./gradlew
-./gradlew installDebug
-adb logcat -s Crayon      # engine log + crayon.print output
+```bat
+# On Windows, simply run:
+build_android.bat
+
+# Or install directly to your connected device:
+build_android.bat install
 ```
 
-### Fast iteration without rebuilding the APK
+### Loading Games on Android
 
-```bash
-adb push mygame/. /sdcard/Android/data/com.crayonengine.player/files/game/
-# force-stop and relaunch the app; this folder wins over the packaged game
-```
+Crayon Engine has full storage access on Android and acts as a **game loader**:
+
+1. **Shared Storage folder (`/sdcard/Crayon/`):**
+   - Create a folder for your game, e.g.:
+     `/sdcard/Crayon/mygame/`
+   - Place your `main.lua` and/or `.crayonproj` and all assets (images, sounds, models) in that folder.
+   - When you launch Crayon Engine, it automatically discovers and runs your project, loading all assets directly from that folder!
+   - If you have multiple game folders in `/sdcard/Crayon/`, Crayon will run the most recently modified game, or you can write the folder name in `/sdcard/Crayon/active.txt`.
+
+2. **Open from File Manager:**
+   - Tap any `.crayonproj` or `.lua` file in your Android File Manager (e.g. Files, ZArchiver, etc.) $\rightarrow$ Open with **Crayon Game**!
+
+3. **Fast launch via ADB:**
+   ```bash
+   adb shell am start -n com.crayonengine.player/.CrayonActivity -e game /sdcard/Crayon/mygame
+   ```
+
 
 ## Windows build
 

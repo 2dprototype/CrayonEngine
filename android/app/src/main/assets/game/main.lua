@@ -16,7 +16,7 @@ function crayon.touchdown(id, x, y)  print("touch down", id, x, y) end
 function crayon.touchup(id, x, y)    print("touch up",   id, x, y) end
 
 function crayon.draw()
-    crayon.graphics.clear(0.08, 0.08, 0.14)
+    crayon.graphics.clear(0.08, 0.08, 0.10)
     crayon.graphics.setColor(1, 1, 1, 1)
     crayon.graphics.drawText("Crayon on " .. platform, 10, 10, 2)
     crayon.graphics.drawText("touches: " .. crayon.touch.getCount(), 10, 30, 1)
