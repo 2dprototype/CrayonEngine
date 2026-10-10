@@ -1,0 +1,7 @@
+{
+  "name": "car_game",
+  "version": "1.0.0",
+  "author": "2DPrototype",
+  "description": "car test",
+  "main": "main.lua"
+}

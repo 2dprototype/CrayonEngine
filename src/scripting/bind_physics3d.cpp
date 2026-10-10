@@ -310,6 +310,17 @@ static int l_body_get_rotation(lua_State* L) {
     return 3;
 }
 
+// Returns x, y, z, w. Use this (not getRotation) for rendering: no gimbal lock, no unit ambiguity.
+static int l_body_get_quaternion(lua_State* L) {
+    auto* b = check_body(L, 1);
+    glm::quat q = b->physics->get_rotation(b->id);
+    lua_pushnumber(L, q.x);
+    lua_pushnumber(L, q.y);
+    lua_pushnumber(L, q.z);
+    lua_pushnumber(L, q.w);
+    return 4;
+}
+
 static int l_body_set_rotation(lua_State* L) {
     auto* b = check_body(L, 1);
     float rx = static_cast<float>(luaL_checknumber(L, 2));
@@ -910,7 +921,7 @@ static int l_vehicle_set_input_wheeled(lua_State* L) {
     float forward = static_cast<float>(luaL_checknumber(L, 2));
     float steer = static_cast<float>(luaL_optnumber(L, 3, 0.0));
     float brake = static_cast<float>(luaL_optnumber(L, 4, 0.0));
-    bool handbrake = lua_toboolean(L, 5);
+    float handbrake = lua_isnumber(L, 5) ? static_cast<float>(lua_tonumber(L, 5)) : (lua_toboolean(L, 5) ? 1.0f : 0.0f);
     v->physics->vehicle_set_input_wheeled(v->id, forward, steer, brake, handbrake);
     return 0;
 }
@@ -1000,6 +1011,104 @@ static int l_vehicle_get_wheel_transform(lua_State* L) {
     lua_pushnumber(L, rot.w); lua_setfield(L, -2, "w");
     lua_setfield(L, -2, "rotation");
     return 1;
+}
+
+static int l_vehicle_get_forward_speed(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    lua_pushnumber(L, v->physics->vehicle_get_forward_speed(v->id));
+    return 1;
+}
+
+static int l_vehicle_get_chassis_id(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    lua_pushinteger(L, v->physics->vehicle_get_chassis(v->id));
+    return 1;
+}
+
+// getWheelInfo(i) -> { contact, suspension, steer, angle, angularVelocity, longSlip, latSlip, skid, skidding,
+//                      contactPos = {x,y,z}, contactNormal = {x,y,z} }   (i is 0-based, like getWheelTransform)
+static int l_vehicle_get_wheel_info(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    int idx = static_cast<int>(luaL_checkinteger(L, 2));
+    PhysicsSystem::VehicleWheelInfo info;
+    if (!v->physics->vehicle_get_wheel_info(v->id, idx, info)) {
+        lua_pushnil(L);
+        return 1;
+    }
+    lua_createtable(L, 0, 12);
+    lua_pushboolean(L, info.has_contact);          lua_setfield(L, -2, "contact");
+    lua_pushnumber(L, info.suspension_length);     lua_setfield(L, -2, "suspension");
+    lua_pushnumber(L, info.steer_angle);           lua_setfield(L, -2, "steer");
+    lua_pushnumber(L, info.rotation_angle);        lua_setfield(L, -2, "angle");
+    lua_pushnumber(L, info.angular_velocity);      lua_setfield(L, -2, "angularVelocity");
+    lua_pushnumber(L, info.longitudinal_slip);     lua_setfield(L, -2, "longSlip");
+    lua_pushnumber(L, info.lateral_slip);          lua_setfield(L, -2, "latSlip");
+    lua_pushnumber(L, info.skid);                  lua_setfield(L, -2, "skid");
+    lua_pushboolean(L, info.skid > 0.5f);          lua_setfield(L, -2, "skidding");
+    lua_createtable(L, 0, 3);
+    lua_pushnumber(L, info.contact_position.x); lua_setfield(L, -2, "x");
+    lua_pushnumber(L, info.contact_position.y); lua_setfield(L, -2, "y");
+    lua_pushnumber(L, info.contact_position.z); lua_setfield(L, -2, "z");
+    lua_setfield(L, -2, "contactPos");
+    lua_createtable(L, 0, 3);
+    lua_pushnumber(L, info.contact_normal.x); lua_setfield(L, -2, "x");
+    lua_pushnumber(L, info.contact_normal.y); lua_setfield(L, -2, "y");
+    lua_pushnumber(L, info.contact_normal.z); lua_setfield(L, -2, "z");
+    lua_setfield(L, -2, "contactNormal");
+    return 1;
+}
+
+static int l_vehicle_get_max_skid(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    lua_pushnumber(L, v->physics->vehicle_get_max_skid(v->id));
+    return 1;
+}
+
+static int l_vehicle_is_skidding(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    float threshold = static_cast<float>(luaL_optnumber(L, 2, 0.5));
+    lua_pushboolean(L, v->physics->vehicle_get_max_skid(v->id) > threshold);
+    return 1;
+}
+
+static int l_vehicle_set_manual_transmission(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    v->physics->vehicle_set_manual_transmission(v->id, lua_toboolean(L, 2));
+    return 0;
+}
+
+static int l_vehicle_is_manual_transmission(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    lua_pushboolean(L, v->physics->vehicle_is_manual_transmission(v->id));
+    return 1;
+}
+
+// setGear(gear [, clutch]) : -1 = reverse, 0 = neutral, 1.. = forward gears (manual mode only)
+static int l_vehicle_set_gear(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    int gear = static_cast<int>(luaL_checkinteger(L, 2));
+    float clutch = static_cast<float>(luaL_optnumber(L, 3, 1.0));
+    v->physics->vehicle_set_gear(v->id, gear, clutch);
+    return 0;
+}
+
+// setAntiRoll(barIndex (0-based), stiffness)
+static int l_vehicle_set_anti_roll(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    int bar = static_cast<int>(luaL_checkinteger(L, 2));
+    float stiffness = static_cast<float>(luaL_checknumber(L, 3));
+    v->physics->vehicle_set_anti_roll(v->id, bar, stiffness);
+    return 0;
+}
+
+// setWheelSuspension(wheel (0-based), frequencyHz, dampingRatio)
+static int l_vehicle_set_wheel_suspension(lua_State* L) {
+    auto* v = check_vehicle(L, 1);
+    int wheel = static_cast<int>(luaL_checkinteger(L, 2));
+    float freq = static_cast<float>(luaL_checknumber(L, 3));
+    float ratio = static_cast<float>(luaL_optnumber(L, 4, 0.6));
+    v->physics->vehicle_set_wheel_suspension(v->id, wheel, freq, ratio);
+    return 0;
 }
 
 static int l_vehicle_tostring(lua_State* L) {
@@ -2290,6 +2399,42 @@ static PhysicsSystem::WheelConfig parse_wheel_config(lua_State* L, int idx) {
     if (lua_isnumber(L, -1)) w.max_hand_brake_torque = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
+    lua_getfield(L, idx, "suspensionPreloadLength");
+    if (lua_isnumber(L, -1)) w.suspension_preload_length = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+
+    lua_getfield(L, idx, "suspensionFrequency");
+    if (lua_isnumber(L, -1)) w.suspension_frequency = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+
+    lua_getfield(L, idx, "suspensionDampingRatio");
+    if (lua_isnumber(L, -1)) w.suspension_damping_ratio = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+
+    lua_getfield(L, idx, "inertia");
+    if (lua_isnumber(L, -1)) w.inertia = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+
+    lua_getfield(L, idx, "angularDamping");
+    if (lua_isnumber(L, -1)) w.angular_damping = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+
+    lua_getfield(L, idx, "longitudinalGrip");
+    if (lua_isnumber(L, -1)) w.longitudinal_grip = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+
+    lua_getfield(L, idx, "lateralGrip");
+    if (lua_isnumber(L, -1)) w.lateral_grip = static_cast<float>(lua_tonumber(L, -1));
+    lua_pop(L, 1);
+
+    lua_getfield(L, idx, "grip"); // shorthand: both axes
+    if (lua_isnumber(L, -1)) { w.longitudinal_grip = w.lateral_grip = static_cast<float>(lua_tonumber(L, -1)); }
+    lua_pop(L, 1);
+
+    lua_getfield(L, idx, "steer"); // true = steered, false = never, nil = follow isFront
+    if (lua_isboolean(L, -1)) w.steer_mode = lua_toboolean(L, -1) ? 1 : 0;
+    lua_pop(L, 1);
+
     lua_getfield(L, idx, "isFront");
     if (lua_isboolean(L, -1)) w.is_front = lua_toboolean(L, -1);
     lua_pop(L, 1);
@@ -2336,8 +2481,104 @@ static int l_physics_create_wheeled_vehicle(lua_State* L) {
     if (lua_isnumber(L, -1)) cfg.engine_max_rpm = static_cast<float>(lua_tonumber(L, -1));
     lua_pop(L, 1);
 
+    auto num = [&](const char* key, float& out) {
+        lua_getfield(L, 1, key);
+        if (lua_isnumber(L, -1)) out = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+    };
+    num("engineInertia", cfg.engine_inertia);
+    num("engineAngularDamping", cfg.engine_angular_damping);
+    num("shiftUpRpm", cfg.shift_up_rpm);
+    num("shiftDownRpm", cfg.shift_down_rpm);
+    num("clutchStrength", cfg.clutch_strength);
+    num("switchTime", cfg.switch_time);
+    num("switchLatency", cfg.switch_latency);
+    num("clutchReleaseTime", cfg.clutch_release_time);
+    num("differentialRatio", cfg.differential_ratio);
+    num("limitedSlipRatio", cfg.limited_slip_ratio);
+    num("centerLimitedSlipRatio", cfg.center_limited_slip_ratio);
+    num("frontTorqueSplit", cfg.front_torque_split);
+    num("antiRollFront", cfg.anti_roll_front);
+    num("antiRollRear", cfg.anti_roll_rear);
+    num("testerRadius", cfg.sphere_cast_radius);
+    num("maxSlopeAngleRad", cfg.max_slope_angle_rad);
+
+    lua_getfield(L, 1, "maxSlopeAngleDeg");
+    if (lua_isnumber(L, -1)) cfg.max_slope_angle_rad = static_cast<float>(lua_tonumber(L, -1)) * 3.14159265f / 180.0f;
+    lua_pop(L, 1);
+
+    lua_getfield(L, 1, "collisionTestSteps");
+    if (lua_isnumber(L, -1)) cfg.collision_test_steps = static_cast<uint32_t>(std::max(1.0, lua_tonumber(L, -1)));
+    lua_pop(L, 1);
+
+    // transmission = "auto" | "manual"
+    lua_getfield(L, 1, "transmission");
+    if (lua_isstring(L, -1)) {
+        std::string m = lua_tostring(L, -1);
+        cfg.manual_transmission = (m == "manual" || m == "Manual");
+    }
+    lua_pop(L, 1);
+
+    // collisionTester = "ray" | "sphere"
+    lua_getfield(L, 1, "collisionTester");
+    if (lua_isstring(L, -1)) {
+        std::string m = lua_tostring(L, -1);
+        cfg.sphere_cast = (m == "sphere" || m == "castSphere");
+    }
+    lua_pop(L, 1);
+
+    // torqueCurve = { {rpmFraction, torqueFraction}, ... }
+    lua_getfield(L, 1, "torqueCurve");
+    if (lua_istable(L, -1)) {
+        int n = static_cast<int>(lua_objlen(L, -1));
+        for (int i = 1; i <= n; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                lua_rawgeti(L, -1, 1); float x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                lua_rawgeti(L, -1, 2); float y = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                cfg.torque_curve.push_back(glm::vec2(x, y));
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
+    auto number_list = [&](const char* key, std::vector<float>& out) {
+        lua_getfield(L, 1, key);
+        if (lua_istable(L, -1)) {
+            int n = static_cast<int>(lua_objlen(L, -1));
+            for (int i = 1; i <= n; ++i) {
+                lua_rawgeti(L, -1, i);
+                out.push_back(static_cast<float>(lua_tonumber(L, -1)));
+                lua_pop(L, 1);
+            }
+        }
+        lua_pop(L, 1);
+    };
+    number_list("gearRatios", cfg.gear_ratios);
+    number_list("reverseGearRatios", cfg.reverse_gear_ratios);
+
+    // antiRollBars = { {left = 1, right = 2, stiffness = 4000}, ... }  (wheel indices are 1-based)
+    lua_getfield(L, 1, "antiRollBars");
+    if (lua_istable(L, -1)) {
+        int n = static_cast<int>(lua_objlen(L, -1));
+        for (int i = 1; i <= n; ++i) {
+            lua_rawgeti(L, -1, i);
+            if (lua_istable(L, -1)) {
+                PhysicsSystem::AntiRollBarConfig bar;
+                lua_getfield(L, -1, "left");  if (lua_isnumber(L, -1)) bar.left_wheel = static_cast<int>(lua_tonumber(L, -1)) - 1; lua_pop(L, 1);
+                lua_getfield(L, -1, "right"); if (lua_isnumber(L, -1)) bar.right_wheel = static_cast<int>(lua_tonumber(L, -1)) - 1; lua_pop(L, 1);
+                lua_getfield(L, -1, "stiffness"); if (lua_isnumber(L, -1)) bar.stiffness = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                cfg.anti_roll_bars.push_back(bar);
+            }
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+
     auto& ps = Engine::get().get_physics();
     uint32_t vid = ps.create_wheeled_vehicle(cfg);
+    if (vid == 0) return luaL_error(L, "createWheeledVehicle failed (is 'chassis' a valid dynamic body and 'wheels' non-empty?)");
     push_vehicle_userdata(L, vid, &ps);
     return 1;
 }
@@ -2641,6 +2882,8 @@ static void register_body_metatable(lua_State* L) {
     lua_setfield(L, -2, "setPosition");
     lua_pushcfunction(L, l_body_get_rotation);
     lua_setfield(L, -2, "getRotation");
+    lua_pushcfunction(L, l_body_get_quaternion);
+    lua_setfield(L, -2, "getQuaternion");
     lua_pushcfunction(L, l_body_set_rotation);
     lua_setfield(L, -2, "setRotation");
     lua_pushcfunction(L, l_body_get_velocity);
@@ -2788,6 +3031,16 @@ static void register_vehicle_metatable(lua_State* L) {
     lua_pushcfunction(L, l_vehicle_get_transmission_gear); lua_setfield(L, -2, "getTransmissionGear");
     lua_pushcfunction(L, l_vehicle_get_wheel_count); lua_setfield(L, -2, "getWheelCount");
     lua_pushcfunction(L, l_vehicle_get_wheel_transform); lua_setfield(L, -2, "getWheelTransform");
+    lua_pushcfunction(L, l_vehicle_get_forward_speed); lua_setfield(L, -2, "getForwardSpeed");
+    lua_pushcfunction(L, l_vehicle_get_chassis_id); lua_setfield(L, -2, "getChassisId");
+    lua_pushcfunction(L, l_vehicle_get_wheel_info); lua_setfield(L, -2, "getWheelInfo");
+    lua_pushcfunction(L, l_vehicle_get_max_skid); lua_setfield(L, -2, "getMaxSkid");
+    lua_pushcfunction(L, l_vehicle_is_skidding); lua_setfield(L, -2, "isSkidding");
+    lua_pushcfunction(L, l_vehicle_set_manual_transmission); lua_setfield(L, -2, "setManualTransmission");
+    lua_pushcfunction(L, l_vehicle_is_manual_transmission); lua_setfield(L, -2, "isManualTransmission");
+    lua_pushcfunction(L, l_vehicle_set_gear); lua_setfield(L, -2, "setGear");
+    lua_pushcfunction(L, l_vehicle_set_anti_roll); lua_setfield(L, -2, "setAntiRoll");
+    lua_pushcfunction(L, l_vehicle_set_wheel_suspension); lua_setfield(L, -2, "setWheelSuspension");
 
     lua_pushcfunction(L, l_vehicle_tostring); lua_setfield(L, -2, "__tostring");
     lua_pushcfunction(L, l_vehicle_gc); lua_setfield(L, -2, "__gc");

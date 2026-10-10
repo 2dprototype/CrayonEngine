@@ -75,7 +75,11 @@ namespace crayon {
 namespace Layers {
     static constexpr JPH::ObjectLayer NON_MOVING = 0;
     static constexpr JPH::ObjectLayer MOVING = 1;
-    static constexpr JPH::ObjectLayer NUM_LAYERS = 2;
+    // Layer used ONLY by vehicle wheel ray/shape casts. It owns no bodies and collides with
+    // both static and moving geometry. (A NON_MOVING ray can never hit static ground because
+    // NON_MOVING vs NON_MOVING is filtered out -> wheels never touch -> car falls through.)
+    static constexpr JPH::ObjectLayer VEHICLE_RAY = 2;
+    static constexpr JPH::ObjectLayer NUM_LAYERS = 3;
 }
 
 namespace BroadPhaseLayers {
@@ -89,6 +93,7 @@ public:
     BPLayerInterfaceImpl() {
         mObjectToBroadPhase[Layers::NON_MOVING] = BroadPhaseLayers::NON_MOVING;
         mObjectToBroadPhase[Layers::MOVING] = BroadPhaseLayers::MOVING;
+        mObjectToBroadPhase[Layers::VEHICLE_RAY] = BroadPhaseLayers::MOVING;
     }
 
     virtual JPH::uint GetNumBroadPhaseLayers() const override {
@@ -122,6 +127,8 @@ public:
                 return inLayer2 == BroadPhaseLayers::MOVING;
             case Layers::MOVING:
                 return true;
+            case Layers::VEHICLE_RAY:
+                return true; // wheel casts test against every broadphase layer (static + moving)
             default:
                 return false;
         }
@@ -133,9 +140,11 @@ public:
     virtual bool ShouldCollide(JPH::ObjectLayer inObject1, JPH::ObjectLayer inObject2) const override {
         switch (inObject1) {
             case Layers::NON_MOVING:
-                return inObject2 == Layers::MOVING;
+                return inObject2 == Layers::MOVING || inObject2 == Layers::VEHICLE_RAY;
             case Layers::MOVING:
                 return true;
+            case Layers::VEHICLE_RAY:
+                return inObject2 == Layers::NON_MOVING || inObject2 == Layers::MOVING;
             default:
                 return false;
         }
@@ -1605,70 +1614,259 @@ glm::vec3 PhysicsSystem::character_virtual_get_ground_position(uint32_t id) cons
 // ============================================================================
 // Vehicles (Wheeled, Tracked, Motorcycle)
 // ============================================================================
+//
+// Conventions (Jolt): vehicle forward = +Z, up = +Y, "left" = +X, "right" = -X.
+// Wheel positions are in chassis local space RELATIVE TO THE CENTER OF MASS.
+// Steering input: +1 = steer right, -1 = steer left.
+//
+// BUG FIXED HERE: the wheel ray used to be tested on Layers::NON_MOVING. NON_MOVING never
+// collides with NON_MOVING, so the ray could never hit static ground -> no suspension contact
+// -> the car dropped / glitched. All testers now use Layers::VEHICLE_RAY.
+
+namespace {
+
+constexpr float kTwoPi = 6.2831853f;
+
+float clampf(float v, float lo, float hi) { return v < lo ? lo : (v > hi ? hi : v); }
+
+// Resolve spring frequency / damping ratio for a wheel. `sprung_mass` is the mass carried by one wheel.
+void resolve_spring(const PhysicsSystem::WheelConfig& w, float sprung_mass, float& freq, float& ratio) {
+    float m = std::max(sprung_mass, 1.0f);
+    if (w.suspension_frequency > 0.0f) {
+        freq = w.suspension_frequency;
+        ratio = (w.suspension_damping_ratio >= 0.0f) ? w.suspension_damping_ratio : 0.6f;
+    } else if (w.suspension_spring > 0.0f) {
+        float k = w.suspension_spring;
+        freq = std::sqrt(k / m) / kTwoPi;
+        if (w.suspension_damping_ratio >= 0.0f) ratio = w.suspension_damping_ratio;
+        else if (w.suspension_damping > 0.0f)   ratio = w.suspension_damping / (2.0f * std::sqrt(k * m));
+        else                                    ratio = 0.6f;
+    } else {
+        freq = 1.5f;
+        ratio = (w.suspension_damping_ratio >= 0.0f) ? w.suspension_damping_ratio : 0.6f;
+    }
+    freq = clampf(freq, 0.3f, 8.0f);
+    ratio = clampf(ratio, 0.05f, 2.0f);
+}
+
+void fill_wheel_common(JPH::WheelSettings* wheel, const PhysicsSystem::WheelConfig& w, float sprung_mass) {
+    wheel->mPosition = JPH::Vec3(w.position.x, w.position.y, w.position.z);
+    wheel->mSuspensionDirection = JPH::Vec3(0.0f, -1.0f, 0.0f);
+    wheel->mSteeringAxis = JPH::Vec3(0.0f, 1.0f, 0.0f);
+    wheel->mWheelForward = JPH::Vec3(0.0f, 0.0f, 1.0f);
+    wheel->mWheelUp = JPH::Vec3(0.0f, 1.0f, 0.0f);
+    wheel->mRadius = std::max(0.01f, w.radius);
+    wheel->mWidth = std::max(0.01f, w.width);
+    float min_len = std::max(0.0f, w.suspension_min_length);
+    float max_len = std::max(min_len + 0.02f, w.suspension_max_length);
+    wheel->mSuspensionMinLength = min_len;
+    wheel->mSuspensionMaxLength = max_len;
+    wheel->mSuspensionPreloadLength = std::max(0.0f, w.suspension_preload_length);
+    float freq, ratio;
+    resolve_spring(w, sprung_mass, freq, ratio);
+    wheel->mSuspensionSpring = JPH::SpringSettings(JPH::ESpringMode::FrequencyAndDamping, freq, ratio);
+}
+
+JPH::WheelSettingsWV* make_wheel_wv(const PhysicsSystem::WheelConfig& w, float sprung_mass, bool force_steer = false) {
+    auto* wheel = new JPH::WheelSettingsWV();
+    fill_wheel_common(wheel, w, sprung_mass);
+    bool steer = force_steer || (w.steer_mode >= 0 ? (w.steer_mode == 1) : w.is_front);
+    wheel->mInertia = std::max(0.01f, w.inertia);
+    wheel->mAngularDamping = std::max(0.0f, w.angular_damping);
+    wheel->mMaxSteerAngle = steer ? w.max_steer_angle_rad : 0.0f;
+    wheel->mMaxBrakeTorque = w.max_brake_torque;
+    wheel->mMaxHandBrakeTorque = (w.max_hand_brake_torque >= 0.0f) ? w.max_hand_brake_torque : (w.is_front ? 0.0f : 4000.0f);
+    for (auto& p : wheel->mLongitudinalFriction.mPoints) p.mY *= w.longitudinal_grip;
+    for (auto& p : wheel->mLateralFriction.mPoints) p.mY *= w.lateral_grip;
+    return wheel;
+}
+
+// Groups wheels (by index) into axles of up to two wheels, matched by z position.
+std::vector<std::vector<int>> group_axles(const std::vector<PhysicsSystem::WheelConfig>& wheels, const std::vector<int>& subset) {
+    std::vector<std::vector<int>> axles;
+    std::vector<float> zs;
+    for (int idx : subset) {
+        float z = wheels[idx].position.z;
+        bool placed = false;
+        for (size_t a = 0; a < axles.size(); ++a) {
+            if (axles[a].size() < 2 && std::fabs(zs[a] - z) < 0.15f) { axles[a].push_back(idx); placed = true; break; }
+        }
+        if (!placed) { axles.push_back({ idx }); zs.push_back(z); }
+    }
+    return axles;
+}
+
+// Jolt "left" is +X. Returns (left, right) wheel indices for an axle; -1 for a missing side.
+void axle_left_right(const std::vector<PhysicsSystem::WheelConfig>& wheels, const std::vector<int>& axle, int& left, int& right) {
+    left = -1; right = -1;
+    if (axle.size() == 2) {
+        int a = axle[0], b = axle[1];
+        if (wheels[a].position.x >= wheels[b].position.x) { left = a; right = b; } else { left = b; right = a; }
+    } else if (axle.size() == 1) {
+        if (wheels[axle[0]].position.x >= 0.0f) left = axle[0]; else right = axle[0];
+    }
+}
+
+float chassis_mass(const JPH::Body& body) {
+    const JPH::MotionProperties* mp = body.GetMotionPropertiesUnchecked();
+    if (!mp) return 1000.0f;
+    float inv = mp->GetInverseMass();
+    return inv > 1.0e-6f ? 1.0f / inv : 1000.0f;
+}
+
+const JPH::VehicleCollisionTester* make_tester(bool sphere, float radius, float max_slope) {
+    if (sphere) return new JPH::VehicleCollisionTesterCastSphere(Layers::VEHICLE_RAY, radius, JPH::Vec3::sAxisY(), max_slope);
+    return new JPH::VehicleCollisionTesterRay(Layers::VEHICLE_RAY, JPH::Vec3::sAxisY(), max_slope);
+}
+
+} // namespace
+
+// Returns the Wheeled controller for wheeled vehicles AND motorcycles (Motorcycle derives from Wheeled).
+template <class Rec>
+static JPH::WheeledVehicleController* get_wheeled_controller(const Rec& rec) {
+    using VT = decltype(rec.type);
+    if (!rec.constraint) return nullptr;
+    if (rec.type == VT::Tracked) return nullptr;
+    return static_cast<JPH::WheeledVehicleController*>(rec.constraint->GetController());
+}
 
 uint32_t PhysicsSystem::create_wheeled_vehicle(const WheeledVehicleConfig& config) {
-    if (!m_impl->initialized) return 0;
+    if (!m_impl->initialized || config.wheels.empty()) return 0;
 
     JPH::BodyID chassis_id(config.chassis_body_id);
-    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), chassis_id);
-    if (!lock.Succeeded()) return 0;
-    JPH::Body& chassis_body = lock.GetBody();
-
-    JPH::VehicleConstraintSettings vcs;
-    vcs.mDrawConstraintSize = 0.1f;
-    vcs.mMaxPitchRollAngle = config.max_pitch_roll_angle;
-
-    auto* controller = new JPH::WheeledVehicleControllerSettings();
-    controller->mEngine.mMaxTorque = config.engine_max_torque;
-    controller->mEngine.mMinRPM = config.engine_min_rpm;
-    controller->mEngine.mMaxRPM = config.engine_max_rpm;
-    vcs.mController = controller;
-
+    JPH::Ref<JPH::VehicleConstraint> vehicle;
     std::vector<float> radii, widths;
-    std::vector<int> drive_wheels;
-    int wheel_index = 0;
-    for (const auto& w : config.wheels) {
-        auto* wheel = new JPH::WheelSettingsWV();
-        wheel->mPosition = to_jolt_vec3(w.position);
-        wheel->mRadius = w.radius;
-        wheel->mWidth = w.width;
-        wheel->mSuspensionMinLength = w.suspension_min_length;
-        wheel->mSuspensionMaxLength = w.suspension_max_length;
-        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(w.suspension_spring / 250.0f) / 6.28f);
-        wheel->mMaxSteerAngle = w.max_steer_angle_rad;
-        wheel->mMaxBrakeTorque = w.max_brake_torque;
-        wheel->mMaxHandBrakeTorque = w.max_hand_brake_torque;
-        vcs.mWheels.push_back(wheel);
-        radii.push_back(w.radius);
-        widths.push_back(w.width);
+    float min_radius = 1.0f;
 
-        if (w.is_drive) {
-            drive_wheels.push_back(wheel_index);
+    {
+        JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), chassis_id);
+        if (!lock.Succeeded()) return 0;
+        JPH::Body& chassis = lock.GetBody();
+        if (!chassis.IsDynamic()) {
+            CRAYON_LOG_ERROR("create_wheeled_vehicle: chassis body must be dynamic");
+            return 0;
         }
-        wheel_index++;
-    }
+        chassis.SetAllowSleeping(false); // a sleeping chassis deactivates the vehicle constraint
+        const float mass = chassis_mass(chassis);
+        const float sprung = mass / static_cast<float>(config.wheels.size());
 
-    // Connect drive wheels to transmission via differentials
-    if (drive_wheels.empty()) {
-        for (int i = 0; i < wheel_index; ++i) drive_wheels.push_back(i);
-    }
-    for (size_t i = 0; i < drive_wheels.size(); i += 2) {
-        JPH::VehicleDifferentialSettings diff;
-        diff.mLeftWheel = drive_wheels[i];
-        diff.mRightWheel = (i + 1 < drive_wheels.size()) ? drive_wheels[i + 1] : -1;
-        controller->mDifferentials.push_back(diff);
-    }
-    if (!controller->mDifferentials.empty()) {
-        float ratio = 1.0f / static_cast<float>(controller->mDifferentials.size());
-        for (auto& d : controller->mDifferentials) {
-            d.mEngineTorqueRatio = ratio;
+        JPH::VehicleConstraintSettings vcs;
+        vcs.mDrawConstraintSize = 0.1f;
+        vcs.mMaxPitchRollAngle = config.max_pitch_roll_angle;
+
+        auto* controller = new JPH::WheeledVehicleControllerSettings();
+        vcs.mController = controller;
+
+        // --- Engine ---
+        controller->mEngine.mMaxTorque = config.engine_max_torque;
+        controller->mEngine.mMinRPM = config.engine_min_rpm;
+        controller->mEngine.mMaxRPM = config.engine_max_rpm;
+        controller->mEngine.mInertia = config.engine_inertia;
+        controller->mEngine.mAngularDamping = config.engine_angular_damping;
+        if (!config.torque_curve.empty()) {
+            controller->mEngine.mNormalizedTorque.Clear();
+            for (const auto& p : config.torque_curve) controller->mEngine.mNormalizedTorque.AddPoint(p.x, p.y);
+            controller->mEngine.mNormalizedTorque.Sort();
         }
-    }
 
-    auto* vehicle = new JPH::VehicleConstraint(chassis_body, vcs);
-    vehicle->SetVehicleCollisionTester(new JPH::VehicleCollisionTesterRay(Layers::NON_MOVING));
-    m_impl->physics_system.AddConstraint(vehicle);
-    m_impl->physics_system.AddStepListener(vehicle);
+        // --- Transmission ---
+        controller->mTransmission.mMode = config.manual_transmission ? JPH::ETransmissionMode::Manual : JPH::ETransmissionMode::Auto;
+        if (!config.gear_ratios.empty()) {
+            controller->mTransmission.mGearRatios.clear();
+            for (float r : config.gear_ratios) controller->mTransmission.mGearRatios.push_back(r);
+        }
+        if (!config.reverse_gear_ratios.empty()) {
+            controller->mTransmission.mReverseGearRatios.clear();
+            for (float r : config.reverse_gear_ratios) controller->mTransmission.mReverseGearRatios.push_back(r > 0.0f ? -r : r);
+        }
+        controller->mTransmission.mShiftUpRPM = config.shift_up_rpm;
+        controller->mTransmission.mShiftDownRPM = config.shift_down_rpm;
+        controller->mTransmission.mClutchStrength = config.clutch_strength;
+        controller->mTransmission.mSwitchTime = config.switch_time;
+        controller->mTransmission.mSwitchLatency = config.switch_latency;
+        controller->mTransmission.mClutchReleaseTime = config.clutch_release_time;
+
+        // --- Wheels ---
+        std::vector<int> drive_wheels, all_wheels;
+        float mean_z = 0.0f;
+        for (size_t i = 0; i < config.wheels.size(); ++i) {
+            const auto& w = config.wheels[i];
+            vcs.mWheels.push_back(make_wheel_wv(w, sprung));
+            radii.push_back(w.radius);
+            widths.push_back(w.width);
+            min_radius = std::min(min_radius, w.radius);
+            all_wheels.push_back(static_cast<int>(i));
+            if (w.is_drive) drive_wheels.push_back(static_cast<int>(i));
+            mean_z += w.position.z;
+        }
+        mean_z /= static_cast<float>(config.wheels.size());
+        if (drive_wheels.empty()) drive_wheels = all_wheels;
+
+        // --- Differentials (one per driven axle; torque split front/rear for AWD) ---
+        auto drive_axles = group_axles(config.wheels, drive_wheels);
+        std::vector<bool> axle_is_front;
+        int front_count = 0, rear_count = 0;
+        for (const auto& axle : drive_axles) {
+            float z = 0.0f;
+            for (int idx : axle) z += config.wheels[idx].position.z;
+            z /= static_cast<float>(axle.size());
+            bool front = z > mean_z + 1.0e-4f;
+            axle_is_front.push_back(front);
+            (front ? front_count : rear_count)++;
+        }
+        const bool awd = front_count > 0 && rear_count > 0;
+        for (size_t a = 0; a < drive_axles.size(); ++a) {
+            JPH::VehicleDifferentialSettings diff;
+            axle_left_right(config.wheels, drive_axles[a], diff.mLeftWheel, diff.mRightWheel);
+            diff.mDifferentialRatio = config.differential_ratio;
+            diff.mLimitedSlipRatio = config.limited_slip_ratio;
+            if (awd) {
+                float split = clampf(config.front_torque_split, 0.0f, 1.0f);
+                diff.mEngineTorqueRatio = axle_is_front[a] ? split / static_cast<float>(front_count)
+                                                           : (1.0f - split) / static_cast<float>(rear_count);
+            } else {
+                diff.mEngineTorqueRatio = 1.0f / static_cast<float>(drive_axles.size());
+            }
+            controller->mDifferentials.push_back(diff);
+        }
+        controller->mDifferentialLimitedSlipRatio = config.center_limited_slip_ratio;
+
+        // --- Anti-roll bars ---
+        // One bar per two-wheel axle is always created (stiffness 0 = disabled) so that bar indices are stable
+        // and can be tuned at runtime with vehicle_set_anti_roll(). Bar 0 = first axle in wheel order (usually front).
+        {
+            auto axles = group_axles(config.wheels, all_wheels);
+            for (const auto& axle : axles) {
+                if (axle.size() != 2) continue;
+                float z = 0.5f * (config.wheels[axle[0]].position.z + config.wheels[axle[1]].position.z);
+                float stiffness = (z > mean_z) ? config.anti_roll_front : config.anti_roll_rear;
+                JPH::VehicleAntiRollBar bar;
+                int l, r;
+                axle_left_right(config.wheels, axle, l, r);
+                bar.mLeftWheel = l;
+                bar.mRightWheel = r;
+                bar.mStiffness = std::max(0.0f, stiffness);
+                vcs.mAntiRollBars.push_back(bar);
+            }
+        }
+        for (const auto& b : config.anti_roll_bars) {
+            if (b.left_wheel < 0 || b.right_wheel < 0 ||
+                b.left_wheel >= (int)config.wheels.size() || b.right_wheel >= (int)config.wheels.size()) continue;
+            JPH::VehicleAntiRollBar bar;
+            bar.mLeftWheel = b.left_wheel;
+            bar.mRightWheel = b.right_wheel;
+            bar.mStiffness = b.stiffness;
+            vcs.mAntiRollBars.push_back(bar);
+        }
+
+        vehicle = new JPH::VehicleConstraint(chassis, vcs);
+    } // body lock released before touching the constraint manager
+
+    float sphere_r = config.sphere_cast_radius > 0.0f ? config.sphere_cast_radius : std::max(0.05f, 0.5f * min_radius);
+    vehicle->SetVehicleCollisionTester(make_tester(config.sphere_cast, sphere_r, config.max_slope_angle_rad));
+    vehicle->SetNumStepsBetweenCollisionTestActive(std::max<uint32_t>(1u, config.collision_test_steps));
+    m_impl->physics_system.AddConstraint(vehicle.GetPtr());
+    m_impl->physics_system.AddStepListener(vehicle.GetPtr());
 
     uint32_t vid = m_impl->next_vehicle_id++;
     m_impl->vehicles[vid] = { Impl::VehicleType::Wheeled, vehicle, config.chassis_body_id, radii, widths };
@@ -1679,55 +1877,55 @@ uint32_t PhysicsSystem::create_tracked_vehicle(const TrackedVehicleConfig& confi
     if (!m_impl->initialized) return 0;
 
     JPH::BodyID chassis_id(config.chassis_body_id);
-    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), chassis_id);
-    if (!lock.Succeeded()) return 0;
-    JPH::Body& chassis_body = lock.GetBody();
-
-    JPH::VehicleConstraintSettings vcs;
-    vcs.mDrawConstraintSize = 0.1f;
-
-    auto* controller = new JPH::TrackedVehicleControllerSettings();
-    controller->mEngine.mMaxTorque = config.engine_max_torque;
-    vcs.mController = controller;
-
+    JPH::Ref<JPH::VehicleConstraint> vehicle;
     std::vector<float> radii, widths;
-    JPH::uint wheel_idx = 0;
-    JPH::VehicleTrackSettings& left_track = controller->mTracks[(int)JPH::ETrackSide::Left];
-    left_track.mDrivenWheel = 0;
-    for (const auto& w : config.left_wheels) {
-        auto* wheel = new JPH::WheelSettingsTV();
-        wheel->mPosition = to_jolt_vec3(w.position);
-        wheel->mRadius = w.radius;
-        wheel->mWidth = w.width;
-        wheel->mSuspensionMinLength = w.suspension_min_length;
-        wheel->mSuspensionMaxLength = w.suspension_max_length;
-        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(w.suspension_spring / 250.0f) / 6.28f);
-        vcs.mWheels.push_back(wheel);
-        left_track.mWheels.push_back(wheel_idx++);
-        radii.push_back(w.radius);
-        widths.push_back(w.width);
+
+    {
+        JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), chassis_id);
+        if (!lock.Succeeded()) return 0;
+        JPH::Body& chassis = lock.GetBody();
+        if (!chassis.IsDynamic()) return 0;
+        chassis.SetAllowSleeping(false);
+        const size_t total = config.left_wheels.size() + config.right_wheels.size();
+        if (total == 0) return 0;
+        const float sprung = chassis_mass(chassis) / static_cast<float>(total);
+
+        JPH::VehicleConstraintSettings vcs;
+        vcs.mDrawConstraintSize = 0.1f;
+
+        auto* controller = new JPH::TrackedVehicleControllerSettings();
+        controller->mEngine.mMaxTorque = config.engine_max_torque;
+        vcs.mController = controller;
+
+        JPH::uint wheel_idx = 0;
+        JPH::VehicleTrackSettings& left_track = controller->mTracks[(int)JPH::ETrackSide::Left];
+        left_track.mDrivenWheel = 0;
+        for (const auto& w : config.left_wheels) {
+            auto* wheel = new JPH::WheelSettingsTV();
+            fill_wheel_common(wheel, w, sprung);
+            vcs.mWheels.push_back(wheel);
+            left_track.mWheels.push_back(wheel_idx++);
+            radii.push_back(w.radius);
+            widths.push_back(w.width);
+        }
+
+        JPH::VehicleTrackSettings& right_track = controller->mTracks[(int)JPH::ETrackSide::Right];
+        right_track.mDrivenWheel = wheel_idx;
+        for (const auto& w : config.right_wheels) {
+            auto* wheel = new JPH::WheelSettingsTV();
+            fill_wheel_common(wheel, w, sprung);
+            vcs.mWheels.push_back(wheel);
+            right_track.mWheels.push_back(wheel_idx++);
+            radii.push_back(w.radius);
+            widths.push_back(w.width);
+        }
+
+        vehicle = new JPH::VehicleConstraint(chassis, vcs);
     }
 
-    JPH::VehicleTrackSettings& right_track = controller->mTracks[(int)JPH::ETrackSide::Right];
-    right_track.mDrivenWheel = wheel_idx;
-    for (const auto& w : config.right_wheels) {
-        auto* wheel = new JPH::WheelSettingsTV();
-        wheel->mPosition = to_jolt_vec3(w.position);
-        wheel->mRadius = w.radius;
-        wheel->mWidth = w.width;
-        wheel->mSuspensionMinLength = w.suspension_min_length;
-        wheel->mSuspensionMaxLength = w.suspension_max_length;
-        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(w.suspension_spring / 250.0f) / 6.28f);
-        vcs.mWheels.push_back(wheel);
-        right_track.mWheels.push_back(wheel_idx++);
-        radii.push_back(w.radius);
-        widths.push_back(w.width);
-    }
-
-    auto* vehicle = new JPH::VehicleConstraint(chassis_body, vcs);
-    vehicle->SetVehicleCollisionTester(new JPH::VehicleCollisionTesterRay(Layers::NON_MOVING));
-    m_impl->physics_system.AddConstraint(vehicle);
-    m_impl->physics_system.AddStepListener(vehicle);
+    vehicle->SetVehicleCollisionTester(make_tester(false, 0.1f, 1.396f));
+    m_impl->physics_system.AddConstraint(vehicle.GetPtr());
+    m_impl->physics_system.AddStepListener(vehicle.GetPtr());
 
     uint32_t vid = m_impl->next_vehicle_id++;
     m_impl->vehicles[vid] = { Impl::VehicleType::Tracked, vehicle, config.chassis_body_id, radii, widths };
@@ -1738,66 +1936,48 @@ uint32_t PhysicsSystem::create_motorcycle(const MotorcycleConfig& config) {
     if (!m_impl->initialized) return 0;
 
     JPH::BodyID chassis_id(config.chassis_body_id);
-    JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), chassis_id);
-    if (!lock.Succeeded()) return 0;
-    JPH::Body& chassis_body = lock.GetBody();
-
-    JPH::VehicleConstraintSettings vcs;
-    vcs.mDrawConstraintSize = 0.1f;
-    vcs.mMaxPitchRollAngle = config.max_lean_angle_rad;
-
-    auto* controller = new JPH::MotorcycleControllerSettings();
-    controller->mMaxLeanAngle = config.max_lean_angle_rad;
-    controller->mLeanSpringConstant = config.lean_spring_constant;
-    controller->mLeanSpringDamping = config.lean_spring_damping;
-    controller->mLeanSmoothingFactor = config.lean_smoothing_factor;
-    controller->mEngine.mMaxTorque = config.engine_max_torque;
-    vcs.mController = controller;
-
+    JPH::Ref<JPH::VehicleConstraint> vehicle;
     std::vector<float> radii, widths;
-    // Front wheel
+
     {
-        auto* wheel = new JPH::WheelSettingsWV();
-        wheel->mPosition = to_jolt_vec3(config.front_wheel.position);
-        wheel->mRadius = config.front_wheel.radius;
-        wheel->mWidth = config.front_wheel.width;
-        wheel->mSuspensionMinLength = config.front_wheel.suspension_min_length;
-        wheel->mSuspensionMaxLength = config.front_wheel.suspension_max_length;
-        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(config.front_wheel.suspension_spring / 250.0f) / 6.28f);
-        wheel->mMaxSteerAngle = config.front_wheel.max_steer_angle_rad;
-        wheel->mMaxBrakeTorque = config.front_wheel.max_brake_torque;
-        wheel->mMaxHandBrakeTorque = 0.0f;
-        vcs.mWheels.push_back(wheel);
-        radii.push_back(config.front_wheel.radius);
-        widths.push_back(config.front_wheel.width);
-    }
-    // Rear wheel
-    {
-        auto* wheel = new JPH::WheelSettingsWV();
-        wheel->mPosition = to_jolt_vec3(config.rear_wheel.position);
-        wheel->mRadius = config.rear_wheel.radius;
-        wheel->mWidth = config.rear_wheel.width;
-        wheel->mSuspensionMinLength = config.rear_wheel.suspension_min_length;
-        wheel->mSuspensionMaxLength = config.rear_wheel.suspension_max_length;
-        wheel->mSuspensionSpring.mFrequency = std::max(0.5f, std::sqrt(config.rear_wheel.suspension_spring / 250.0f) / 6.28f);
-        wheel->mMaxSteerAngle = 0.0f;
-        wheel->mMaxBrakeTorque = config.rear_wheel.max_brake_torque;
-        wheel->mMaxHandBrakeTorque = config.rear_wheel.max_hand_brake_torque;
-        vcs.mWheels.push_back(wheel);
-        radii.push_back(config.rear_wheel.radius);
-        widths.push_back(config.rear_wheel.width);
+        JPH::BodyLockWrite lock(m_impl->physics_system.GetBodyLockInterface(), chassis_id);
+        if (!lock.Succeeded()) return 0;
+        JPH::Body& chassis = lock.GetBody();
+        if (!chassis.IsDynamic()) return 0;
+        chassis.SetAllowSleeping(false);
+        const float sprung = chassis_mass(chassis) * 0.5f;
+
+        JPH::VehicleConstraintSettings vcs;
+        vcs.mDrawConstraintSize = 0.1f;
+        vcs.mMaxPitchRollAngle = JPH::JPH_PI; // lean is handled by the motorcycle controller
+
+        auto* controller = new JPH::MotorcycleControllerSettings();
+        controller->mMaxLeanAngle = config.max_lean_angle_rad;
+        controller->mLeanSpringConstant = config.lean_spring_constant;
+        controller->mLeanSpringDamping = config.lean_spring_damping;
+        controller->mLeanSmoothingFactor = config.lean_smoothing_factor;
+        controller->mEngine.mMaxTorque = config.engine_max_torque;
+        vcs.mController = controller;
+
+        // Front wheel (steered, no hand brake) and rear wheel (driven)
+        WheelConfig fw = config.front_wheel; fw.is_front = true;
+        WheelConfig rw = config.rear_wheel;  rw.is_front = false;
+        vcs.mWheels.push_back(make_wheel_wv(fw, sprung, true));
+        vcs.mWheels.push_back(make_wheel_wv(rw, sprung, false));
+        radii.push_back(fw.radius); widths.push_back(fw.width);
+        radii.push_back(rw.radius); widths.push_back(rw.width);
+
+        controller->mDifferentials.resize(1);
+        controller->mDifferentials[0].mLeftWheel = -1;
+        controller->mDifferentials[0].mRightWheel = 1;
+        controller->mDifferentials[0].mEngineTorqueRatio = 1.0f;
+
+        vehicle = new JPH::VehicleConstraint(chassis, vcs);
     }
 
-    // Motorcycle drives rear wheel (index 1)
-    controller->mDifferentials.resize(1);
-    controller->mDifferentials[0].mLeftWheel = -1;
-    controller->mDifferentials[0].mRightWheel = 1;
-    controller->mDifferentials[0].mEngineTorqueRatio = 1.0f;
-
-    auto* vehicle = new JPH::VehicleConstraint(chassis_body, vcs);
-    vehicle->SetVehicleCollisionTester(new JPH::VehicleCollisionTesterRay(Layers::NON_MOVING));
-    m_impl->physics_system.AddConstraint(vehicle);
-    m_impl->physics_system.AddStepListener(vehicle);
+    vehicle->SetVehicleCollisionTester(make_tester(false, 0.1f, 1.396f));
+    m_impl->physics_system.AddConstraint(vehicle.GetPtr());
+    m_impl->physics_system.AddStepListener(vehicle.GetPtr());
 
     uint32_t vid = m_impl->next_vehicle_id++;
     m_impl->vehicles[vid] = { Impl::VehicleType::Motorcycle, vehicle, config.chassis_body_id, radii, widths };
@@ -1818,53 +1998,50 @@ bool PhysicsSystem::destroy_vehicle(uint32_t id) {
     return false;
 }
 
-void PhysicsSystem::vehicle_set_input_wheeled(uint32_t id, float forward, float steer, float brake, bool handbrake) {
+void PhysicsSystem::vehicle_set_input_wheeled(uint32_t id, float forward, float steer, float brake, float handbrake) {
     auto it = m_impl->vehicles.find(id);
-    if (it != m_impl->vehicles.end() && it->second.constraint && it->second.type == Impl::VehicleType::Wheeled) {
-        auto* controller = static_cast<JPH::WheeledVehicleController*>(it->second.constraint->GetController());
-        if (controller) {
-            controller->SetDriverInput(forward, steer, brake, handbrake ? 1.0f : 0.0f);
-        }
-    }
+    if (it == m_impl->vehicles.end()) return;
+    auto* controller = get_wheeled_controller(it->second);
+    if (!controller) return;
+    controller->SetDriverInput(clampf(forward, -1.0f, 1.0f), clampf(steer, -1.0f, 1.0f),
+                               clampf(brake, 0.0f, 1.0f), clampf(handbrake, 0.0f, 1.0f));
+    JPH::BodyID bid(it->second.chassis_body_id);
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    if (!bi.IsActive(bid)) bi.ActivateBody(bid);
 }
 
 void PhysicsSystem::vehicle_set_input_tracked(uint32_t id, float left_ratio, float right_ratio, float brake) {
     auto it = m_impl->vehicles.find(id);
-    if (it != m_impl->vehicles.end() && it->second.constraint) {
-        auto* controller = static_cast<JPH::TrackedVehicleController*>(it->second.constraint->GetController());
-        if (controller) {
-            controller->SetDriverInput(1.0f, left_ratio, right_ratio, brake);
-        }
-    }
+    if (it == m_impl->vehicles.end() || !it->second.constraint || it->second.type != Impl::VehicleType::Tracked) return;
+    auto* controller = static_cast<JPH::TrackedVehicleController*>(it->second.constraint->GetController());
+    if (!controller) return;
+    // Jolt asserts that left/right ratios are non-zero.
+    auto nz = [](float v) { return std::fabs(v) < 0.001f ? 0.001f : v; };
+    controller->SetDriverInput(1.0f, nz(left_ratio), nz(right_ratio), clampf(brake, 0.0f, 1.0f));
+    JPH::BodyID bid(it->second.chassis_body_id);
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    if (!bi.IsActive(bid)) bi.ActivateBody(bid);
 }
 
 void PhysicsSystem::vehicle_set_input_motorcycle(uint32_t id, float forward, float steer, float brake) {
     auto it = m_impl->vehicles.find(id);
-    if (it != m_impl->vehicles.end() && it->second.constraint) {
-        auto* controller = static_cast<JPH::MotorcycleController*>(it->second.constraint->GetController());
-        if (controller) {
-            controller->SetDriverInput(forward, steer, brake, 0.0f);
-        }
-    }
+    if (it == m_impl->vehicles.end() || it->second.type != Impl::VehicleType::Motorcycle) return;
+    vehicle_set_input_wheeled(id, forward, steer, brake, 0.0f);
 }
 
 void PhysicsSystem::vehicle_enable_lean_controller(uint32_t id, bool enable) {
     auto it = m_impl->vehicles.find(id);
-    if (it != m_impl->vehicles.end() && it->second.constraint) {
+    if (it != m_impl->vehicles.end() && it->second.constraint && it->second.type == Impl::VehicleType::Motorcycle) {
         auto* controller = static_cast<JPH::MotorcycleController*>(it->second.constraint->GetController());
-        if (controller) {
-            controller->EnableLeanController(enable);
-        }
+        if (controller) controller->EnableLeanController(enable);
     }
 }
 
 bool PhysicsSystem::vehicle_is_lean_controller_enabled(uint32_t id) const {
     auto it = m_impl->vehicles.find(id);
-    if (it != m_impl->vehicles.end() && it->second.constraint) {
+    if (it != m_impl->vehicles.end() && it->second.constraint && it->second.type == Impl::VehicleType::Motorcycle) {
         auto* controller = static_cast<const JPH::MotorcycleController*>(it->second.constraint->GetController());
-        if (controller) {
-            return controller->IsLeanControllerEnabled();
-        }
+        if (controller) return controller->IsLeanControllerEnabled();
     }
     return false;
 }
@@ -1872,9 +2049,16 @@ bool PhysicsSystem::vehicle_is_lean_controller_enabled(uint32_t id) const {
 float PhysicsSystem::vehicle_get_lean_angle(uint32_t id) const {
     auto it = m_impl->vehicles.find(id);
     if (it != m_impl->vehicles.end() && it->second.constraint) {
-        glm::quat q = to_glm_quat(it->second.constraint->GetVehicleBody()->GetRotation());
-        glm::vec3 euler = glm::eulerAngles(q);
-        return euler.z;
+        // Roll of the vehicle around its forward axis, measured against world up.
+        const JPH::Body* body = it->second.constraint->GetVehicleBody();
+        JPH::Vec3 up = body->GetRotation() * it->second.constraint->GetLocalUp();
+        JPH::Vec3 fwd = body->GetRotation() * it->second.constraint->GetLocalForward();
+        JPH::Vec3 right = fwd.Cross(JPH::Vec3::sAxisY());
+        float len = right.Length();
+        if (len < 1.0e-4f) return 0.0f;
+        right /= len;
+        JPH::Vec3 lateral = fwd.Cross(right).Normalized();
+        return std::atan2(up.Dot(right), up.Dot(lateral));
     }
     return 0.0f;
 }
@@ -1887,32 +2071,36 @@ float PhysicsSystem::vehicle_get_speed_kmh(uint32_t id) const {
     return 0.0f;
 }
 
-float PhysicsSystem::vehicle_get_engine_rpm(uint32_t id) const {
+float PhysicsSystem::vehicle_get_forward_speed(uint32_t id) const {
     auto it = m_impl->vehicles.find(id);
     if (it != m_impl->vehicles.end() && it->second.constraint) {
-        if (it->second.type == Impl::VehicleType::Wheeled) {
-            auto* wvc = static_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
-            return wvc->GetEngine().GetCurrentRPM();
-        } else if (it->second.type == Impl::VehicleType::Tracked) {
-            auto* tvc = static_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
-            return tvc->GetEngine().GetCurrentRPM();
-        }
+        const JPH::Body* body = it->second.constraint->GetVehicleBody();
+        JPH::Vec3 fwd = body->GetRotation() * it->second.constraint->GetLocalForward();
+        return body->GetLinearVelocity().Dot(fwd);
     }
     return 0.0f;
 }
 
+float PhysicsSystem::vehicle_get_engine_rpm(uint32_t id) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it == m_impl->vehicles.end() || !it->second.constraint) return 0.0f;
+    if (it->second.type == Impl::VehicleType::Tracked) {
+        auto* tvc = static_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
+        return tvc ? tvc->GetEngine().GetCurrentRPM() : 0.0f;
+    }
+    auto* wvc = static_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
+    return wvc ? wvc->GetEngine().GetCurrentRPM() : 0.0f;
+}
+
 int PhysicsSystem::vehicle_get_transmission_gear(uint32_t id) const {
     auto it = m_impl->vehicles.find(id);
-    if (it != m_impl->vehicles.end() && it->second.constraint) {
-        if (it->second.type == Impl::VehicleType::Wheeled) {
-            auto* wvc = static_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
-            if (wvc) return wvc->GetTransmission().GetCurrentGear();
-        } else if (it->second.type == Impl::VehicleType::Tracked) {
-            auto* tvc = static_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
-            if (tvc) return tvc->GetTransmission().GetCurrentGear();
-        }
+    if (it == m_impl->vehicles.end() || !it->second.constraint) return 0;
+    if (it->second.type == Impl::VehicleType::Tracked) {
+        auto* tvc = static_cast<const JPH::TrackedVehicleController*>(it->second.constraint->GetController());
+        return tvc ? tvc->GetTransmission().GetCurrentGear() : 0;
     }
-    return 0;
+    auto* wvc = static_cast<const JPH::WheeledVehicleController*>(it->second.constraint->GetController());
+    return wvc ? wvc->GetTransmission().GetCurrentGear() : 0;
 }
 
 int PhysicsSystem::vehicle_get_wheel_count(uint32_t id) const {
@@ -1928,11 +2116,104 @@ bool PhysicsSystem::vehicle_get_wheel_transform(uint32_t id, int wheel_idx, glm:
     if (it == m_impl->vehicles.end() || !it->second.constraint) return false;
     if (wheel_idx < 0 || wheel_idx >= (int)it->second.constraint->GetWheels().size()) return false;
 
+    // The wheel model must have its axle along local X and up along local Y.
+    // The transform already includes suspension travel, steering and wheel spin.
     JPH::RMat44 wt = it->second.constraint->GetWheelWorldTransform(static_cast<JPH::uint>(wheel_idx), JPH::Vec3::sAxisX(), JPH::Vec3::sAxisY());
     glm::mat4 gwt = to_glm_mat4(wt);
     out_pos = glm::vec3(gwt[3]);
-    out_rot = glm::quat_cast(gwt);
+    out_rot = glm::quat_cast(glm::mat3(gwt));
     return true;
+}
+
+bool PhysicsSystem::vehicle_get_wheel_info(uint32_t id, int wheel_idx, VehicleWheelInfo& out) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it == m_impl->vehicles.end() || !it->second.constraint) return false;
+    if (wheel_idx < 0 || wheel_idx >= (int)it->second.constraint->GetWheels().size()) return false;
+
+    const JPH::Wheel* w = it->second.constraint->GetWheel(static_cast<JPH::uint>(wheel_idx));
+    out.has_contact = w->HasContact();
+    out.suspension_length = w->GetSuspensionLength();
+    out.steer_angle = w->GetSteerAngle();
+    out.rotation_angle = w->GetRotationAngle();
+    out.angular_velocity = w->GetAngularVelocity();
+    out.longitudinal_slip = 0.0f;
+    out.lateral_slip = 0.0f;
+    out.skid = 0.0f;
+    if (w->HasContact()) {
+        JPH::RVec3 cp = w->GetContactPosition();
+        out.contact_position = glm::vec3((float)cp.GetX(), (float)cp.GetY(), (float)cp.GetZ());
+        out.contact_normal = to_glm_vec3(w->GetContactNormal());
+        out.contact_body = w->GetContactBodyID().GetIndexAndSequenceNumber();
+        if (it->second.type != Impl::VehicleType::Tracked) {
+            auto* wwv = static_cast<const JPH::WheelWV*>(w);
+            out.longitudinal_slip = wwv->mLongitudinalSlip;
+            out.lateral_slip = wwv->mLateralSlip;
+            // Sliding is reached around 0.2 slip ratio / ~15 degrees slip angle
+            float s_long = std::fabs(wwv->mLongitudinalSlip) / 0.35f;
+            float s_lat = std::fabs(wwv->mLateralSlip) / 0.26f;
+            out.skid = std::max(s_long, s_lat);
+        }
+    }
+    return true;
+}
+
+float PhysicsSystem::vehicle_get_max_skid(uint32_t id) const {
+    int n = vehicle_get_wheel_count(id);
+    float best = 0.0f;
+    for (int i = 0; i < n; ++i) {
+        VehicleWheelInfo info;
+        if (vehicle_get_wheel_info(id, i, info)) best = std::max(best, info.skid);
+    }
+    return best;
+}
+
+uint32_t PhysicsSystem::vehicle_get_chassis(uint32_t id) const {
+    auto it = m_impl->vehicles.find(id);
+    return it != m_impl->vehicles.end() ? it->second.chassis_body_id : 0;
+}
+
+void PhysicsSystem::vehicle_set_manual_transmission(uint32_t id, bool manual) {
+    auto it = m_impl->vehicles.find(id);
+    if (it == m_impl->vehicles.end()) return;
+    if (auto* c = get_wheeled_controller(it->second))
+        c->GetTransmission().mMode = manual ? JPH::ETransmissionMode::Manual : JPH::ETransmissionMode::Auto;
+}
+
+bool PhysicsSystem::vehicle_is_manual_transmission(uint32_t id) const {
+    auto it = m_impl->vehicles.find(id);
+    if (it == m_impl->vehicles.end()) return false;
+    if (auto* c = get_wheeled_controller(it->second))
+        return c->GetTransmission().mMode == JPH::ETransmissionMode::Manual;
+    return false;
+}
+
+void PhysicsSystem::vehicle_set_gear(uint32_t id, int gear, float clutch) {
+    auto it = m_impl->vehicles.find(id);
+    if (it == m_impl->vehicles.end()) return;
+    if (auto* c = get_wheeled_controller(it->second)) {
+        int max_gear = static_cast<int>(c->GetTransmission().mGearRatios.size());
+        int min_gear = -static_cast<int>(c->GetTransmission().mReverseGearRatios.size());
+        gear = std::max(min_gear, std::min(max_gear, gear));
+        c->GetTransmission().Set(gear, clampf(clutch, 0.0f, 1.0f));
+    }
+}
+
+void PhysicsSystem::vehicle_set_anti_roll(uint32_t id, int bar_index, float stiffness) {
+    auto it = m_impl->vehicles.find(id);
+    if (it == m_impl->vehicles.end() || !it->second.constraint) return;
+    auto& bars = it->second.constraint->GetAntiRollBars();
+    if (bar_index >= 0 && bar_index < (int)bars.size()) bars[bar_index].mStiffness = std::max(0.0f, stiffness);
+}
+
+void PhysicsSystem::vehicle_set_wheel_suspension(uint32_t id, int wheel_idx, float frequency, float damping_ratio) {
+    auto it = m_impl->vehicles.find(id);
+    if (it == m_impl->vehicles.end() || !it->second.constraint) return;
+    if (wheel_idx < 0 || wheel_idx >= (int)it->second.constraint->GetWheels().size()) return;
+    JPH::Wheel* w = it->second.constraint->GetWheel(static_cast<JPH::uint>(wheel_idx));
+    // Each wheel owns its own WheelSettings instance (created in create_*_vehicle), so this is safe.
+    auto* settings = const_cast<JPH::WheelSettings*>(w->GetSettings());
+    settings->mSuspensionSpring = JPH::SpringSettings(JPH::ESpringMode::FrequencyAndDamping,
+                                                       clampf(frequency, 0.3f, 8.0f), clampf(damping_ratio, 0.05f, 2.0f));
 }
 
 // ============================================================================

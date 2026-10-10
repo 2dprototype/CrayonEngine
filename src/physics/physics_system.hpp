@@ -227,27 +227,75 @@ public:
     // Vehicles (Wheeled Vehicles, Tracked Vehicles, Motorcycles)
     // ========================================================================
     struct WheelConfig {
-        glm::vec3 position{0.0f}; // Local attachment offset
+        glm::vec3 position{0.0f}; // Attachment point of the suspension, in chassis local space (relative to the body's center of mass)
         float radius = 0.3f;
         float width = 0.15f;
         float suspension_min_length = 0.15f;
         float suspension_max_length = 0.45f;
-        float suspension_spring = 25000.0f;
-        float suspension_damping = 2500.0f;
+        float suspension_preload_length = 0.0f;
+        // Suspension tuning. Priority: frequency > spring/damping (N/m, Ns/m) > auto (1.5 Hz).
+        float suspension_frequency = 0.0f;       // Hz (0 = derive from suspension_spring, or auto)
+        float suspension_damping_ratio = -1.0f;  // 0..1+ (negative = derive from suspension_damping, or 0.6)
+        float suspension_spring = 0.0f;          // N/m (0 = auto, mass-aware)
+        float suspension_damping = 0.0f;         // Ns/m (0 = auto)
         float max_steer_angle_rad = 0.6f;
         float max_brake_torque = 1500.0f;
-        float max_hand_brake_torque = 4000.0f;
+        float max_hand_brake_torque = -1.0f;     // negative = auto (rear wheels 4000, front wheels 0)
+        float inertia = 0.9f;                    // wheel moment of inertia
+        float angular_damping = 0.2f;
+        float longitudinal_grip = 1.0f;          // multiplier on the longitudinal friction curve
+        float lateral_grip = 1.0f;               // multiplier on the lateral friction curve
+        int   steer_mode = -1;                   // -1 = steer only if is_front, 0 = never, 1 = always
         bool is_front = false;
         bool is_drive = true;
+    };
+
+    struct AntiRollBarConfig {
+        int left_wheel = 0;   // 0-based wheel index
+        int right_wheel = 1;  // 0-based wheel index
+        float stiffness = 4000.0f;
     };
 
     struct WheeledVehicleConfig {
         uint32_t chassis_body_id = 0;
         std::vector<WheelConfig> wheels;
         float max_pitch_roll_angle = 3.14159f;
+
+        // Engine
         float engine_max_torque = 400.0f;
         float engine_min_rpm = 1000.0f;
         float engine_max_rpm = 7000.0f;
+        float engine_inertia = 0.5f;
+        float engine_angular_damping = 0.2f;
+        std::vector<glm::vec2> torque_curve;     // (rpm fraction 0..1, torque fraction 0..1); empty = Jolt default (flat)
+
+        // Transmission
+        bool  manual_transmission = false;
+        std::vector<float> gear_ratios;          // empty = Jolt default
+        std::vector<float> reverse_gear_ratios;  // empty = Jolt default
+        float shift_up_rpm = 4000.0f;
+        float shift_down_rpm = 2000.0f;
+        float clutch_strength = 10.0f;
+        float switch_time = 0.5f;
+        float switch_latency = 0.5f;
+        float clutch_release_time = 0.3f;
+
+        // Differentials / drive layout
+        float differential_ratio = 3.42f;
+        float limited_slip_ratio = 1.4f;         // per axle (<=1 or huge = open diff)
+        float center_limited_slip_ratio = 1.4f;  // between axles (AWD)
+        float front_torque_split = 0.5f;         // fraction of torque to front axle(s) when AWD
+
+        // Anti-roll bars (auto-built per axle when stiffness > 0, plus explicit bars)
+        float anti_roll_front = 0.0f;
+        float anti_roll_rear = 0.0f;
+        std::vector<AntiRollBarConfig> anti_roll_bars;
+
+        // Wheel collision tester
+        bool  sphere_cast = false;               // false = ray, true = sphere cast
+        float sphere_cast_radius = 0.0f;         // 0 = auto (min(wheel radius, width) * 0.5)
+        float max_slope_angle_rad = 1.396f;      // 80 deg
+        uint32_t collision_test_steps = 1;
     };
 
     struct TrackedVehicleConfig {
@@ -268,12 +316,26 @@ public:
         float engine_max_torque = 250.0f;
     };
 
+    struct VehicleWheelInfo {
+        bool  has_contact = false;
+        float suspension_length = 0.0f;
+        float steer_angle = 0.0f;        // rad
+        float rotation_angle = 0.0f;     // rad, spin of the wheel
+        float angular_velocity = 0.0f;   // rad/s
+        float longitudinal_slip = 0.0f;
+        float lateral_slip = 0.0f;       // rad
+        float skid = 0.0f;               // 0..1+ combined slip intensity (>~0.5 = visible skid)
+        glm::vec3 contact_position{0.0f};
+        glm::vec3 contact_normal{0.0f, 1.0f, 0.0f};
+        uint32_t contact_body = 0;
+    };
+
     uint32_t create_wheeled_vehicle(const WheeledVehicleConfig& config);
     uint32_t create_tracked_vehicle(const TrackedVehicleConfig& config);
     uint32_t create_motorcycle(const MotorcycleConfig& config);
     bool destroy_vehicle(uint32_t id);
 
-    void vehicle_set_input_wheeled(uint32_t id, float forward, float steer, float brake, bool handbrake);
+    void vehicle_set_input_wheeled(uint32_t id, float forward, float steer, float brake, float handbrake);
     void vehicle_set_input_tracked(uint32_t id, float left_ratio, float right_ratio, float brake);
     void vehicle_set_input_motorcycle(uint32_t id, float forward, float steer, float brake);
 
@@ -282,10 +344,20 @@ public:
     float vehicle_get_lean_angle(uint32_t id) const;
 
     float vehicle_get_speed_kmh(uint32_t id) const;
+    float vehicle_get_forward_speed(uint32_t id) const; // m/s, signed along the vehicle forward axis
     float vehicle_get_engine_rpm(uint32_t id) const;
     int vehicle_get_transmission_gear(uint32_t id) const;
     int vehicle_get_wheel_count(uint32_t id) const;
     bool vehicle_get_wheel_transform(uint32_t id, int wheel_idx, glm::vec3& out_pos, glm::quat& out_rot) const;
+    bool vehicle_get_wheel_info(uint32_t id, int wheel_idx, VehicleWheelInfo& out) const;
+    float vehicle_get_max_skid(uint32_t id) const;
+    uint32_t vehicle_get_chassis(uint32_t id) const;
+
+    void vehicle_set_manual_transmission(uint32_t id, bool manual);
+    void vehicle_set_gear(uint32_t id, int gear, float clutch);
+    bool vehicle_is_manual_transmission(uint32_t id) const;
+    void vehicle_set_anti_roll(uint32_t id, int bar_index, float stiffness);
+    void vehicle_set_wheel_suspension(uint32_t id, int wheel_idx, float frequency, float damping_ratio);
 
     // ========================================================================
     // Animated Ragdolls & Skeleton Mapping
