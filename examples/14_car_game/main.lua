@@ -87,7 +87,7 @@ local SKID_MAX   = 60
 local SKID_STEP  = 0.30
 local FOG_END    = 90
 
-local GROUND_HALF = 200
+local GROUND_HALF = 50
 
 local cached_dt = 1 / 60
 local cached_w  = 320

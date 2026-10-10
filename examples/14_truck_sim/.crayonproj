@@ -1,0 +1,7 @@
+{
+  "name": "truck_sim",
+  "version": "1.0.0",
+  "author": "CrayonEngine",
+  "description": "Truck simulator: Jolt 6-wheel tractor, hitchable trailer with landing legs, twist-lock container cargo, crane depots, jobs",
+  "main": "main.lua"
+}

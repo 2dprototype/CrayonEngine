@@ -1,429 +1,234 @@
 #!/usr/bin/env python3
 """
-Generates an articulated semi-truck: tractor, trailer, wheels and cargo crates.
-Binary glTF (.glb). Pure python + numpy — no other dependencies.
-
-Conventions (match Jolt vehicles / Crayon physics3d):
-  * tractor / trailer: forward = +Z, up = +Y, left = +X.
-  * Local origin of each = physics chassis center.
-  * Wheel: axle along X, up along Y, centered at origin.
-  * Cargo: 1 m cube centered at origin.
-
-Usage:  python3 tools/gen_truck_models.py [output_dir]
+Generates the models for examples/games/truck_sim as binary glTF (.glb):
+  tractor.glb        cab-over semi tractor unit      (origin = chassis center, ground at y = -1.15)
+  trailer.glb        40ft container-chassis trailer   (origin = chassis center, deck top at y = +0.15)
+  trailer_legs.glb   landing gear (draw while unhitched)
+  container_*.glb    40ft ribbed shipping containers (origin = center, 2.4 x 2.6 x 12.0 m)
+  truck_wheel.glb    truck wheel/tyre, axle along X, radius 0.5, width 0.30
+Conventions: forward = +Z, up = +Y, left = +X.  Requires numpy.  Uses tools/gen_car_models.py helpers.
+Usage: python3 tools/gen_truck_models.py [output_dir]
 """
-import json, math, os, struct, sys
-import numpy as np
+import math, os, sys
+sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
+from gen_car_models import Mesh, write_glb, build_wheel, WHEEL_MATS
 
+# ---------------------------------------------------------------- helpers ---
+def cyl(m, mat, c, radius, length, axis, seg=20, cap=True):
+    """cylinder centered at c along 'x' | 'y' | 'z' (cyclic axis mapping keeps outward winding)"""
+    cx, cy, cz = c
+    def pt(a, cosv, sinv):
+        if axis == 'x': return (cx + a, cy + radius * cosv, cz + radius * sinv)
+        if axis == 'y': return (cx + radius * sinv, cy + a, cz + radius * cosv)
+        return (cx + radius * cosv, cy + radius * sinv, cz + a)
+    h = length / 2
+    for i in range(seg):
+        a0 = 2 * math.pi * i / seg; a1 = 2 * math.pi * (i + 1) / seg
+        c0, s0, c1, s1 = math.cos(a0), math.sin(a0), math.cos(a1), math.sin(a1)
+        m.quad(mat, pt(-h, c0, s0), pt(-h, c1, s1), pt(h, c1, s1), pt(h, c0, s0))
+        if cap:
+            m.tri(mat, pt(h, 0, 0), pt(h, c0, s0), pt(h, c1, s1))
+            m.tri(mat, pt(-h, 0, 0), pt(-h, c1, s1), pt(-h, c0, s0))
 
-# ----------------------------------------------------------------------------
-# tiny mesh builder
-# ----------------------------------------------------------------------------
-class Mesh:
-    def __init__(self):
-        self.prims = {}
+def wedge_roof(m, mat, x0, x1, z_front, y_front, z_back, y_back, y_base):
+    """sloped roof deflector: closed wedge between two heights"""
+    a, b = (x0, y_base, z_front), (x1, y_base, z_front)
+    c, d = (x0, y_base, z_back), (x1, y_base, z_back)
+    e, f = (x0, y_front, z_front), (x1, y_front, z_front)
+    g, h = (x0, y_back, z_back), (x1, y_back, z_back)
+    m.quad(mat, e, f, h, g)                 # sloped top
+    m.quad(mat, a, e, g, c)                 # side -x ... (double sided helps)
+    m.quad(mat, g, e, a, c); m.quad(mat, f, b, d, h); m.quad(mat, h, d, b, f)
+    m.quad(mat, a, b, f, e); m.quad(mat, e, f, b, a)
+    m.quad(mat, c, g, h, d); m.quad(mat, d, h, g, c)
 
-    def _p(self, mat):
-        return self.prims.setdefault(mat, ([], [], []))
-
-    def tri(self, mat, a, b, c):
-        P, N, I = self._p(mat)
-        a, b, c = map(np.array, (a, b, c))
-        n = np.cross(b - a, c - a)
-        l = np.linalg.norm(n)
-        n = n / l if l > 1e-12 else np.array([0, 1, 0])
-        base = len(P)
-        P.extend([a, b, c]); N.extend([n, n, n]); I.extend([base, base + 1, base + 2])
-
-    def quad(self, mat, a, b, c, d):
-        self.tri(mat, a, b, c); self.tri(mat, a, c, d)
-
-    def box(self, mat, center, size):
-        cx, cy, cz = center
-        hx, hy, hz = size[0] / 2, size[1] / 2, size[2] / 2
-        v = lambda x, y, z: (cx + x * hx, cy + y * hy, cz + z * hz)
-        self.quad(mat, v(-1, -1, 1), v(1, -1, 1), v(1, 1, 1), v(-1, 1, 1))
-        self.quad(mat, v(1, -1, -1), v(-1, -1, -1), v(-1, 1, -1), v(1, 1, -1))
-        self.quad(mat, v(1, -1, 1), v(1, -1, -1), v(1, 1, -1), v(1, 1, 1))
-        self.quad(mat, v(-1, -1, -1), v(-1, -1, 1), v(-1, 1, 1), v(-1, 1, -1))
-        self.quad(mat, v(-1, 1, 1), v(1, 1, 1), v(1, 1, -1), v(-1, 1, -1))
-        self.quad(mat, v(-1, -1, -1), v(1, -1, -1), v(1, -1, 1), v(-1, -1, 1))
-
-    def cylinder_x(self, mat, cx, cy, cz, radius, x0, x1, seg=24, cap=True):
-        for i in range(seg):
-            a0 = 2 * math.pi * i / seg
-            a1 = 2 * math.pi * (i + 1) / seg
-            y0, z0 = cy + radius * math.cos(a0), cz + radius * math.sin(a0)
-            y1, z1 = cy + radius * math.cos(a1), cz + radius * math.sin(a1)
-            self.quad(mat, (x0, y0, z0), (x0, y1, z1), (x1, y1, z1), (x1, y0, z0))
-            if cap:
-                self.tri(mat, (x1, cy, cz), (x1, y0, z0), (x1, y1, z1))
-                self.tri(mat, (x0, cy, cz), (x0, y1, z1), (x0, y0, z0))
-
-    def torus_x(self, mat, radius, tube, seg=32, side=12, squash=1.0):
-        def pt(u, v):
-            r = radius + tube * math.cos(v)
-            return (tube * math.sin(v) * squash, r * math.cos(u), r * math.sin(u))
-        for i in range(seg):
-            u0 = 2 * math.pi * i / seg
-            u1 = 2 * math.pi * (i + 1) / seg
-            for j in range(side):
-                v0 = 2 * math.pi * j / side
-                v1 = 2 * math.pi * (j + 1) / side
-                self.quad(mat, pt(u0, v0), pt(u1, v0), pt(u1, v1), pt(u0, v1))
-
-
-# ----------------------------------------------------------------------------
-# glTF writer  (fixed: mat_index is a dict)
-# ----------------------------------------------------------------------------
-def write_glb(path, mesh, materials, name, double_sided=("glass",)):
-    for mname in double_sided:
-        if mname in mesh.prims:
-            P, N, I = mesh.prims[mname]
-            base = len(P)
-            P.extend(list(P[:base])); N.extend([-n for n in N[:base]])
-            for k in range(0, len(I), 3):
-                I.extend([I[k] + base, I[k + 2] + base, I[k + 1] + base])
-
-    bin_data = bytearray()
-    buffer_views, accessors, primitives, mats = [], [], [], []
-    mat_index = {}                    # FIXED (was [], must be {})
-
-    def pad4(b):
-        while len(b) % 4:
-            b.append(0)
-
-    for mname, (P, N, I) in mesh.prims.items():
-        if not I:
-            continue
-        Pn = np.array(P, dtype=np.float32)
-        Nn = np.array(N, dtype=np.float32)
-        In = np.array(I, dtype=np.uint32)
-
-        def add(arr, target):
-            pad4(bin_data)
-            off = len(bin_data)
-            bin_data.extend(arr.tobytes())
-            buffer_views.append({"buffer": 0, "byteOffset": off,
-                                 "byteLength": arr.nbytes, "target": target})
-            return len(buffer_views) - 1
-
-        bv_p, bv_n, bv_i = add(Pn, 34962), add(Nn, 34962), add(In, 34963)
-        accessors.append({"bufferView": bv_p, "componentType": 5126, "count": len(Pn),
-                          "type": "VEC3", "min": Pn.min(axis=0).tolist(),
-                          "max": Pn.max(axis=0).tolist()})
-        a_p = len(accessors) - 1
-        accessors.append({"bufferView": bv_n, "componentType": 5126, "count": len(Nn), "type": "VEC3"})
-        a_n = len(accessors) - 1
-        accessors.append({"bufferView": bv_i, "componentType": 5125, "count": len(In), "type": "SCALAR"})
-        a_i = len(accessors) - 1
-
-        if mname not in mat_index:
-            color, metal, rough = materials[mname]
-            mats.append({"name": mname,
-                         "pbrMetallicRoughness": {"baseColorFactor": list(color),
-                                                  "metallicFactor": metal,
-                                                  "roughnessFactor": rough}})
-            mat_index[mname] = len(mats) - 1
-
-        primitives.append({"attributes": {"POSITION": a_p, "NORMAL": a_n},
-                           "indices": a_i, "material": mat_index[mname], "mode": 4})
-
-    pad4(bin_data)
-    gltf = {"asset": {"version": "2.0", "generator": "crayon gen_truck_models.py"},
-            "scene": 0, "scenes": [{"nodes": [0]}],
-            "nodes": [{"mesh": 0, "name": name}],
-            "meshes": [{"name": name, "primitives": primitives}],
-            "materials": mats, "accessors": accessors, "bufferViews": buffer_views,
-            "buffers": [{"byteLength": len(bin_data)}]}
-
-    js = json.dumps(gltf, separators=(",", ":")).encode()
-    while len(js) % 4:
-        js += b" "
-    total = 12 + 8 + len(js) + 8 + len(bin_data)
-    with open(path, "wb") as f:
-        f.write(struct.pack("<III", 0x46546C67, 2, total))
-        f.write(struct.pack("<II", len(js), 0x4E4F534A)); f.write(js)
-        f.write(struct.pack("<II", len(bin_data), 0x004E4942)); f.write(bytes(bin_data))
-
-    tris = sum(len(v[2]) // 3 for v in mesh.prims.values())
-    print(f"wrote {path}  ({tris} triangles, {os.path.getsize(path)} bytes)")
-
-
-# ============================================================================
-# TRACTOR  (long-nose American semi cab)
-#   Physics chassis half-extents: (1.2, 0.5, 2.8), origin = chassis centre.
-#   Chassis box spans Y[-0.5,+0.5], Z[-2.8,+2.8] in LOCAL space.
-#   Wheels: front axle z=+1.8, rear axle z=-1.8, both at y=-0.55, radius 0.55.
-#   Fifth-wheel plate: local (0, +0.55, -2.5).
-# ============================================================================
-def build_tractor():
+# ----------------------------------------------------------------- tractor ---
+def build_tractor(paint=(0.10, 0.25, 0.65)):
     m = Mesh()
-
-    # --- frame rails -------------------------------------------------------
+    # frame rails + cross members
     for sx in (1, -1):
-        m.box("chassis", (sx * 1.00, -0.35, 0), (0.30, 0.30, 5.60))
-    # cross-members
-    for z in (-2.0, -0.5, 1.0, 2.5):
-        m.box("chassis", (0, -0.35, z), (2.20, 0.20, 0.15))
-
-    # --- hood (front) ------------------------------------------------------
-    m.box("paint", (0, 0.10, 2.00), (2.10, 0.75, 1.50))       # main hood
-    m.box("paint", (0, 0.15, 2.80), (1.95, 0.60, 0.20))       # hood front lip
-    m.box("trim",  (0, -0.05, 2.85), (1.80, 0.35, 0.08))       # grille frame
-    for yy in (-0.15, 0.02, 0.19):
-        m.box("chrome", (0, yy, 2.87), (1.75, 0.05, 0.04))     # grille slats
-    # headlights
+        m.box("trim", (sx * 0.45, -0.25, -0.1), (0.18, 0.30, 7.0))
+    for z in (-3.4, -2.6, -1.4, -0.4, 0.8, 1.8, 2.8):
+        m.box("trim", (0, -0.28, z), (0.9, 0.10, 0.14))
+    # engine / apron under the cab, bumper
+    m.box("trim", (0, 0.05, 3.2), (2.2, 0.35, 0.8))
+    m.box("chrome", (0, -0.12, 3.66), (2.35, 0.30, 0.22))
+    m.box("trim", (0, -0.40, 3.62), (1.6, 0.18, 0.12))
+    # cab shell (day cab + sleeper), roof deflector
+    m.box("paint", (0, 1.40, 1.75), (2.40, 2.30, 3.50))
+    m.box("paint", (0, 2.62, 1.30), (2.30, 0.10, 2.60))            # roof cap
+    wedge_roof(m, "paint", -1.10, 1.10, 2.0, 2.67, -0.05, 3.05, 2.67)
+    m.box("paint", (0, 0.55, 3.55), (2.40, 0.65, 0.12))            # lower front panel
+    # windows
+    m.box("glass", (0, 1.85, 3.512), (2.05, 1.0, 0.02))            # windshield
     for sx in (1, -1):
-        m.box("light", (sx * 0.80, -0.05, 2.82), (0.35, 0.22, 0.05))
-        m.box("light", (sx * 0.80, -0.25, 2.82), (0.20, 0.08, 0.05))
-    # front bumper
-    m.box("chrome", (0, -0.48, 2.85), (2.30, 0.22, 0.18))
-    # cab steps
+        m.box("glass", (sx * 1.203, 1.85, 2.80), (0.02, 0.95, 1.05))   # door window
+        m.box("glass", (sx * 1.203, 1.95, 0.95), (0.02, 0.50, 0.90))   # sleeper window
+        m.box("trim",  (sx * 1.21, 0.80, 2.80), (0.02, 0.05, 1.10))    # door sill line
+        m.box("trim",  (sx * 1.215, 1.40, 2.20), (0.02, 1.40, 0.04))   # door gap
+        # steps and mirrors
+        m.box("trim", (sx * 1.15, 0.12, 2.9), (0.30, 0.05, 0.50))
+        m.box("trim", (sx * 1.42, 1.95, 3.25), (0.05, 0.60, 0.22))
+        m.box("trim", (sx * 1.28, 2.30, 3.30), (0.30, 0.04, 0.04))
+        # headlights, corner/marker lights
+        m.box("light", (sx * 0.88, 0.60, 3.625), (0.40, 0.22, 0.04))
+        m.box("amber", (sx * 1.14, 0.60, 3.60), (0.12, 0.18, 0.10))
+        # fenders over wheels
+        m.box("paint", (sx * 1.00, -0.02, 2.4), (0.46, 0.04, 1.15))
+        m.box("paint", (sx * 1.00, -0.02, -2.35), (0.50, 0.04, 2.9))
+        # fuel tanks + exhaust stacks
+        cyl(m, "tank", (sx * 1.00, -0.28, -0.35), 0.36, 1.5, 'z', seg=18)
+        cyl(m, "chrome", (sx * 1.22, 1.6, -0.12), 0.07, 3.2, 'y', seg=12)
+        m.box("trim", (sx * 1.22, 3.2, -0.12), (0.16, 0.05, 0.16))
+        # mud flaps
+        m.box("trim", (sx * 1.00, -0.75, -3.72), (0.60, 0.50, 0.03))
+    # grille
+    m.box("trim", (0, 0.58, 3.625), (1.30, 0.50, 0.03))
+    for i in range(6):
+        m.box("chrome", (0, 0.38 + i * 0.08, 3.64), (1.26, 0.03, 0.02))
+    # roof marker lights and air horn
+    for i in range(5):
+        m.box("amber", (-0.6 + i * 0.3, 2.70, 3.12), (0.12, 0.07, 0.06))
+    cyl(m, "chrome", (0.5, 3.05, 0.9), 0.06, 0.3, 'y', seg=10)
+    # fifth wheel plate with slot
+    m.box("plate", (0, 0.30, -2.2), (1.45, 0.24, 1.30))
+    m.box("trim", (0, 0.425, -2.55), (0.30, 0.02, 0.65))
+    m.box("chrome", (0, 0.40, -1.75), (0.18, 0.06, 0.12))
+    # rear lights, air tank
     for sx in (1, -1):
-        m.box("chrome", (sx * 1.12, -0.35, 0.95), (0.24, 0.05, 0.28))
-
-    # --- cab (middle) ------------------------------------------------------
-    m.box("paint", (0, 1.05, 0.10), (2.35, 1.75, 1.65))
-    # roof cap / fairing
-    m.box("paint", (0, 2.05, 0.10), (2.25, 0.18, 1.60))
-    # windshield (front of cab)
-    m.box("glass", (0, 1.35, 0.95), (2.10, 0.85, 0.06))
-    # side windows
-    for sx in (1, -1):
-        m.box("glass", (sx * 1.18, 1.25, 0.10), (0.03, 0.75, 1.20))
-    # doors (thin decorative panels)
-    for sx in (1, -1):
-        m.box("trim", (sx * 1.18, 0.35, 0.10), (0.03, 0.30, 1.55))
-        m.box("chrome", (sx * 1.19, 0.65, -0.30), (0.04, 0.05, 0.20))   # handle
-
-    # --- sleeper -----------------------------------------------------------
-    m.box("paint", (0, 1.20, -1.55), (2.35, 2.05, 1.90))
-    m.box("paint", (0, 2.25, -1.55), (2.25, 0.18, 1.85))       # sleeper roof
-    for sx in (1, -1):
-        m.box("glass", (sx * 1.18, 1.60, -1.55), (0.03, 0.55, 0.90))
-
-    # --- mirrors -----------------------------------------------------------
-    for sx in (1, -1):
-        m.box("chrome", (sx * 1.28, 1.70, 0.75), (0.05, 0.05, 0.35))
-        m.box("trim",   (sx * 1.40, 1.55, 0.75), (0.08, 0.55, 0.18))
-
-    # --- exhaust stacks ----------------------------------------------------
-    for sx in (1, -1):
-        m.box("chrome", (sx * 1.22, 1.55, -0.85), (0.16, 2.60, 0.16))
-        m.box("chrome", (sx * 1.22, 2.85, -0.85), (0.20, 0.10, 0.20))
-
-    # --- fuel tanks + battery boxes ---------------------------------------
-    for sx in (1, -1):
-        m.box("chrome", (sx * 1.10, -0.10, 0.20), (0.40, 0.55, 1.20))   # fuel
-        m.box("chassis", (sx * 1.10, -0.10, -1.30), (0.40, 0.50, 0.80)) # toolbox
-
-    # --- FIFTH-WHEEL HITCH (visible plate + kingpin socket) ---------------
-    #   local Y = +0.55 (0.05 above chassis top of 0.5), Z = -2.5
-    m.box("chrome", (0, 0.55, -2.50), (1.60, 0.10, 1.40))       # plate
-    m.box("trim",   (0, 0.60, -2.50), (0.30, 0.15, 0.30))       # socket ring
-    m.box("chrome", (0, 0.68, -2.50), (0.14, 0.12, 0.14))       # pin hole
-    # support legs under the plate
-    for sx in (1, -1):
-        m.box("chrome", (sx * 0.55, 0.20, -2.50), (0.10, 0.60, 0.10))
-
-    # --- mud flaps ---------------------------------------------------------
-    for sx in (1, -1):
-        m.box("trim", (sx * 1.05, -0.85, -2.70), (0.50, 0.40, 0.04))
-
+        m.box("tail", (sx * 0.40, -0.20, -3.64), (0.22, 0.12, 0.04))
+    cyl(m, "tank", (0, -0.12, -3.1), 0.14, 0.9, 'x', seg=12)
     return m
-
 
 TRACTOR_MATS = {
-    "paint":   ((0.72, 0.10, 0.12, 1.0), 0.35, 0.35),   # red
-    "chassis": ((0.07, 0.07, 0.08, 1.0), 0.20, 0.80),
-    "trim":    ((0.05, 0.05, 0.06, 1.0), 0.05, 0.85),
-    "chrome":  ((0.80, 0.82, 0.85, 1.0), 0.95, 0.22),
-    "light":   ((1.00, 0.95, 0.72, 1.0), 0.00, 0.10),
-    "glass":   ((0.09, 0.16, 0.24, 1.0), 0.00, 0.05),
+    "paint": ((0.10, 0.25, 0.65, 1.0), 0.35, 0.40),
+    "glass": ((0.10, 0.16, 0.22, 1.0), 0.0, 0.05),
+    "trim":  ((0.05, 0.05, 0.06, 1.0), 0.1, 0.8),
+    "chrome": ((0.80, 0.82, 0.86, 1.0), 1.0, 0.2),
+    "light": ((1.00, 0.95, 0.75, 1.0), 0.0, 0.1),
+    "amber": ((1.00, 0.60, 0.05, 1.0), 0.0, 0.2),
+    "tail":  ((0.90, 0.05, 0.05, 1.0), 0.0, 0.2),
+    "tank":  ((0.72, 0.74, 0.78, 1.0), 0.9, 0.3),
+    "plate": ((0.14, 0.14, 0.15, 1.0), 0.6, 0.5),
 }
 
-
-# ============================================================================
-# TRAILER  (long 13.6 m dry van)
-#   Physics chassis half-extents: (1.25, 1.8, 5.0), origin = chassis centre.
-#   Chassis box spans Y[-1.8,+1.8], Z[-5.0,+5.0] in LOCAL space.
-#   Rear wheels: two axles at z=-3.5, z=-4.5, y=-1.85, radius 0.55.
-#   Landing gear wheels: z=+3.5, y=-1.55, radius 0.55 (they sit 0.3 m above
-#       the ground when the trailer is level, so they only touch down when
-#       the trailer is dropped).
-#   Kingpin: local (0, -0.80, +5.0) -- aligns with the tractor's fifth wheel.
-# ============================================================================
+# ------------------------------------------------------------------ trailer ---
 def build_trailer():
     m = Mesh()
-
-    # --- main cargo box ----------------------------------------------------
-    m.box("body", (0, 0, 0), (2.50, 3.55, 10.0))                  # outer shell
-
-    # --- vertical ribs (visual corrugation on both sides) -----------------
+    L = 13.0
     for sx in (1, -1):
-        for z in range(-4, 5):
-            m.box("body_rib", (sx * 1.255, 0, z * 1.05), (0.02, 3.50, 0.05))
-
-    # --- roof cap ----------------------------------------------------------
-    m.box("trim", (0, 1.83, 0), (2.50, 0.06, 10.0))
-
-    # --- under-frame -------------------------------------------------------
-    m.box("chassis", (0, -1.85, 0), (2.40, 0.20, 10.0))
-
-    # --- refrigeration unit (front top) -----------------------------------
-    m.box("trim", (0, 1.30, 5.20), (1.60, 1.00, 0.30))
-    for yy in (0.95, 1.15, 1.35, 1.55):
-        m.box("chrome", (0, yy, 5.36), (1.50, 0.05, 0.03))
-
-    # --- rear doors --------------------------------------------------------
-    m.box("door",   (0, 0, -5.05), (2.40, 3.50, 0.06))
-    m.box("trim",   (0, 0, -5.09), (0.04, 3.50, 0.03))            # door split
+        m.box("beam", (sx * 0.55, 0.0, 0.0), (0.25, 0.30, L))                 # main I-beams
+        m.box("beam", (sx * 1.18, 0.02, 0.0), (0.12, 0.20, L))                # outer rails
+        m.box("trim", (sx * 1.20, -0.30, -1.5), (0.05, 0.18, 6.0))             # side underrun guard
+    for i in range(14):
+        m.box("beam", (0, -0.02, -6.2 + i * 0.95), (2.4, 0.12, 0.14))         # cross members
+    m.box("deck", (0, 0.12, 0.0), (2.5, 0.06, 12.9))                          # deck
+    # twist-lock corner castings for a 40ft container (container is 12.0 m long)
     for sx in (1, -1):
-        for yy in (-1.40, -0.70, 0.00, 0.70, 1.40):
-            m.box("chrome", (sx * 1.18, yy, -5.10), (0.05, 0.05, 0.05))    # hinges
-        m.box("chrome", (sx * 0.20, -0.30, -5.12), (0.05, 0.30, 0.05))     # handles
-
-    # --- rear bumper + lights ---------------------------------------------
-    m.box("chrome", (0, -1.50, -5.30), (2.50, 0.20, 0.15))
+        for z in (5.9, -5.9):
+            m.box("steel", (sx * 1.1, 0.21, z), (0.26, 0.12, 0.30))
+            cyl(m, "chrome", (sx * 1.1, 0.30, z), 0.04, 0.10, 'y', seg=8)
+    # kingpin + front plate
+    m.box("plate", (0, -0.18, 5.9), (1.30, 0.05, 1.00))
+    cyl(m, "chrome", (0, -0.24, 5.9), 0.09, 0.12, 'y', seg=14)
+    m.box("beam", (0, -0.08, 5.9), (2.3, 0.20, 0.30))
+    # rear tandem subframe, hangers, bumper, lights
+    m.box("beam", (0, -0.35, -5.05), (2.3, 0.18, 2.7))
     for sx in (1, -1):
-        m.box("tail", (sx * 1.05, -1.30, -5.28), (0.30, 0.20, 0.05))
-        m.box("tail", (sx * 1.05,  1.60, -5.10), (0.10, 0.10, 0.03))
-
-    # --- side skirt / underrun guard --------------------------------------
-    for sx in (1, -1):
-        m.box("trim", (sx * 1.20, -1.55, 0), (0.06, 0.40, 9.80))
-
-    # --- landing gear (visual, folded up) ---------------------------------
-    for sx in (1, -1):
-        m.box("chrome", (sx * 0.85, -1.20, 3.50), (0.16, 0.80, 0.16))
-        m.box("chrome", (sx * 0.85, -1.55, 3.50), (0.28, 0.10, 0.28))  # foot pad
-
-    # --- KINGPIN (visual) --------------------------------------------------
-    #   local Y = -0.80, Z = +5.0 (matches physics hinge point)
-    m.box("chrome", (0, -0.80, 5.00), (0.20, 0.30, 0.20))
-    m.box("trim",   (0, -0.95, 5.00), (0.28, 0.06, 0.28))          # bearing plate
-    # support plates from the chassis down to the kingpin
-    m.box("chassis", (0, -1.50, 5.00), (1.20, 1.20, 0.30))
-
+        m.box("beam", (sx * 1.0, -0.62, -5.05), (0.12, 0.45, 2.7))
+        m.box("tail", (sx * 0.95, -0.15, -6.52), (0.30, 0.14, 0.04))
+        m.box("amber", (sx * 1.22, 0.00, 5.85), (0.05, 0.08, 0.20))
+        m.box("amber", (sx * 1.22, 0.00, -6.3), (0.05, 0.08, 0.20))
+        m.box("trim", (sx * 1.0, -1.15, -6.1), (0.60, 0.55, 0.03))             # mud flaps
+        m.box("trim", (sx * 1.0, -0.80, -4.4), (0.34, 0.04, 2.6))              # fenders ... low profile
+    m.box("bumper", (0, -0.42, -6.62), (2.4, 0.28, 0.14))
+    for i in range(10):                                                         # reflective tape
+        m.box("tape_r" if i % 2 == 0 else "tape_w", (-1.08 + i * 0.24, -0.62, -6.70), (0.24, 0.07, 0.02))
+    # air lines at the front
+    cyl(m, "trim", (0.4, -0.05, 6.3), 0.03, 0.5, 'z', seg=8)
+    cyl(m, "amber", (-0.4, -0.05, 6.3), 0.03, 0.5, 'z', seg=8)
     return m
-
 
 TRAILER_MATS = {
-    "body":     ((0.90, 0.90, 0.88, 1.0), 0.10, 0.55),   # white box
-    "body_rib": ((0.80, 0.80, 0.78, 1.0), 0.10, 0.60),   # slightly darker ribs
-    "door":     ((0.85, 0.85, 0.83, 1.0), 0.10, 0.60),
-    "chassis":  ((0.07, 0.07, 0.08, 1.0), 0.20, 0.80),
-    "trim":     ((0.05, 0.05, 0.06, 1.0), 0.05, 0.85),
-    "chrome":   ((0.80, 0.82, 0.85, 1.0), 0.95, 0.22),
-    "tail":     ((0.95, 0.06, 0.06, 1.0), 0.00, 0.10),
+    "beam":  ((0.12, 0.12, 0.14, 1.0), 0.4, 0.6),
+    "deck":  ((0.22, 0.22, 0.24, 1.0), 0.3, 0.7),
+    "steel": ((0.45, 0.46, 0.50, 1.0), 0.8, 0.4),
+    "chrome": ((0.85, 0.85, 0.88, 1.0), 1.0, 0.2),
+    "plate": ((0.18, 0.18, 0.19, 1.0), 0.6, 0.5),
+    "trim":  ((0.04, 0.04, 0.05, 1.0), 0.1, 0.8),
+    "tail":  ((0.90, 0.05, 0.05, 1.0), 0.0, 0.2),
+    "amber": ((1.00, 0.60, 0.05, 1.0), 0.0, 0.2),
+    "bumper": ((0.30, 0.30, 0.32, 1.0), 0.7, 0.4),
+    "tape_r": ((0.85, 0.05, 0.05, 1.0), 0.0, 0.3),
+    "tape_w": ((0.95, 0.95, 0.95, 1.0), 0.0, 0.3),
 }
 
-
-# ============================================================================
-# Wheel (same shape as the standalone truck wheel)
-# ============================================================================
-def build_truck_wheel(radius=0.55, width=0.40):
+def build_legs():
     m = Mesh()
-    tube = width * 0.5
-    rim_r = radius - tube * 0.92
-    tire_ring_r = radius - tube
-
-    m.torus_x("tire", tire_ring_r, tube * 0.98, seg=48, side=16)
     for sx in (1, -1):
-        m.cylinder_x("tire_line", 0, 0, 0, rim_r * 1.02,
-                     sx * (tube * 0.97), sx * (tube * 0.97 + 0.002), seg=48, cap=False)
-    m.cylinder_x("rim", 0, 0, 0, rim_r, -width * 0.40, width * 0.40, seg=36, cap=False)
-
-    for sx in (1, -1):
-        xf = sx * width * 0.38
-        n_sp = 6
-        for k in range(n_sp):
-            a = 2 * math.pi * k / n_sp
-            a0, a1 = a - 0.20, a + 0.20
-            r_in, r_out = rim_r * 0.24, rim_r * 0.94
-            p = lambda r, aa: (xf, r * math.cos(aa), r * math.sin(aa))
-            if sx > 0:
-                m.quad("rim", p(r_in, a0), p(r_out, a0 - 0.06), p(r_out, a1 + 0.06), p(r_in, a1))
-            else:
-                m.quad("rim", p(r_in, a1), p(r_out, a1 + 0.06), p(r_out, a0 - 0.06), p(r_in, a0))
-        m.cylinder_x("chrome", xf + sx * 0.002, 0, 0, rim_r * 0.24,
-                     xf, xf + sx * 0.04, seg=20, cap=True)
-        for k in range(8):
-            a = 2 * math.pi * (k + 0.5) / 8
-            m.cylinder_x("chrome", 0,
-                         rim_r * 0.32 * math.cos(a), rim_r * 0.32 * math.sin(a),
-                         0.022, xf, xf + sx * 0.02, seg=6, cap=True)
-
-    m.cylinder_x("trim", 0, 0, 0, rim_r * 0.78, -width * 0.28, width * 0.28, seg=28, cap=True)
-
-    for k in range(0, 48, 4):
-        a0 = 2 * math.pi * k / 48
-        a1 = 2 * math.pi * (k + 2) / 48
-        rr = radius + 0.003
-        pa = lambda aa, x: (x, rr * math.cos(aa), rr * math.sin(aa))
-        m.quad("tire_line",
-               pa(a0, -width * 0.14), pa(a0, width * 0.14),
-               pa(a1, width * 0.14), pa(a1, -width * 0.14))
+        m.box("leg", (sx * 1.15, -1.0, 4.0), (0.20, 1.70, 0.30))
+        m.box("leg", (sx * 1.15, -1.82, 4.0), (0.55, 0.06, 0.60))        # foot
+        m.box("chrome", (sx * 1.28, -0.75, 4.0), (0.05, 0.05, 0.05))     # crank
+    m.box("leg", (0, -0.45, 4.0), (2.3, 0.12, 0.14))                       # cross brace
     return m
 
+LEG_MATS = {"leg": ((0.55, 0.55, 0.58, 1.0), 0.7, 0.5), "chrome": ((0.85, 0.85, 0.88, 1.0), 1.0, 0.2)}
 
-WHEEL_MATS = {
-    "tire":      ((0.035, 0.035, 0.04, 1.0), 0.0, 0.95),
-    "tire_line": ((0.22, 0.22, 0.24, 1.0), 0.0, 0.90),
-    "rim":       ((0.72, 0.74, 0.78, 1.0), 0.75, 0.35),
-    "chrome":    ((0.88, 0.90, 0.92, 1.0), 0.95, 0.18),
-    "trim":      ((0.09, 0.09, 0.11, 1.0), 0.20, 0.65),
-}
-
-
-# ============================================================================
-# Cargo crate (unchanged from earlier script)
-# ============================================================================
-def build_cargo(size=1.0):
+# ---------------------------------------------------------------- container ---
+def build_container():
     m = Mesh()
-    hs = size * 0.5
-    m.box("wood", (0, 0, 0), (size, size, size))
-    e = 0.008
+    hx, hy, hz = 1.2, 1.3, 6.0
+    m.box("body", (0, 0.0, 0.0), (2.30, 2.54, 11.92))
+    # corrugation ribs on both sides and the roof
+    n = 58
+    for i in range(n):
+        z = -hz + 0.35 + i * ((2 * hz - 0.7) / (n - 1))
+        for sx in (1, -1):
+            m.box("body", (sx * (hx - 0.045), 0.0, z), (0.07, 2.30, 0.09))
+        m.box("body", (0, hy - 0.045, z), (2.05, 0.07, 0.09))
+    # corner castings + frame rails
     for sx in (1, -1):
-        for z in (-0.28, 0.0, 0.28):
-            m.box("wood_dark", (sx * (hs + e), 0, z), (e * 2, size + 0.005, 0.035))
-    for sz in (1, -1):
-        for x in (-0.28, 0.0, 0.28):
-            m.box("wood_dark", (x, 0, sz * (hs + e)), (0.035, size + 0.005, e * 2))
-    for yy in (-0.30, 0.30):
-        m.box("metal", (0, yy, 0), (size + 0.02, 0.06, size + 0.02))
+        for sy in (1, -1):
+            for sz in (1, -1):
+                m.box("steel", (sx * (hx - 0.08), sy * (hy - 0.08), sz * (hz - 0.10)), (0.17, 0.17, 0.20))
+            m.box("frame", (sx * (hx - 0.03), sy * (hy - 0.03), 0), (0.06, 0.06, 12.0))
+            m.box("frame", (0, sy * (hy - 0.03), sx * (hz - 0.03)), (2.40, 0.06, 0.06))
+    for sy in (1, -1):
+        for sx in (1, -1):
+            m.box("frame", (sx * (hx - 0.03), sy * (hy - 0.03), 0), (0.06, 0.06, 12.0))
+    # rear doors (z = -hz) with locking rods
+    m.box("door", (0, 0.0, -hz - 0.005), (2.2, 2.4, 0.04))
+    for k in (-0.72, -0.30, 0.30, 0.72):
+        cyl(m, "chrome", (k, 0.0, -hz - 0.04), 0.022, 2.35, 'y', seg=8)
+    m.box("trim", (0, 0.0, -hz - 0.03), (0.04, 2.40, 0.03))
+    # front wall panel & label panels (white) on both sides
+    m.box("body", (0, 0.0, hz + 0.005), (2.25, 2.40, 0.04))
     for sx in (1, -1):
-        for sz in (1, -1):
-            m.box("metal", (sx * hs, 0, sz * hs), (0.07, size + 0.02, 0.07))
-    for sx in (1, -1):
-        m.box("trim", (sx * (hs + 0.005), 0.0, 0), (0.04, 0.14, 0.28))
-        m.box("trim", (sx * (hs + 0.010), 0.0, 0), (0.04, 0.06, 0.24))
-    m.box("label", (0, hs + 0.005, 0.0), (0.55, 0.02, 0.30))
+        m.box("label", (sx * (hx + 0.002), 0.35, 1.2), (0.01, 0.55, 3.2))
+        m.box("label", (sx * (hx + 0.002), -0.45, -3.5), (0.01, 0.30, 2.0))
     return m
 
+def container_mats(color):
+    return {
+        "body":  ((color[0], color[1], color[2], 1.0), 0.2, 0.55),
+        "door":  ((color[0] * 0.85, color[1] * 0.85, color[2] * 0.85, 1.0), 0.2, 0.6),
+        "steel": ((0.35, 0.36, 0.40, 1.0), 0.8, 0.5),
+        "frame": ((color[0] * 0.6, color[1] * 0.6, color[2] * 0.6, 1.0), 0.3, 0.6),
+        "chrome": ((0.8, 0.8, 0.84, 1.0), 1.0, 0.25),
+        "trim":  ((0.05, 0.05, 0.05, 1.0), 0.1, 0.8),
+        "label": ((0.93, 0.93, 0.90, 1.0), 0.0, 0.6),
+    }
 
-CARGO_MATS = {
-    "wood":      ((0.62, 0.42, 0.24, 1.0), 0.0, 0.85),
-    "wood_dark": ((0.38, 0.24, 0.13, 1.0), 0.0, 0.90),
-    "metal":     ((0.45, 0.46, 0.50, 1.0), 0.85, 0.35),
-    "trim":      ((0.10, 0.10, 0.11, 1.0), 0.10, 0.75),
-    "label":     ((0.95, 0.92, 0.78, 1.0), 0.0, 0.55),
-}
-
-
-# ============================================================================
-# main
-# ============================================================================
+# -------------------------------------------------------------------- main ---
 if __name__ == "__main__":
-    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(
-        os.path.dirname(__file__), "..", "examples", "games", "truck_game", "assets"
-    )
+    out = sys.argv[1] if len(sys.argv) > 1 else os.path.join(os.path.dirname(os.path.abspath(__file__)), "..", "examples", "games", "truck_sim", "assets")
     os.makedirs(out, exist_ok=True)
-
-    write_glb(os.path.join(out, "tractor.glb"),     build_tractor(),                 TRACTOR_MATS,     "tractor")
-    write_glb(os.path.join(out, "trailer.glb"),     build_trailer(),                 TRAILER_MATS,     "trailer")
-    write_glb(os.path.join(out, "truck_wheel.glb"), build_truck_wheel(0.55, 0.40),   WHEEL_MATS,       "truck_wheel")
-    write_glb(os.path.join(out, "cargo_crate.glb"), build_cargo(1.0),                CARGO_MATS,       "cargo_crate")
-
-    print("\nDone.")
-    print("Expected names: tractor.glb  trailer.glb  truck_wheel.glb  cargo_crate.glb")
+    write_glb(os.path.join(out, "tractor.glb"), build_tractor(), TRACTOR_MATS, "tractor")
+    write_glb(os.path.join(out, "trailer.glb"), build_trailer(), TRAILER_MATS, "trailer")
+    write_glb(os.path.join(out, "trailer_legs.glb"), build_legs(), LEG_MATS, "trailer_legs")
+    for name, col in (("red", (0.70, 0.10, 0.08)), ("blue", (0.10, 0.28, 0.65)),
+                      ("green", (0.12, 0.45, 0.20)), ("orange", (0.90, 0.45, 0.08))):
+        write_glb(os.path.join(out, f"container_{name}.glb"), build_container(), container_mats(col), f"container_{name}")
+    wm = dict(WHEEL_MATS)
+    wm["rim"] = ((0.62, 0.64, 0.68, 1.0), 0.9, 0.35)
+    write_glb(os.path.join(out, "truck_wheel.glb"), build_wheel(0.5, 0.30), wm, "truck_wheel", double_sided=("tire_line",))
