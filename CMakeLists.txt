@@ -9,9 +9,30 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 option(BUILD_CRAYON "Build the Crayon Engine Player (crayon.exe)" ON)
 option(BUILD_EDITOR "Build the Crayon Project Manager (editor.exe)" ON)
 
+# ---- Android ---------------------------------------------------------------
+# Configure with the NDK toolchain (Gradle does this for you, see android/).
+# On Android `crayon` becomes libmain.so (loaded by SDL's Java SDLActivity), the
+# desktop-only editor is skipped, and the renderer uses OpenGL ES 3.0.
+if(ANDROID)
+    set(BUILD_EDITOR OFF CACHE BOOL "" FORCE)
+    # SDL3 is built from source for Android (SDL's own CMake handles the NDK).
+    #   android/setup_deps.sh clones it (tag release-3.4.16, same as the desktop vendor/sdl3).
+    set(CRAYON_SDL3_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3-src" CACHE PATH "SDL3 source tree (Android only)")
+    # LuaJIT can't be built by this CMake project; android/setup_deps.sh builds it per ABI:
+    #   vendor/android/<abi>/lib/libluajit-5.1.a
+    set(CRAYON_ANDROID_LIB_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/android/${ANDROID_ABI}/lib" CACHE PATH "Prebuilt Android static libs")
+    # GLES 3.0 needs no generated loader; vendor/glad_gles is a tiny shim over <GLES3/gl3.h>.
+    set(CRAYON_GLAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad_gles")
+else()
+    set(CRAYON_GLAD_DIR "${CMAKE_CURRENT_SOURCE_DIR}/vendor/glad")
+endif()
+
 # Compiler optimization and warnings
 if(MSVC)
     add_compile_options(/W4 /O2 /permissive-)
+elseif(ANDROID)
+    # No -march: the NDK toolchain already targets the right ARM/x86 ABI.
+    add_compile_options(-Wall -Wextra -O3)
 else()
     add_compile_options(-Wall -Wextra -O3 -march=x86-64)
 endif()
@@ -30,9 +51,8 @@ include_directories(
     src
     editor
     icon
-    vendor/glad/include
+    ${CRAYON_GLAD_DIR}/include
     vendor/glm
-    vendor/sdl3/include
     vendor/luajit/include
     vendor/stb/include
     vendor/tinyobj/include
@@ -42,6 +62,10 @@ include_directories(
     vendor/imgui
     vendor/imgui/backends
 )
+if(NOT ANDROID)
+    # Prebuilt desktop SDL3 headers. On Android the SDL3::SDL3 target provides its own.
+    include_directories(vendor/sdl3/include)
+endif()
 
 # hv4d: the standalone 4D physics library (lives in vendor/, deliberately NOT part of src/).
 # Provides the `hypervis4d` static-library target and its public include directory.
@@ -56,7 +80,7 @@ file(GLOB_RECURSE BOX2D_SOURCES
 
 # Core Engine source files (shared between engine player and editor)
 set(ENGINE_SOURCES
-    vendor/glad/src/glad.c
+    ${CRAYON_GLAD_DIR}/src/glad.c
     vendor/tinygltf/src/tiny_gltf_v3.c
     ${BOX2D_SOURCES}
     src/core/window.cpp
@@ -94,6 +118,9 @@ set(ENGINE_SOURCES
     src/scripting/bind_fs.cpp
     src/scripting/bind_print.cpp
 )
+if(ANDROID)
+    list(APPEND ENGINE_SOURCES src/core/android_storage.cpp)
+endif()
 
 set_source_files_properties(vendor/tinygltf/src/tiny_gltf_v3.c PROPERTIES
     COMPILE_DEFINITIONS "TINYGLTF3_ENABLE_FS"
@@ -134,6 +161,49 @@ if(BUILD_CRAYON)
         set(CRAYON_RESOURCES icon/crayon.rc)
     endif()
 
+    if(ANDROID)
+        # ---- Android: shared library "libmain.so" ------------------------------
+        # SDL's SDLActivity (Java) loads libSDL3.so then libmain.so and calls SDL_main().
+        set(SDL_SHARED ON CACHE BOOL "" FORCE)
+        set(SDL_STATIC OFF CACHE BOOL "" FORCE)
+        set(SDL_TEST_LIBRARY OFF CACHE BOOL "" FORCE)
+        set(SDL_TESTS OFF CACHE BOOL "" FORCE)
+        add_subdirectory(${CRAYON_SDL3_SOURCE_DIR} ${CMAKE_BINARY_DIR}/sdl3 EXCLUDE_FROM_ALL)
+
+        # Jolt is compiled from source for the target ABI (vendor/JoltPhysics/CMakeLists.txt is
+        # your wrapper). The engine defines JPH_DEBUG_RENDERER / JPH_PROFILE_ENABLED /
+        # JPH_OBJECT_STREAM globally, so Jolt must be built with them in EVERY config,
+        # otherwise class layouts differ between the engine and the library.
+        set(DEBUG_RENDERER_IN_DISTRIBUTION ON CACHE BOOL "" FORCE)
+        set(PROFILER_IN_DISTRIBUTION ON CACHE BOOL "" FORCE)
+        set(ENABLE_OBJECT_STREAM ON CACHE BOOL "" FORCE)
+        set(OVERRIDE_CXX_FLAGS OFF CACHE BOOL "" FORCE)   # keep the NDK's own flags
+        set(TARGET_UNIT_TESTS OFF CACHE BOOL "" FORCE)
+        set(TARGET_HELLO_WORLD OFF CACHE BOOL "" FORCE)
+        set(TARGET_PERFORMANCE_TEST OFF CACHE BOOL "" FORCE)
+        set(TARGET_SAMPLES OFF CACHE BOOL "" FORCE)
+        set(TARGET_VIEWER OFF CACHE BOOL "" FORCE)
+        add_subdirectory(vendor/JoltPhysics ${CMAKE_BINARY_DIR}/jolt EXCLUDE_FROM_ALL)
+
+        add_library(crayon SHARED ${ENGINE_SOURCES} src/main.cpp)
+        set_target_properties(crayon PROPERTIES
+            OUTPUT_NAME "main"
+            CXX_STANDARD 20
+            CXX_STANDARD_REQUIRED ON
+            CXX_EXTENSIONS OFF
+        )
+
+        target_link_libraries(crayon PRIVATE
+            hypervis4d
+            Jolt
+            ${CRAYON_ANDROID_LIB_DIR}/libluajit-5.1.a
+            SDL3::SDL3
+            GLESv3
+            EGL
+            android
+            log
+        )
+    else()
     add_executable(crayon ${ENGINE_SOURCES} src/main.cpp ${CRAYON_RESOURCES})
 
     set_target_properties(crayon PROPERTIES
@@ -159,6 +229,7 @@ if(BUILD_CRAYON)
             "${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/bin/lua51.dll"
             "$<TARGET_FILE_DIR:crayon>"
     )
+    endif()
 endif()
 
 # -------------------------------------------------------------

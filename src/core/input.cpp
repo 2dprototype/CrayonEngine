@@ -66,6 +66,9 @@ std::string Input::normalize_key(const std::string& name) const {
         }
     }
     if (result == "return") result = "enter";
+    // Android's hardware/gesture Back button arrives as SDLK_AC_BACK. Alias it to
+    // "escape" so existing `isPressed("escape")` quit/pause logic works unchanged.
+    if (result == "ac_back") result = "escape";
     if (result == "esc") result = "escape";
     if (result == "left_shift" || result == "lshift") result = "lshift";
     if (result == "right_shift" || result == "rshift") result = "rshift";
@@ -79,7 +82,28 @@ std::string Input::normalize_key(const std::string& name) const {
 }
 
 void Input::handle_event(const SDL_Event& event, const Window& window) {
-    if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+    if (event.type == SDL_EVENT_FINGER_DOWN || event.type == SDL_EVENT_FINGER_MOTION) {
+        // SDL reports fingers normalised to 0..1 across the window.
+        int ww = 0, wh = 0;
+        window.get_window_size(ww, wh);
+        float vx = 0.0f, vy = 0.0f;
+        window.window_to_virtual(event.tfinger.x * static_cast<float>(ww),
+                                 event.tfinger.y * static_cast<float>(wh), vx, vy);
+        const int64_t id = static_cast<int64_t>(event.tfinger.fingerID);
+        Touch* t = nullptr;
+        for (auto& e : m_touches) { if (e.id == id) { t = &e; break; } }
+        if (!t) { m_touches.push_back(Touch{}); t = &m_touches.back(); t->id = id; }
+        t->x = vx;
+        t->y = vy;
+        t->pressure = event.tfinger.pressure;
+    } else if (event.type == SDL_EVENT_FINGER_UP || event.type == SDL_EVENT_FINGER_CANCELED) {
+        const int64_t id = static_cast<int64_t>(event.tfinger.fingerID);
+        std::erase_if(m_touches, [id](const Touch& t) { return t.id == id; });
+    } else if (event.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+        // Fingers lifted while we were backgrounded never deliver FINGER_UP.
+        m_touches.clear();
+    } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+        m_touches.clear();
         // The matching KEY_UP / BUTTON_UP events go to whichever window has focus now,
         // so without this, keys and buttons held during alt-tab stay "down" forever.
         for (const auto& k : m_keys_down) m_keys_released.insert(k);

@@ -13,6 +13,13 @@
 
 #include "window.hpp"
 #include "log.hpp"
+#include "platform.hpp"
+
+#if defined(CRAYON_PLATFORM_ANDROID)
+    #define CRAYON_IS_ANDROID_BUILD 1
+#else
+    #define CRAYON_IS_ANDROID_BUILD 0
+#endif
 #include <glad/glad.h>
 #include <algorithm>
 
@@ -41,10 +48,18 @@ bool Window::init(const WindowCreateInfo& info) {
         return false;
     }
 
-    // OpenGL 3.3 Core Profile
+#if defined(CRAYON_GLES)
+    // OpenGL ES 3.0 (Android). Every GL call the engine makes exists in ES 3.0;
+    // the GLSL is translated to "#version 300 es" at compile time (see glsl_compat.hpp).
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 0);
+    SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);
+#else
+    // OpenGL 3.3 Core Profile (Windows / desktop)
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MAJOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_MINOR_VERSION, 3);
     SDL_GL_SetAttribute(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_CORE);
+#endif
     SDL_GL_SetAttribute(SDL_GL_DOUBLEBUFFER, 1);
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
@@ -58,6 +73,12 @@ bool Window::init(const WindowCreateInfo& info) {
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, info.resizable);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, info.high_dpi);
 
+#if defined(CRAYON_PLATFORM_ANDROID)
+    // Android has exactly one window and it is always fullscreen. The desktop
+    // overlay flags (transparent / borderless / always-on-top / click-through /
+    // skip-taskbar / utility / not-focusable / opacity) have no meaning there.
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FULLSCREEN_BOOLEAN, true);
+#else
     // *** All pop-in-sensitive flags are creation properties ***
     if (info.transparent)     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_TRANSPARENT_BOOLEAN,   true);
     if (info.borderless)      SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_BORDERLESS_BOOLEAN,    true);
@@ -65,6 +86,7 @@ bool Window::init(const WindowCreateInfo& info) {
     if (info.utility_window)  SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_UTILITY_BOOLEAN,       true);
     if (info.not_focusable)   SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_FOCUSABLE_BOOLEAN,     false);
     if (info.hidden_at_start) SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIDDEN_BOOLEAN,        true);
+#endif
 
     m_window = SDL_CreateWindowWithProperties(props);
     SDL_DestroyProperties(props);
@@ -73,12 +95,16 @@ bool Window::init(const WindowCreateInfo& info) {
         // Fallback path with raw flags
         SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY;
         if (info.resizable)       flags |= SDL_WINDOW_RESIZABLE;
+#if defined(CRAYON_PLATFORM_ANDROID)
+        flags |= SDL_WINDOW_FULLSCREEN;
+#else
         if (info.transparent)     flags |= SDL_WINDOW_TRANSPARENT;
         if (info.borderless)      flags |= SDL_WINDOW_BORDERLESS;
         if (info.always_on_top)   flags |= SDL_WINDOW_ALWAYS_ON_TOP;
         if (info.utility_window)  flags |= SDL_WINDOW_UTILITY;
         if (info.not_focusable)   flags |= SDL_WINDOW_NOT_FOCUSABLE;
         if (info.hidden_at_start) flags |= SDL_WINDOW_HIDDEN;
+#endif
         m_window = SDL_CreateWindow(info.title.c_str(), m_window_w, m_window_h, flags);
     }
     if (!m_window) {
@@ -86,8 +112,16 @@ bool Window::init(const WindowCreateInfo& info) {
         return false;
     }
 
+#if defined(CRAYON_PLATFORM_ANDROID)
+    // The requested window size is meaningless on Android: the OS decides.
+    // Adopt the real size so the virtual-resolution scaling math is correct.
+    SDL_GetWindowSize(m_window, &m_window_w, &m_window_h);
+    m_transparent = false;
+    m_click_through = false;
+#endif
+
     // Opacity — safe to set on a hidden/unmapped window, no flash.
-    if (info.opacity < 1.0f) {
+    if (info.opacity < 1.0f && !CRAYON_IS_ANDROID_BUILD) {
         float op = info.opacity;
         if (op < 0.0f) op = 0.0f;
         if (op > 1.0f) op = 1.0f;
@@ -111,7 +145,7 @@ bool Window::init(const WindowCreateInfo& info) {
 #endif
 
     // Click-through must also be applied before show.
-    if (info.click_through) {
+    if (info.click_through && !CRAYON_IS_ANDROID_BUILD) {
         set_click_through(true);
     }
 
@@ -127,10 +161,18 @@ bool Window::init(const WindowCreateInfo& info) {
 
     SDL_GL_MakeCurrent(m_window, m_gl_context);
 
+#if defined(CRAYON_GLES)
+    // glad generated with: --api gles2=3.0
+    if (!gladLoadGLES2Loader((GLADloadproc)SDL_GL_GetProcAddress)) {
+        CRAYON_LOG_ERROR("Failed to initialize GLAD OpenGL ES loader");
+        return false;
+    }
+#else
     if (!gladLoadGLLoader((GLADloadproc)SDL_GL_GetProcAddress)) {
         CRAYON_LOG_ERROR("Failed to initialize GLAD OpenGL loader");
         return false;
     }
+#endif
 
     SDL_GL_SetSwapInterval(m_vsync ? 1 : 0);
 
@@ -162,6 +204,10 @@ void Window::set_resolution(int w, int h) {
 }
 
 void Window::set_window_size(int w, int h) {
+#if defined(CRAYON_PLATFORM_ANDROID)
+    (void)w; (void)h; // Android owns the window size.
+    return;
+#endif
     if (w <= 0 || h <= 0) return;
     m_window_w = w;
     m_window_h = h;
@@ -204,6 +250,11 @@ void Window::set_window_max_size(int w, int h) {
 }
 
 void Window::set_fullscreen(bool enabled) {
+#if defined(CRAYON_PLATFORM_ANDROID)
+    (void)enabled;
+    m_fullscreen = true; // always fullscreen on Android
+    return;
+#endif
     m_fullscreen = enabled;
     if (m_window) {
         SDL_SetWindowFullscreen(m_window, enabled);
@@ -529,7 +580,8 @@ void Window::swap_buffers() {
 }
 
 void Window::handle_event(const SDL_Event& event) {
-    if (event.type == SDL_EVENT_QUIT) {
+    if (event.type == SDL_EVENT_QUIT || event.type == SDL_EVENT_TERMINATING) {
+        // SDL_EVENT_TERMINATING: Android is killing the process; leave the loop so we shut down cleanly.
         m_should_close = true;
     } else if (event.type == SDL_EVENT_WINDOW_RESIZED || event.type == SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED) {
         SDL_GetWindowSize(m_window, &m_window_w, &m_window_h);

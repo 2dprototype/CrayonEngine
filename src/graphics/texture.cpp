@@ -84,7 +84,11 @@ bool Texture::load_from_memory(const unsigned char* data, int width, int height,
     glPixelStorei(GL_UNPACK_ALIGNMENT, prev_align);
 
     if (needs_swizzle) {
-        glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+        // Per-channel calls: GL_TEXTURE_SWIZZLE_RGBA (the vector form) does not exist in GLES 3.0.
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, swizzle[0]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, swizzle[1]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, swizzle[2]);
+        glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, swizzle[3]);
     }
 
     // Mipmaps: without these, textures on anything that recedes into the

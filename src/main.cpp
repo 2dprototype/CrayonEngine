@@ -1,9 +1,16 @@
 #include "core/engine.hpp"
 #include "core/project.hpp"
 #include "core/log.hpp"
+#include "core/platform.hpp"
 #include <iostream>
 #include <string>
 #include <filesystem>
+
+#if defined(CRAYON_PLATFORM_ANDROID)
+    // Renames main() to SDL_main(), which SDL's Java SDLActivity calls via JNI.
+    #include <SDL3/SDL_main.h>
+    #include "core/android_storage.hpp"
+#endif
 
 static void print_help() {
     std::cout << "Crayon Engine - Fantasy Console & 2D/3D Game Runtime\n\n"
@@ -58,6 +65,19 @@ int main(int argc, char* argv[]) {
 
     std::string script_path = "";
 
+#if defined(CRAYON_PLATFORM_ANDROID)
+    // No command line on Android: the game ships inside the APK (or is pushed to
+    // the app's external files dir during development). Make it a real folder and
+    // let the normal "run a project folder" path below take over.
+    if (target_input.empty()) {
+        target_input = crayon::android::prepare_game_root();
+        if (target_input.empty()) {
+            CRAYON_LOG_ERROR("No game found. Put your project in assets/game/ (see docs/android.md)");
+            return 1;
+        }
+    }
+#endif
+
     // Helper: every entry point below funnels through this so that all
     // runtime asset paths (textures, models, fonts, shaders, audio, Lua
     // require() ...) resolve relative to the project root, never to the
@@ -108,15 +128,25 @@ int main(int argc, char* argv[]) {
         else if (std::filesystem::is_directory(p)) {
             std::filesystem::path manifest = p / ".crayonproj";
             if (!std::filesystem::exists(manifest)) {
-                CRAYON_LOG_ERROR("No .crayonproj file found in folder '{}'", p.string());
-                return 1;
+#if defined(CRAYON_PLATFORM_ANDROID)
+                // Android convenience: a bare folder with main.lua is enough.
+                if (std::filesystem::exists(p / "main.lua")) {
+                    script_path = (p / "main.lua").string();
+                    set_project_root(p);
+                } else
+#endif
+                {
+                    CRAYON_LOG_ERROR("No .crayonproj file found in folder '{}'", p.string());
+                    return 1;
+                }
+            } else {
+                crayon::CrayonProject proj;
+                if (!crayon::loadCrayonProject(manifest, proj)) {
+                    return 1;
+                }
+                script_path = proj.resolveTargetScript(p);
+                set_project_root(p);
             }
-            crayon::CrayonProject proj;
-            if (!crayon::loadCrayonProject(manifest, proj)) {
-                return 1;
-            }
-            script_path = proj.resolveTargetScript(p);
-            set_project_root(p);
         }
         // 4. Direct Lua script: crayon <path_to_script>.lua
         //    Assets resolve relative to the SCRIPT'S directory, so running

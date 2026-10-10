@@ -26,6 +26,12 @@ A lightweight 2D/3D game engine with retro aesthetics, modern physics, and Lua s
 - **Hot Reload** — Instant script reload on file change or F5
 - **Asset Loading** — PNG/JPG textures, OBJ/GLTF/GLB models, procedural meshes
 
+## Platforms
+
+- **Windows** — `build.bat` (MinGW, OpenGL 3.3 core).
+- **Android** — NDK + Gradle project in [`android/`](android/), OpenGL ES 3.0, touch input
+  (`crayon.touch`). See [docs/android.md](docs/android.md).
+
 ## Quick Start
 
 ### Command Line

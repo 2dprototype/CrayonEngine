@@ -35,6 +35,10 @@ public:
     void call_mouse_up(float x, float y, int button);
     void call_mouse_moved(float x, float y, float dx, float dy);
     void call_wheel_moved(float dx, float dy);
+    // Multi-touch: crayon.touchdown/touchmoved/touchup(id, x, y, pressure) - virtual-canvas coords
+    void call_touch_down(double id, float x, float y, float pressure);
+    void call_touch_moved(double id, float x, float y, float pressure);
+    void call_touch_up(double id, float x, float y, float pressure);
     void call_text_input(const std::string& text);
     void call_gamepad_down(int button);
     void call_gamepad_up(int button);

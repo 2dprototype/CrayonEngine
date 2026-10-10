@@ -108,7 +108,11 @@ bool Font::load_from_memory(const unsigned char* data, size_t size, float pixel_
     glPixelStorei(GL_UNPACK_ALIGNMENT, prev_align);
 
     const GLint swizzle[4] = { GL_ONE, GL_ONE, GL_ONE, GL_RED };
-    glTexParameteriv(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_RGBA, swizzle);
+    // Per-channel calls: GL_TEXTURE_SWIZZLE_RGBA (the vector form) does not exist in GLES 3.0.
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_R, swizzle[0]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_G, swizzle[1]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_B, swizzle[2]);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_SWIZZLE_A, swizzle[3]);
 
     GLenum filter = nearest_filter ? GL_NEAREST : GL_LINEAR;
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, filter);

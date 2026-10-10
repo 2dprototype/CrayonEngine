@@ -829,6 +829,23 @@ void Engine::run() {
                         wy = -wy;
                     }
                     m_lua_runtime->call_wheel_moved(wx, wy);
+                } else if (event.type == SDL_EVENT_FINGER_DOWN ||
+                           event.type == SDL_EVENT_FINGER_MOTION ||
+                           event.type == SDL_EVENT_FINGER_UP ||
+                           event.type == SDL_EVENT_FINGER_CANCELED) {
+                    int ww = 0, wh = 0;
+                    m_window.get_window_size(ww, wh);
+                    float vx = 0.0f, vy = 0.0f;
+                    m_window.window_to_virtual(event.tfinger.x * static_cast<float>(ww),
+                                               event.tfinger.y * static_cast<float>(wh), vx, vy);
+                    const double fid = static_cast<double>(event.tfinger.fingerID);
+                    if (event.type == SDL_EVENT_FINGER_DOWN) {
+                        m_lua_runtime->call_touch_down(fid, vx, vy, event.tfinger.pressure);
+                    } else if (event.type == SDL_EVENT_FINGER_MOTION) {
+                        m_lua_runtime->call_touch_moved(fid, vx, vy, event.tfinger.pressure);
+                    } else {
+                        m_lua_runtime->call_touch_up(fid, vx, vy, event.tfinger.pressure);
+                    }
                 } else if (event.type == SDL_EVENT_TEXT_INPUT) {
                     if (event.text.text) {
                         m_lua_runtime->call_text_input(event.text.text);
@@ -862,9 +879,13 @@ void Engine::run() {
                     m_lua_runtime->call_gamepad_axis(event.gaxis.axis, val);
                 } else if (event.type == SDL_EVENT_WINDOW_RESIZED) {
                     m_lua_runtime->call_window_resized(event.window.data1, event.window.data2);
-                } else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED) {
+                } else if (event.type == SDL_EVENT_WINDOW_FOCUS_GAINED ||
+                           event.type == SDL_EVENT_DID_ENTER_FOREGROUND) {
                     m_lua_runtime->call_focus_changed(true);
-                } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST) {
+                } else if (event.type == SDL_EVENT_WINDOW_FOCUS_LOST ||
+                           event.type == SDL_EVENT_DID_ENTER_BACKGROUND) {
+                    // On Android, leaving the app (home / app switcher / screen off)
+                    // is reported as "focus lost" so scripts can pause themselves.
                     m_lua_runtime->call_focus_changed(false);
                 } else if (event.type == SDL_EVENT_QUIT) {
                     m_lua_runtime->call_quit();

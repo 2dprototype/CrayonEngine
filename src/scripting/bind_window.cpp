@@ -1,4 +1,6 @@
 #include <climits>
+#include <cctype>
+#include <string>
 
 #include "lua_runtime.hpp"
 #include "../core/engine.hpp"
@@ -395,12 +397,23 @@ static int l_window_get_usable_bounds(lua_State* L) {
     return 4;
 }
 
+// crayon.window.getPlatform() -> "android" | "windows" | "linux" | "macos" | ...
+static int l_window_get_platform(lua_State* L) {
+    std::string p = SDL_GetPlatform();
+    for (auto& c : p) c = static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+    lua_pushstring(L, p.c_str());
+    return 1;
+}
+
 void register_window_bindings(lua_State* L) {
     lua_getglobal(L, "crayon");
     lua_newtable(L);
 
     lua_pushcfunction(L, l_window_set_resolution);
     lua_setfield(L, -2, "setResolution");
+
+    lua_pushcfunction(L, l_window_get_platform);
+    lua_setfield(L, -2, "getPlatform");
 
     lua_pushcfunction(L, l_window_get_resolution);
     lua_setfield(L, -2, "getResolution");

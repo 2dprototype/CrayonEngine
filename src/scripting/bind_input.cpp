@@ -406,6 +406,44 @@ static int l_gamepad_get_count(lua_State* L) {
 }
 
 // ============================================================================
+// crayon.touch Bindings
+// ============================================================================
+
+static int l_touch_get_count(lua_State* L) {
+    lua_pushinteger(L, Engine::get().get_input().get_touch_count());
+    return 1;
+}
+
+// crayon.touch.getTouches() -> { {id=, x=, y=, pressure=}, ... }  (virtual-canvas coords)
+static int l_touch_get_touches(lua_State* L) {
+    const auto& touches = Engine::get().get_input().get_touches();
+    lua_createtable(L, static_cast<int>(touches.size()), 0);
+    int i = 1;
+    for (const auto& t : touches) {
+        lua_createtable(L, 0, 4);
+        lua_pushnumber(L, static_cast<lua_Number>(t.id));
+        lua_setfield(L, -2, "id");
+        lua_pushnumber(L, t.x);
+        lua_setfield(L, -2, "x");
+        lua_pushnumber(L, t.y);
+        lua_setfield(L, -2, "y");
+        lua_pushnumber(L, t.pressure);
+        lua_setfield(L, -2, "pressure");
+        lua_rawseti(L, -2, i++);
+    }
+    return 1;
+}
+
+// crayon.touch.isAvailable() -> true if the device has a touchscreen / touch device
+static int l_touch_is_available(lua_State* L) {
+    int n = 0;
+    SDL_TouchID* devs = SDL_GetTouchDevices(&n);
+    if (devs) SDL_free(devs);
+    lua_pushboolean(L, n > 0);
+    return 1;
+}
+
+// ============================================================================
 // Registration
 // ============================================================================
 
@@ -523,6 +561,16 @@ void register_input_bindings(lua_State* L) {
     lua_pushcfunction(L, l_gamepad_get_count);
     lua_setfield(L, -2, "getCount");
     lua_setfield(L, -2, "gamepad");
+
+    // 4. crayon.touch
+    lua_newtable(L);
+    lua_pushcfunction(L, l_touch_get_count);
+    lua_setfield(L, -2, "getCount");
+    lua_pushcfunction(L, l_touch_get_touches);
+    lua_setfield(L, -2, "getTouches");
+    lua_pushcfunction(L, l_touch_is_available);
+    lua_setfield(L, -2, "isAvailable");
+    lua_setfield(L, -2, "touch");
 
     lua_pop(L, 1); // pop crayon
 }

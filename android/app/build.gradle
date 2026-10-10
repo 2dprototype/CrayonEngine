@@ -1,0 +1,94 @@
+plugins {
+    id 'com.android.application'
+}
+
+// SDL3's Java glue (SDLActivity & friends) is compiled straight from the SDL3
+// source tree that CMakeLists.txt also builds libSDL3.so from, so the Java and
+// native halves can never be out of sync.
+def sdlSrc  = file("${rootDir}/../vendor/sdl3-src")
+def gameDir = file('src/main/assets/game')
+
+android {
+    namespace 'com.crayonengine.player'
+    compileSdk 34
+    ndkVersion '27.1.12297006'          // any NDK r26+ works (needs libc++ with <format>)
+
+    defaultConfig {
+        applicationId 'com.crayonengine.player'   // change this for your own game
+        minSdk 24
+        targetSdk 34
+        versionCode 1
+        versionName '0.0.2'
+
+        ndk {
+            // Add 'armeabi-v7a' / 'x86_64' only after you have built libJolt.a and
+            // libluajit-5.1.a for those ABIs into vendor/android/<abi>/lib/.
+            abiFilters 'arm64-v8a'
+        }
+        externalNativeBuild {
+            cmake {
+                arguments '-DANDROID_STL=c++_shared', '-DANDROID_PLATFORM=android-24'
+            }
+        }
+    }
+
+    externalNativeBuild {
+        cmake {
+            path file('../../CMakeLists.txt')
+            version '3.22.1'
+        }
+    }
+
+    sourceSets {
+        main {
+            java.srcDirs += "${sdlSrc}/android-project/app/src/main/java"
+            assets.srcDirs += layout.buildDirectory.dir('generated/crayon_assets').get().asFile
+        }
+    }
+
+    // By default Android packaging silently drops every file starting with "."
+    // - which would delete game/.crayonproj. Re-allow dotfiles.
+    androidResources {
+        ignoreAssetsPattern '!.svn:!.git:!.ds_store:!*.scc:!CVS:!thumbs.db:!picasa.ini:!*~'
+    }
+
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug   // so `assembleRelease` is installable; use a real key to publish
+        }
+    }
+
+    compileOptions {
+        sourceCompatibility JavaVersion.VERSION_17
+        targetCompatibility JavaVersion.VERSION_17
+    }
+}
+
+// ---------------------------------------------------------------------------
+// Writes assets/crayon_assets.txt: the list of files under assets/game/ plus a
+// content hash. On first launch (and whenever the hash changes) the engine copies
+// the game out of the APK onto real storage - see src/core/android_storage.cpp.
+// ---------------------------------------------------------------------------
+tasks.register('generateCrayonAssetList') {
+    def outDir = layout.buildDirectory.dir('generated/crayon_assets').get().asFile
+    inputs.dir(gameDir)
+    outputs.dir(outDir)
+    doLast {
+        def base  = gameDir.toPath()
+        def files = []
+        gameDir.eachFileRecurse(groovy.io.FileType.FILES) { f ->
+            files << base.relativize(f.toPath()).toString().replace('\\', '/')
+        }
+        files.sort()
+        def md = java.security.MessageDigest.getInstance('SHA-1')
+        files.each { rel ->
+            md.update(rel.getBytes('UTF-8'))
+            md.update(new File(gameDir, rel).bytes)
+        }
+        def stamp = md.digest().encodeHex().toString()
+        outDir.mkdirs()
+        new File(outDir, 'crayon_assets.txt').text = "# stamp:${stamp}\n" + files.join('\n') + '\n'
+    }
+}
+tasks.matching { it.name == 'preBuild' }.configureEach { dependsOn 'generateCrayonAssetList' }

@@ -690,6 +690,40 @@ void LuaRuntime::call_mouse_moved(float x, float y, float dx, float dy) {
     lua_pop(m_L, 1);
 }
 
+static void call_touch_cb(lua_State* L, int err_func, const char* name,
+                          double id, float x, float y, float pressure) {
+    if (get_crayon_func(L, name)) {
+        lua_pushnumber(L, id);
+        lua_pushnumber(L, x);
+        lua_pushnumber(L, y);
+        lua_pushnumber(L, pressure);
+        if (lua_pcall(L, 4, 0, err_func) != 0) {
+            const char* err = lua_tostring(L, -1);
+            CRAYON_LOG_ERROR("Error in crayon.{}():\n{}", name, err ? err : "unknown error");
+            lua_pop(L, 1);
+        }
+    }
+    lua_pop(L, 1);
+}
+
+void LuaRuntime::call_touch_down(double id, float x, float y, float pressure) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    call_touch_cb(m_L, err_func, "touchdown", id, x, y, pressure);
+}
+
+void LuaRuntime::call_touch_moved(double id, float x, float y, float pressure) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    call_touch_cb(m_L, err_func, "touchmoved", id, x, y, pressure);
+}
+
+void LuaRuntime::call_touch_up(double id, float x, float y, float pressure) {
+    if (!m_L) return;
+    int err_func = push_error_handler();
+    call_touch_cb(m_L, err_func, "touchup", id, x, y, pressure);
+}
+
 void LuaRuntime::call_wheel_moved(float dx, float dy) {
     if (!m_L) return;
     int err_func = push_error_handler();

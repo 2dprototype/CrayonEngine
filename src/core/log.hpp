@@ -14,6 +14,10 @@
 #endif
 #endif
 
+#ifdef __ANDROID__
+#include <android/log.h>   // link with the NDK "log" library
+#endif
+
 namespace crayon {
 
 #ifdef _WIN32
@@ -78,6 +82,23 @@ inline void log_message(LogLevel level, const std::string& message) {
     }
 
     if (!s_console_enabled) return;
+
+#ifdef __ANDROID__
+    // Android has no attached terminal: stdout goes nowhere. Send everything to
+    // logcat instead (view with:  adb logcat -s Crayon). No ANSI colour codes.
+    {
+        int prio = ANDROID_LOG_INFO;
+        switch (level) {
+            case LogLevel::Debug: prio = ANDROID_LOG_DEBUG; break;
+            case LogLevel::Info:  prio = ANDROID_LOG_INFO;  break;
+            case LogLevel::Warn:  prio = ANDROID_LOG_WARN;  break;
+            case LogLevel::Error: prio = ANDROID_LOG_ERROR; break;
+            case LogLevel::Raw:   prio = ANDROID_LOG_INFO;  break;
+        }
+        __android_log_write(prio, "Crayon", message.c_str());
+        return;
+    }
+#endif
 
 #ifdef _WIN32
     enable_windows_ansi();

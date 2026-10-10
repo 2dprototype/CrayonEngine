@@ -288,7 +288,11 @@ static int l_crayon_print(lua_State* L) {
     // Colours only when the console is enabled — matches log behaviour.
     // If you don't have is_console_enabled() in your log.hpp yet, just
     // delete these two lines and uncomment the fallback below.
+#ifdef __ANDROID__
+    const bool color = false;                          // logcat does not render ANSI colours
+#else
     const bool color = crayon::is_console_enabled();   // optional
+#endif
     // const bool color = true;                        // fallback
 
     for (int i = 1; i <= n; ++i) {
@@ -300,7 +304,11 @@ static int l_crayon_print(lua_State* L) {
     // Write directly to stdout. No dependency on log_raw / LogLevel::Raw,
     // so this file builds standalone against the current log.hpp.
     if (crayon::is_console_enabled()) {                 // optional
+#ifdef __ANDROID__
+        crayon::log_message(crayon::LogLevel::Raw, out); // -> logcat (stdout is not visible on Android)
+#else
         std::cout << out << '\n';
+#endif
     }
     // If you removed is_console_enabled() above, replace the line above with:
     // std::cout << out << '\n';

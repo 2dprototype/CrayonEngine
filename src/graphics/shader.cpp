@@ -1,5 +1,7 @@
 #include "shader.hpp"
 #include "../core/log.hpp"
+#include "../core/platform.hpp"
+#include "glsl_compat.hpp"
 #include <glm/gtc/type_ptr.hpp>
 #include <fstream>
 #include <sstream>
@@ -16,7 +18,13 @@ Shader::~Shader() {
     }
 }
 
-GLuint Shader::compile_stage(GLenum type, const std::string& source) {
+GLuint Shader::compile_stage(GLenum type, const std::string& raw_source) {
+#if defined(CRAYON_GLES)
+    // Android / GLES 3.0: translate "#version 330 core" -> "#version 300 es" + precision.
+    const std::string source = adapt_glsl_for_gles(raw_source);
+#else
+    const std::string& source = raw_source;
+#endif
     GLuint shader = glCreateShader(type);
     const char* src_ptr = source.c_str();
     glShaderSource(shader, 1, &src_ptr, nullptr);

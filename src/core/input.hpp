@@ -5,6 +5,7 @@
 #include <unordered_set>
 #include <unordered_map>
 #include <functional>
+#include <cstdint>
 #include <string_view>
 #include <SDL3/SDL.h>
 
@@ -67,6 +68,18 @@ public:
     void set_mouse_position(const Window& window, float virt_x, float virt_y);
     void set_mouse_window_position(const Window& window, float win_x, float win_y);
 
+    // Touch (multi-touch). Coordinates are in Virtual Canvas space.
+    // SDL also synthesises mouse events from the first finger, so mouse-only
+    // games already work on a touchscreen; this exposes the real fingers.
+    struct Touch {
+        int64_t id = 0;       // stable for the lifetime of the finger
+        float x = 0.0f;       // virtual-canvas coordinates
+        float y = 0.0f;
+        float pressure = 1.0f;
+    };
+    const std::vector<Touch>& get_touches() const { return m_touches; }
+    int get_touch_count() const { return static_cast<int>(m_touches.size()); }
+
     // Text Input & Clipboard
     void start_text_input(const Window& window);
     void stop_text_input(const Window& window);
@@ -115,6 +128,7 @@ private:
     std::unordered_set<std::string> m_keys_released;
 
     std::string m_text_input;
+    std::vector<Touch> m_touches;   // currently-down fingers (persist across frames)
 
     float m_mouse_win_x = 0.0f;
     float m_mouse_win_y = 0.0f;
