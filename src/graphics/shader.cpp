@@ -1,4 +1,5 @@
 #include "shader.hpp"
+#include "backend.hpp"
 #include "../core/log.hpp"
 #include "../core/platform.hpp"
 #include "glsl_compat.hpp"
@@ -45,6 +46,10 @@ GLuint Shader::compile_stage(GLenum type, const std::string& raw_source) {
 }
 
 bool Shader::load_from_memory(const std::string& vertex_source, const std::string& fragment_source) {
+    if (soft_backend()) {
+        CRAYON_LOG_WARN("Shader compilation skipped: custom GLSL shaders need the OpenGL renderer (software mode)");
+        return false;
+    }
     if (m_program_id != 0) {
         glDeleteProgram(m_program_id);
         m_program_id = 0;

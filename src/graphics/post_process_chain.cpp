@@ -1,4 +1,5 @@
 #include "post_process_chain.hpp"
+#include "backend.hpp"
 #include "../core/log.hpp"
 #include <algorithm>
 
@@ -232,6 +233,12 @@ static void createFboTex(GLuint& fbo, GLuint& tex, int w, int h) {
 bool PostProcessChain::init(int width, int height) {
     m_width = width;
     m_height = height;
+    if (soft_backend()) {
+        // CPU backend: shader effects are GL-only. dither / CRT scanlines / vignette still work
+        // (engine-level CPU post pass); custom shader effects are rejected in pushEffect().
+        m_initialized = true;
+        return true;
+    }
 
     createFboTex(m_pingFbo, m_pingTex, m_width, m_height);
     createFboTex(m_pongFbo, m_pongTex, m_width, m_height);
@@ -260,6 +267,7 @@ void PostProcessChain::shutdown() {
 
 void PostProcessChain::resize(int width, int height) {
     if (width == m_width && height == m_height) return;
+    if (soft_backend()) { m_width = width; m_height = height; return; }
     m_width = width;
     m_height = height;
 
@@ -332,6 +340,10 @@ std::shared_ptr<Shader> PostProcessChain::getOrCreateShader(const std::string& n
 }
 
 bool PostProcessChain::pushEffect(const std::string& nameOrBuiltin) {
+    if (soft_backend()) {
+        CRAYON_LOG_WARN("PostProcessChain: effect '{}' needs the OpenGL renderer (ignored in software mode)", nameOrBuiltin);
+        return false;
+    }
     auto shader = getOrCreateShader(nameOrBuiltin);
     if (!shader) {
         CRAYON_LOG_WARN("PostProcessChain: Unknown built-in effect '{}'", nameOrBuiltin);
@@ -345,6 +357,10 @@ bool PostProcessChain::pushEffect(const std::string& nameOrBuiltin) {
 }
 
 bool PostProcessChain::pushEffect(std::shared_ptr<Shader> customShader, const std::string& name) {
+    if (soft_backend()) {
+        CRAYON_LOG_WARN("PostProcessChain: custom shader effect '{}' needs the OpenGL renderer (ignored in software mode)", name);
+        return false;
+    }
     if (!customShader) return false;
     PostEffectPass pass;
     pass.name = name;
@@ -394,6 +410,7 @@ void PostProcessChain::setEffectUniform(const std::string& name, int val) {
 }
 
 GLuint PostProcessChain::process(GLuint inputTexture, int width, int height, float time) {
+    if (soft_backend()) return inputTexture;
     if (m_effects.empty()) {
         return inputTexture;
     }

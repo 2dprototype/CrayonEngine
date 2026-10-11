@@ -54,8 +54,22 @@ public:
     Window();
     ~Window();
 
+    // Picks the renderer (see graphics/backend.hpp): OpenGL when a usable GPU context exists,
+    // otherwise the CPU rasterizer (window surface). Honors --renderer / CRAYON_RENDERER /
+    // crayon.config. In Auto mode a software-GL driver (llvmpipe, GDI Generic, ...) is treated as
+    // "no GPU" and switched to the faster built-in rasterizer.
     bool init(const WindowCreateInfo& info);
     void shutdown();
+
+    // Software backend: scale the CPU framebuffer (RGBA8, row 0 = top) into the letterboxed
+    // viewport of the window surface and present it.
+    void present_soft(const uint32_t* rgba, int width, int height);
+
+    // GL_RENDERER string, and whether it is a CPU/software GL implementation (llvmpipe, softpipe,
+    // SwiftShader, Windows GDI Generic ...). True means there is effectively no GPU: scripts and
+    // the engine should pick a low-cost preset (small virtual resolution, cheap effects).
+    const std::string& get_gl_renderer_name() const { return m_gl_renderer_name; }
+    bool is_software_renderer() const { return m_software_gl; }
 
     // Virtual Resolution
     void set_resolution(int w, int h);
@@ -173,7 +187,11 @@ private:
     int m_virtual_h = 240;
 
     bool m_fullscreen = false;
+    bool init_impl(const WindowCreateInfo& info, bool use_gl);
+    bool m_use_gl = true;
     bool m_vsync = true;
+    std::string m_gl_renderer_name;
+    bool m_software_gl = false;
     bool m_should_close = false;
     bool m_transparent = false;
     bool m_click_through = false;

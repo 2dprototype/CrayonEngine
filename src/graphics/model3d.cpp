@@ -1,6 +1,7 @@
 #include "model3d.hpp"
 #include "mesh3d.hpp"
 #include "texture.hpp"
+#include "mesh_optimize.hpp"
 #include "default_shaders.hpp"
 #include "../core/log.hpp"
 
@@ -592,6 +593,7 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
                 }
                 gpu_mesh->create_skinned_from_data(skinned_verts, indices);
             } else {
+                mesh_opt::reorder_for_cache(vertices, indices);
                 gpu_mesh->create_from_data(vertices, indices);
             }
 
@@ -604,6 +606,7 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
             part.name = m_nodes[node_idx].name + "_part" + std::to_string(p);
             part.min_bounds = part_min;
             part.max_bounds = part_max;
+            part.bounds_valid = true;
             part.cpu_vertices = std::move(vertices);
             part.cpu_indices = std::move(indices);
 
@@ -733,6 +736,9 @@ bool Model3D::load_from_obj(const std::string& filepath) {
 
         if (vertices.empty()) continue;
 
+        // 3 fresh vertices per triangle were emitted above: weld + cache-order them.
+        mesh_opt::optimize(vertices, indices);
+
         auto gpu_mesh = std::make_shared<Mesh3D>();
         gpu_mesh->create_from_data(vertices, indices);
 
@@ -743,6 +749,7 @@ bool Model3D::load_from_obj(const std::string& filepath) {
         part.name = shape.name.empty() ? ("shape_" + std::to_string(s)) : shape.name;
         part.min_bounds = part_min;
         part.max_bounds = part_max;
+        part.bounds_valid = true;
         part.cpu_vertices = std::move(vertices);
         part.cpu_indices = std::move(indices);
 
@@ -850,9 +857,10 @@ void Model3D::compute_bounds() {
 void Model3D::draw(MeshRenderer3D& renderer, const glm::mat4& world_transform, GLuint override_texture) const {
     for (const auto& part : m_parts) {
         if (!part.mesh) continue;
-        glm::mat4 final_tf = world_transform * part.transform;
         GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
-        renderer.draw_mesh(*part.mesh, world_transform * part.transform, tex, part.color);
+        const bool cull = part.bounds_valid && !part.is_skinned;
+        renderer.draw_mesh(*part.mesh, world_transform * part.transform, tex, part.color,
+                           cull ? &part.min_bounds : nullptr, cull ? &part.max_bounds : nullptr);
     }
 }
 
@@ -884,7 +892,9 @@ void Model3D::draw_part(MeshRenderer3D& renderer, int part_index, const glm::mat
 
     glm::mat4 final_tf = world_transform * part.transform;
     GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
-    renderer.draw_mesh(*part.mesh, final_tf, tex, part.color);
+    const bool cull = part.bounds_valid && !part.is_skinned;
+    renderer.draw_mesh(*part.mesh, final_tf, tex, part.color,
+                       cull ? &part.min_bounds : nullptr, cull ? &part.max_bounds : nullptr);
 }
 
 const ModelNode* Model3D::get_node(size_t index) const {

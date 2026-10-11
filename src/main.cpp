@@ -3,6 +3,8 @@
 #include "core/log.hpp"
 #include "core/platform.hpp"
 #include <iostream>
+#include <cstdlib>
+#include "graphics/backend.hpp"
 #include <string>
 #include <filesystem>
 
@@ -23,6 +25,8 @@ static void print_help() {
               << "  --game, -g <path>                 Specify entry script path or project folder\n"
               << "  --window <width>x<height>         Override physical window resolution (e.g. 1280x720)\n"
               << "  --res <width>x<height>            Override virtual canvas resolution (e.g. 320x240)\n"
+              << "  --renderer <auto|gl|soft>         Renderer: GPU (gl), CPU rasterizer (soft) or auto (default).\n"
+              << "                                    Also CRAYON_RENDERER env var / graphics.renderer in crayon.config\n"
               << "  --version, -v                     Display version information\n"
               << "  --help, -h                        Display this help message\n";
 }
@@ -33,6 +37,7 @@ int main(int argc, char* argv[]) {
     int win_h = 0;
     int virt_w = 0;
     int virt_h = 0;
+    bool renderer_from_cli = false;
 
     for (int i = 1; i < argc; ++i) {
         std::string arg = argv[i];
@@ -42,6 +47,12 @@ int main(int argc, char* argv[]) {
         } else if (arg == "--version" || arg == "-v") {
             std::cout << "Crayon Engine version 0.0.2\n";
             return 0;
+        } else if (arg == "--renderer" && i + 1 < argc) {
+            crayon::set_requested_renderer(crayon::parse_renderer_request(argv[++i]));
+            renderer_from_cli = true;
+        } else if (arg.rfind("--renderer=", 0) == 0) {
+            crayon::set_requested_renderer(crayon::parse_renderer_request(arg.substr(11)));
+            renderer_from_cli = true;
         } else if ((arg == "--game" || arg == "-g") && i + 1 < argc) {
             target_input = argv[++i];
         } else if (arg == "--res" && i + 1 < argc) {
@@ -172,6 +183,14 @@ int main(int argc, char* argv[]) {
     } else {
         CRAYON_LOG_INFO("Starting Crayon Engine with no script");
     }
+
+    if (!renderer_from_cli) {
+        if (const char* env = std::getenv("CRAYON_RENDERER")) {
+            crayon::set_requested_renderer(crayon::parse_renderer_request(env));
+            renderer_from_cli = true; // env wins over crayon.config as well
+        }
+    }
+    crayon::set_renderer_locked(renderer_from_cli);
 
     crayon::Engine engine;
     engine.set_game_script_path(script_path);

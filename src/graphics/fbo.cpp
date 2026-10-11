@@ -1,4 +1,5 @@
 #include "fbo.hpp"
+#include "backend.hpp"
 #include "../core/log.hpp"
 
 namespace crayon {
@@ -13,6 +14,7 @@ bool FBO::init(int width, int height) {
     shutdown(); // re-init must not leak the previous GL objects
     m_width = width;
     m_height = height;
+    if (soft_backend()) return true; // CPU backend renders into soft::framebuffer() instead
 
     glGenFramebuffers(1, &m_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);

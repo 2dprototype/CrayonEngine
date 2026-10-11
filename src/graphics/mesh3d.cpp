@@ -1,6 +1,7 @@
 #include "mesh3d.hpp"
 #include "model3d.hpp"
 #include "default_shaders.hpp"
+#include "mesh_optimize.hpp"
 #include "../core/log.hpp"
 
 #if defined(__GNUC__) || defined(__clang__)
@@ -18,10 +19,34 @@
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/type_ptr.hpp>
+#include <algorithm>
 #include <cmath>
 #include <cstdint>
+#include <cstring>
 
 namespace crayon {
+
+// Uploads the element buffer as 16-bit indices when the mesh has fewer than 65536
+// vertices (almost every game asset) and as 32-bit otherwise. Half the index
+// bandwidth and a better fit for the GPU's vertex-fetch hardware.
+static void upload_index_buffer(GLuint& ebo, const std::vector<GLuint>& indices, size_t vertex_count,
+                                GLenum& type, size_t& type_size) {
+    type = GL_UNSIGNED_INT;
+    type_size = sizeof(GLuint);
+    if (indices.empty()) return;
+    glGenBuffers(1, &ebo);
+    glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, ebo);
+    if (vertex_count <= 65535) {
+        std::vector<uint16_t> small(indices.size());
+        for (size_t i = 0; i < indices.size(); ++i) small[i] = static_cast<uint16_t>(indices[i]);
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, small.size() * sizeof(uint16_t), small.data(), GL_STATIC_DRAW);
+        type = GL_UNSIGNED_SHORT;
+        type_size = sizeof(uint16_t);
+    } else {
+        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
+    }
+}
 
 Mesh3D::Mesh3D() = default;
 
@@ -41,6 +66,17 @@ Mesh3D::~Mesh3D() {
 }
 
 void Mesh3D::create_from_data(const std::vector<Vertex3D>& vertices, const std::vector<GLuint>& indices) {
+    if (soft_backend()) {
+        // CPU backend: no GL objects, the mesh simply lives in memory.
+        m_cpu_vertices = vertices;
+        m_cpu_indices = indices;
+        m_cpu_skinned.clear();
+        m_vertex_count = static_cast<GLsizei>(vertices.size());
+        m_index_count = static_cast<GLsizei>(indices.size());
+        m_is_skinned = false;
+        m_submeshes.clear();
+        return;
+    }
     if (m_vao) {
         glDeleteVertexArrays(1, &m_vao);
         glDeleteBuffers(1, &m_vbo);
@@ -60,11 +96,7 @@ void Mesh3D::create_from_data(const std::vector<Vertex3D>& vertices, const std::
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(Vertex3D), vertices.data(), GL_STATIC_DRAW);
 
-    if (!indices.empty()) {
-        glGenBuffers(1, &m_ebo);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
-    }
+    upload_index_buffer(m_ebo, indices, vertices.size(), m_index_type, m_index_size);
 
     // 0: Position (vec3)
     glEnableVertexAttribArray(0);
@@ -86,6 +118,16 @@ void Mesh3D::create_from_data(const std::vector<Vertex3D>& vertices, const std::
 }
 
 void Mesh3D::create_skinned_from_data(const std::vector<SkinnedVertex3D>& vertices, const std::vector<GLuint>& indices) {
+    if (soft_backend()) {
+        m_cpu_skinned = vertices;
+        m_cpu_indices = indices;
+        m_cpu_vertices.clear();
+        m_vertex_count = static_cast<GLsizei>(vertices.size());
+        m_index_count = static_cast<GLsizei>(indices.size());
+        m_is_skinned = true;
+        m_submeshes.clear();
+        return;
+    }
     if (m_vao) {
         glDeleteVertexArrays(1, &m_vao);
         glDeleteBuffers(1, &m_vbo);
@@ -105,11 +147,7 @@ void Mesh3D::create_skinned_from_data(const std::vector<SkinnedVertex3D>& vertic
     glBindBuffer(GL_ARRAY_BUFFER, m_vbo);
     glBufferData(GL_ARRAY_BUFFER, vertices.size() * sizeof(SkinnedVertex3D), vertices.data(), GL_STATIC_DRAW);
 
-    if (!indices.empty()) {
-        glGenBuffers(1, &m_ebo);
-        glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, m_ebo);
-        glBufferData(GL_ELEMENT_ARRAY_BUFFER, indices.size() * sizeof(GLuint), indices.data(), GL_STATIC_DRAW);
-    }
+    upload_index_buffer(m_ebo, indices, vertices.size(), m_index_type, m_index_size);
 
     // 0: Position (vec3)
     glEnableVertexAttribArray(0);
@@ -236,8 +274,12 @@ bool Mesh3D::load_from_obj(const std::string& filepath) {
         }
     }
 
+    // The loop above emits 3 fresh vertices per triangle. Weld identical ones and reorder for
+    // the GPU's post-transform cache (typically 4-6x fewer vertices to process).
+    const size_t raw_vertex_count = vertices.size();
+    mesh_opt::optimize(vertices, indices);
     create_from_data(vertices, indices);
-    CRAYON_LOG_INFO("Loaded OBJ model {}: {} vertices, {} indices", filepath, m_vertex_count, m_index_count);
+    CRAYON_LOG_INFO("Loaded OBJ model {}: {} vertices (welded from {}), {} indices", filepath, m_vertex_count, raw_vertex_count, m_index_count);
     return true;
 }
 
@@ -318,11 +360,11 @@ void Mesh3D::draw() const {
             if (sm.texture_id != 0) {
                 glBindTexture(GL_TEXTURE_2D, sm.texture_id);
             }
-            glDrawElements(GL_TRIANGLES, sm.index_count, GL_UNSIGNED_INT,
-                           reinterpret_cast<void*>(static_cast<uintptr_t>(sm.index_offset * sizeof(GLuint))));
+            glDrawElements(GL_TRIANGLES, sm.index_count, m_index_type,
+                           reinterpret_cast<void*>(static_cast<uintptr_t>(sm.index_offset * m_index_size)));
         }
     } else if (m_index_count > 0) {
-        glDrawElements(GL_TRIANGLES, m_index_count, GL_UNSIGNED_INT, nullptr);
+        glDrawElements(GL_TRIANGLES, m_index_count, m_index_type, nullptr);
     } else {
         glDrawArrays(GL_TRIANGLES, 0, m_vertex_count);
     }
@@ -782,9 +824,42 @@ MeshRenderer3D::~MeshRenderer3D() {
 }
 
 bool MeshRenderer3D::init() {
+    if (soft_backend()) {
+        m_checker_texture = Texture::create_checker();
+        m_white_texture = Texture::create_white();
+        m_prim_cube = Mesh3D::create_cube(1.0f);
+        m_prim_plane = Mesh3D::create_plane(1.0f, 1.0f, 1);
+        m_prim_sphere = Mesh3D::create_sphere(0.5f, 16, 16);
+        m_prim_cylinder = Mesh3D::create_cylinder(0.5f, 1.0f, 16);
+        m_prim_cone = Mesh3D::create_cone(0.5f, 1.0f, 16);
+        m_prim_pyramid = Mesh3D::create_pyramid(1.0f, 1.0f);
+        m_prim_torus = Mesh3D::create_torus(0.8f, 0.25f, 16, 12);
+        m_prim_capsule = Mesh3D::create_capsule(0.4f, 0.8f, 8, 12);
+        CRAYON_LOG_INFO("MeshRenderer3D initialized (software rasterizer)");
+        return true;
+    }
     m_shader = std::make_unique<Shader>();
     if (!m_shader->load_from_memory(SHADER_3D_VS, SHADER_3D_FS)) {
         CRAYON_LOG_ERROR("Failed to compile 3D Retro Mesh Shader");
+        return false;
+    }
+
+    // Bone palette size: 128 where the GPU allows it, fewer on GLES parts with small
+    // vertex-uniform budgets (GLES 3.0 only guarantees 256 vec4s).
+    {
+        GLint vectors = 0;
+#if defined(CRAYON_GLES)
+        glGetIntegerv(GL_MAX_VERTEX_UNIFORM_VECTORS, &vectors);
+#else
+        GLint comps = 0;
+        glGetIntegerv(GL_MAX_VERTEX_UNIFORM_COMPONENTS, &comps);
+        vectors = comps / 4;
+#endif
+        int avail = (vectors > 0) ? (vectors - 32) / 4 : 56;
+        m_max_bones = std::clamp(avail, 32, 128);
+    }
+    if (!init_mesh_prog(m_prog_static, false) || !init_mesh_prog(m_prog_skinned, true)) {
+        CRAYON_LOG_ERROR("Failed to compile optimized 3D mesh programs");
         return false;
     }
 
@@ -852,16 +927,24 @@ void MeshRenderer3D::shutdown() {
     m_checker_texture.reset();
     m_white_texture.reset();
     m_shader.reset();
+    m_prog_static.shader.reset();
+    m_prog_skinned.shader.reset();
 }
 
 void MeshRenderer3D::begin(const Camera& camera, float aspect) {
-    glEnable(GL_DEPTH_TEST);
-    glDepthFunc(GL_LEQUAL);
-    glDisable(GL_BLEND);
+    if (!soft_backend()) {
+        glEnable(GL_DEPTH_TEST);
+        glDepthFunc(GL_LEQUAL);
+        glDisable(GL_BLEND);
+    }
 
     m_view = camera.get_view_matrix();
     m_proj = camera.get_projection_matrix(aspect);
+    m_viewproj = m_proj * m_view;
     m_cam_position = camera.get_position();
+    ++m_frame_version;
+    m_culled_draws = 0;
+    if (soft_backend()) soft::framebuffer().begin(m_view, m_proj, m_cam_position);
 
     m_current_matrix = glm::mat4(1.0f);
     while (!m_matrix_stack.empty()) {
@@ -870,7 +953,9 @@ void MeshRenderer3D::begin(const Camera& camera, float aspect) {
 }
 
 void MeshRenderer3D::end() {
+    if (soft_backend()) return;
     glDisable(GL_DEPTH_TEST);
+    glUseProgram(0); // draw_mesh() leaves its program bound between draws
 }
 
 void MeshRenderer3D::push_matrix() {
@@ -910,6 +995,7 @@ void MeshRenderer3D::set_directional_light(const glm::vec3& dir, const glm::vec3
     m_light_dir = glm::normalize(dir);
     m_light_color = color;
     m_ambient_color = ambient;
+    ++m_frame_version;
 }
 
 void MeshRenderer3D::set_point_light(int index, const glm::vec3& pos, const glm::vec3& color, float radius, float intensity) {
@@ -919,12 +1005,14 @@ void MeshRenderer3D::set_point_light(int index, const glm::vec3& pos, const glm:
         m_point_lights[index].radius = radius;
         m_point_lights[index].intensity = intensity;
         m_point_lights[index].enabled = true;
+        ++m_frame_version;
     }
 }
 
 void MeshRenderer3D::set_point_light_enabled(int index, bool enabled) {
     if (index >= 0 && index < 4) {
         m_point_lights[index].enabled = enabled;
+        ++m_frame_version;
     }
 }
 
@@ -938,12 +1026,14 @@ void MeshRenderer3D::set_spot_light(int index, const glm::vec3& pos, const glm::
         m_spot_lights[index].inner_cutoff_cos = std::cos(glm::radians(inner_angle_deg));
         m_spot_lights[index].outer_cutoff_cos = std::cos(glm::radians(outer_angle_deg));
         m_spot_lights[index].enabled = true;
+        ++m_frame_version;
     }
 }
 
 void MeshRenderer3D::set_spot_light_enabled(int index, bool enabled) {
     if (index >= 0 && index < 2) {
         m_spot_lights[index].enabled = enabled;
+        ++m_frame_version;
     }
 }
 
@@ -959,151 +1049,169 @@ static const char* const kSpotLightNames[2][7] = {
     {"u_spot_lights[1].pos","u_spot_lights[1].dir","u_spot_lights[1].color","u_spot_lights[1].radius","u_spot_lights[1].intensity","u_spot_lights[1].inner_cutoff","u_spot_lights[1].outer_cutoff"},
 };
 
-void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id, const glm::vec4& tint) {
-    glm::mat4 final_model = m_current_matrix * model;
+// ---------------------------------------------------------------------------
+// Optimized mesh path
+// ---------------------------------------------------------------------------
+// Prepends #defines right after the #version line.
+static std::string with_defines(const char* src, const std::string& defines) {
+    std::string s(src);
+    size_t nl = s.find('\n');
+    if (nl == std::string::npos) return s;
+    s.insert(nl + 1, defines);
+    return s;
+}
 
-    m_shader->bind();
-    m_shader->set_mat4("u_model", final_model);
-    m_shader->set_mat4("u_view", m_view);
-    m_shader->set_mat4("u_proj", m_proj);
-    m_shader->set_int("u_is_skinned", 0);
+bool MeshRenderer3D::init_mesh_prog(MeshProgState& st, bool skinned) {
+    std::string defs = "#define NORMALMAT 1\n";
+    if (skinned) {
+        defs += "#define SKINNED 1\n#define MAX_BONES " + std::to_string(m_max_bones) + "\n";
+    }
+    st.shader = std::make_unique<Shader>();
+    if (!st.shader->load_from_memory(with_defines(SHADER_3D_VS, defs), SHADER_3D_FS)) {
+        st.shader.reset();
+        return false;
+    }
+    st.loc_model = st.shader->get_uniform_location("u_model");
+    st.loc_normal = st.shader->get_uniform_location("u_normal_mat");
+    st.loc_color = st.shader->get_uniform_location("u_color");
+    st.loc_bones = st.shader->get_uniform_location("u_bone_matrices");
+    st.uploaded_version = ~0ull;
+    return true;
+}
 
-    // Retro Jitter & Affine
-    m_shader->set_int("u_jitter_enabled", m_retro.jitter_enabled ? 1 : 0);
-    m_shader->set_vec2("u_jitter_res", m_retro.jitter_resolution);
-    m_shader->set_float("u_affine_blend", m_retro.affine_blend);
+static bool retro_uniforms_equal(const RetroEffects& a, const RetroEffects& b) {
+    return a.jitter_enabled == b.jitter_enabled && a.jitter_resolution == b.jitter_resolution &&
+           a.affine_blend == b.affine_blend && a.fog_enabled == b.fog_enabled &&
+           a.fog_start == b.fog_start && a.fog_end == b.fog_end && a.fog_color == b.fog_color;
+}
 
-    // Lighting
-    m_shader->set_vec3("u_light_dir", m_light_dir);
-    m_shader->set_vec3("u_light_color", m_light_color);
-    m_shader->set_vec3("u_ambient_color", m_ambient_color);
+// Uploads everything that is constant for a whole frame (camera, lights, fog, retro). The
+// old code re-sent all of this on every single draw call.
+void MeshRenderer3D::upload_frame_uniforms(MeshProgState& st) {
+    if (st.uploaded_version == m_frame_version && st.uploaded_shading == m_shading_mode &&
+        retro_uniforms_equal(st.uploaded_retro, m_retro)) {
+        return;
+    }
+    Shader& sh = *st.shader;
+    sh.set_mat4("u_view", m_view);
+    sh.set_mat4("u_proj", m_proj);
+    sh.set_int("u_texture", 0);
 
-    // Shading mode
-    m_shader->set_int("u_shading_mode", static_cast<int>(m_shading_mode));
+    sh.set_int("u_jitter_enabled", m_retro.jitter_enabled ? 1 : 0);
+    sh.set_vec2("u_jitter_res", m_retro.jitter_resolution);
+    sh.set_float("u_affine_blend", m_retro.affine_blend);
 
-    // Point lights
+    sh.set_vec3("u_light_dir", m_light_dir);
+    sh.set_vec3("u_light_color", m_light_color);
+    sh.set_vec3("u_ambient_color", m_ambient_color);
+    sh.set_int("u_shading_mode", static_cast<int>(m_shading_mode));
+
     int num_lights = 0;
     for (int i = 0; i < 4; ++i) {
-        if (m_point_lights[i].enabled) {
-            const auto& nm = kPointLightNames[num_lights];
-            m_shader->set_vec3(nm[0], m_point_lights[i].pos);
-            m_shader->set_vec3(nm[1], m_point_lights[i].color);
-            m_shader->set_float(nm[2], m_point_lights[i].radius);
-            m_shader->set_float(nm[3], m_point_lights[i].intensity);
-            num_lights++;
-        }
+        if (!m_point_lights[i].enabled) continue;
+        const auto& nm = kPointLightNames[num_lights];
+        sh.set_vec3(nm[0], m_point_lights[i].pos);
+        sh.set_vec3(nm[1], m_point_lights[i].color);
+        sh.set_float(nm[2], m_point_lights[i].radius);
+        sh.set_float(nm[3], m_point_lights[i].intensity);
+        num_lights++;
     }
-    m_shader->set_int("u_num_point_lights", num_lights);
+    sh.set_int("u_num_point_lights", num_lights);
 
-    // Spot lights
     int num_spot_lights = 0;
     for (int i = 0; i < 2; ++i) {
-        if (m_spot_lights[i].enabled) {
-            const auto& nm = kSpotLightNames[num_spot_lights];
-            m_shader->set_vec3(nm[0], m_spot_lights[i].pos);
-            m_shader->set_vec3(nm[1], m_spot_lights[i].dir);
-            m_shader->set_vec3(nm[2], m_spot_lights[i].color);
-            m_shader->set_float(nm[3], m_spot_lights[i].radius);
-            m_shader->set_float(nm[4], m_spot_lights[i].intensity);
-            m_shader->set_float(nm[5], m_spot_lights[i].inner_cutoff_cos);
-            m_shader->set_float(nm[6], m_spot_lights[i].outer_cutoff_cos);
-            num_spot_lights++;
-        }
+        if (!m_spot_lights[i].enabled) continue;
+        const auto& nm = kSpotLightNames[num_spot_lights];
+        sh.set_vec3(nm[0], m_spot_lights[i].pos);
+        sh.set_vec3(nm[1], m_spot_lights[i].dir);
+        sh.set_vec3(nm[2], m_spot_lights[i].color);
+        sh.set_float(nm[3], m_spot_lights[i].radius);
+        sh.set_float(nm[4], m_spot_lights[i].intensity);
+        sh.set_float(nm[5], m_spot_lights[i].inner_cutoff_cos);
+        sh.set_float(nm[6], m_spot_lights[i].outer_cutoff_cos);
+        num_spot_lights++;
     }
-    m_shader->set_int("u_num_spot_lights", num_spot_lights);
+    sh.set_int("u_num_spot_lights", num_spot_lights);
 
-    // Distance Fog
-    m_shader->set_int("u_fog_enabled", m_retro.fog_enabled ? 1 : 0);
-    m_shader->set_float("u_fog_start", m_retro.fog_start);
-    m_shader->set_float("u_fog_end", m_retro.fog_end);
-    m_shader->set_vec3("u_fog_color", m_retro.fog_color);
+    sh.set_int("u_fog_enabled", m_retro.fog_enabled ? 1 : 0);
+    sh.set_float("u_fog_start", m_retro.fog_start);
+    sh.set_float("u_fog_end", m_retro.fog_end);
+    sh.set_vec3("u_fog_color", m_retro.fog_color);
 
-    // Tint
-    m_shader->set_vec4("u_color", tint);
+    st.uploaded_version = m_frame_version;
+    st.uploaded_shading = m_shading_mode;
+    st.uploaded_retro = m_retro;
+}
 
-    // Texture
-    m_shader->set_int("u_texture", 0);
+bool MeshRenderer3D::aabb_visible(const glm::vec3& mn, const glm::vec3& mx, const glm::mat4& model) const {
+    const glm::mat4 mvp = m_viewproj * model;
+    unsigned all = 0x3F;
+    for (int i = 0; i < 8; ++i) {
+        glm::vec4 p(i & 1 ? mx.x : mn.x, i & 2 ? mx.y : mn.y, i & 4 ? mx.z : mn.z, 1.0f);
+        glm::vec4 c = mvp * p;
+        unsigned oc = (c.x < -c.w) | ((c.x > c.w) << 1) | ((c.y < -c.w) << 2) |
+                      ((c.y > c.w) << 3) | ((c.z < -c.w) << 4) | ((c.z > c.w) << 5);
+        all &= oc;
+        if (!all) return true; // some corner pair straddles every plane -> may be visible
+    }
+    return all == 0;
+}
+
+void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id, const glm::vec4& tint,
+                               const glm::vec3* bounds_min, const glm::vec3* bounds_max) {
+    glm::mat4 final_model = m_current_matrix * model;
+
+    if (bounds_min && bounds_max && !aabb_visible(*bounds_min, *bounds_max, final_model)) {
+        ++m_culled_draws;
+        return;
+    }
+
+    if (soft_backend()) {
+        soft_draw_mesh(mesh, final_model, texture_id != 0 ? texture_id : m_checker_texture->get_id(), tint);
+        return;
+    }
+
+    MeshProgState& st = m_prog_static;
+    st.shader->bind();
+    upload_frame_uniforms(st);
+
+    glUniformMatrix4fv(st.loc_model, 1, GL_FALSE, glm::value_ptr(final_model));
+    const glm::mat3 normal_mat = glm::transpose(glm::inverse(glm::mat3(final_model))); // once per draw, not per vertex
+    glUniformMatrix3fv(st.loc_normal, 1, GL_FALSE, glm::value_ptr(normal_mat));
+    glUniform4fv(st.loc_color, 1, glm::value_ptr(tint));
+
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture_id != 0 ? texture_id : m_checker_texture->get_id());
 
     mesh.draw();
-
-    m_shader->unbind();
 }
 
 void MeshRenderer3D::draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model, const glm::mat4* bone_matrices, size_t bone_count, GLuint texture_id, const glm::vec4& tint) {
     glm::mat4 final_model = m_current_matrix * model;
 
-    m_shader->bind();
-    m_shader->set_mat4("u_model", final_model);
-    m_shader->set_mat4("u_view", m_view);
-    m_shader->set_mat4("u_proj", m_proj);
-    m_shader->set_int("u_is_skinned", 1);
-    if (bone_matrices && bone_count > 0) {
-        m_shader->set_mat4_array("u_bone_matrices", bone_matrices, static_cast<GLsizei>(std::min(bone_count, size_t(128))));
+    if (soft_backend()) {
+        soft_draw_mesh_skinned(mesh, final_model, bone_matrices, bone_count,
+                               texture_id != 0 ? texture_id : m_checker_texture->get_id(), tint);
+        return;
     }
 
-    // Retro Jitter & Affine
-    m_shader->set_int("u_jitter_enabled", m_retro.jitter_enabled ? 1 : 0);
-    m_shader->set_vec2("u_jitter_res", m_retro.jitter_resolution);
-    m_shader->set_float("u_affine_blend", m_retro.affine_blend);
+    MeshProgState& st = m_prog_skinned;
+    st.shader->bind();
+    upload_frame_uniforms(st);
 
-    // Lighting
-    m_shader->set_vec3("u_light_dir", m_light_dir);
-    m_shader->set_vec3("u_light_color", m_light_color);
-    m_shader->set_vec3("u_ambient_color", m_ambient_color);
-
-    // Shading mode
-    m_shader->set_int("u_shading_mode", static_cast<int>(m_shading_mode));
-
-    // Point lights
-    int num_lights = 0;
-    for (int i = 0; i < 4; ++i) {
-        if (m_point_lights[i].enabled) {
-            const auto& nm = kPointLightNames[num_lights];
-            m_shader->set_vec3(nm[0], m_point_lights[i].pos);
-            m_shader->set_vec3(nm[1], m_point_lights[i].color);
-            m_shader->set_float(nm[2], m_point_lights[i].radius);
-            m_shader->set_float(nm[3], m_point_lights[i].intensity);
-            num_lights++;
-        }
+    glUniformMatrix4fv(st.loc_model, 1, GL_FALSE, glm::value_ptr(final_model));
+    const glm::mat3 normal_mat = glm::transpose(glm::inverse(glm::mat3(final_model)));
+    glUniformMatrix3fv(st.loc_normal, 1, GL_FALSE, glm::value_ptr(normal_mat));
+    glUniform4fv(st.loc_color, 1, glm::value_ptr(tint));
+    if (bone_matrices && bone_count > 0 && st.loc_bones != -1) {
+        glUniformMatrix4fv(st.loc_bones, static_cast<GLsizei>(std::min(bone_count, static_cast<size_t>(m_max_bones))),
+                           GL_FALSE, glm::value_ptr(bone_matrices[0]));
     }
-    m_shader->set_int("u_num_point_lights", num_lights);
 
-    // Spot lights
-    int num_spot_lights = 0;
-    for (int i = 0; i < 2; ++i) {
-        if (m_spot_lights[i].enabled) {
-            const auto& nm = kSpotLightNames[num_spot_lights];
-            m_shader->set_vec3(nm[0], m_spot_lights[i].pos);
-            m_shader->set_vec3(nm[1], m_spot_lights[i].dir);
-            m_shader->set_vec3(nm[2], m_spot_lights[i].color);
-            m_shader->set_float(nm[3], m_spot_lights[i].radius);
-            m_shader->set_float(nm[4], m_spot_lights[i].intensity);
-            m_shader->set_float(nm[5], m_spot_lights[i].inner_cutoff_cos);
-            m_shader->set_float(nm[6], m_spot_lights[i].outer_cutoff_cos);
-            num_spot_lights++;
-        }
-    }
-    m_shader->set_int("u_num_spot_lights", num_spot_lights);
-
-    // Distance Fog
-    m_shader->set_int("u_fog_enabled", m_retro.fog_enabled ? 1 : 0);
-    m_shader->set_float("u_fog_start", m_retro.fog_start);
-    m_shader->set_float("u_fog_end", m_retro.fog_end);
-    m_shader->set_vec3("u_fog_color", m_retro.fog_color);
-
-    // Tint
-    m_shader->set_vec4("u_color", tint);
-
-    // Texture
-    m_shader->set_int("u_texture", 0);
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture_id != 0 ? texture_id : m_checker_texture->get_id());
 
     mesh.draw();
-
-    m_shader->unbind();
 }
 
 void MeshRenderer3D::draw_model(const Model3D& model, const glm::mat4& transform, GLuint override_texture) {
@@ -1191,6 +1299,8 @@ void MeshRenderer3D::draw_billboard(GLuint texture_id, const glm::vec3& position
         { p3, norm, {u0, v0}, color }
     };
 
+    if (soft_backend()) { soft_draw_billboard(texture_id, quad); return; }
+
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
 
@@ -1227,6 +1337,8 @@ void MeshRenderer3D::draw_line_3d(const glm::vec3& p1, const glm::vec3& p2, cons
         { p2, {0, 1, 0}, {1, 1}, color }
     };
 
+    if (soft_backend()) { soft_draw_lines(line, 2, m_current_matrix); return; }
+
     m_shader->bind();
     m_shader->set_vec4("u_color", glm::vec4(1.0f));
     m_shader->set_mat4("u_model", m_current_matrix);
@@ -1256,6 +1368,7 @@ void MeshRenderer3D::draw_line_3d(const glm::vec3& p1, const glm::vec3& p2, cons
 
 void MeshRenderer3D::draw_lines_3d_batched(const Vertex3D* vertices, size_t count) {
     if (!vertices || count < 2) return;
+    if (soft_backend()) { soft_draw_lines(vertices, count, glm::mat4(1.0f)); return; }
 
     m_shader->bind();
     m_shader->set_vec4("u_color", glm::vec4(1.0f));
@@ -1461,6 +1574,7 @@ void MeshRenderer3D::draw_lines_3d(const std::vector<glm::vec3>& points, const g
 
 void MeshRenderer3D::draw_grid_3d(float size, int divisions, float y_level, const glm::vec4& color) {
     if (divisions < 1) divisions = 10;
+    if (soft_backend()) { soft_draw_grid(size, divisions, y_level, color); return; }
     
     // Per-instance cache (was function-static: shared by every renderer, leaked on
     // shutdown, and ignored the colour so changing it never changed the grid).
@@ -1544,6 +1658,8 @@ void MeshRenderer3D::draw_triangle_3d(const glm::vec3& p1, const glm::vec3& p2, 
         { p3, fn, uv3, color }
     };
 
+    if (soft_backend()) { soft_draw_triangle(tri, texture_id); return; }
+
     m_shader->bind();
     m_shader->set_vec4("u_color", glm::vec4(1.0f));
     m_shader->set_mat4("u_model", m_current_matrix);
@@ -1618,6 +1734,8 @@ void MeshRenderer3D::draw_billboard_rot(GLuint texture_id, const glm::vec3& posi
         { p2, norm, {u1, v0}, color },
         { p3, norm, {u0, v0}, color }
     };
+
+    if (soft_backend()) { soft_draw_billboard(texture_id, quad); return; }
 
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);

@@ -1,6 +1,8 @@
 #include "batch2d.hpp"
 #include "font.hpp"
 #include "default_shaders.hpp"
+#include "backend.hpp"
+#include "soft/soft_raster.hpp"
 #include "../core/log.hpp"
 #include <glm/gtc/matrix_transform.hpp>
 #include <cmath>
@@ -153,6 +155,16 @@ void Batch2D::init_font_texture() {
 }
 
 bool Batch2D::init() {
+    if (soft_backend()) {
+        // CPU backend: no shaders / buffers. Geometry is gathered in m_vertices exactly as on the
+        // GL path and rasterized by flush_soft().
+        m_white_texture = Texture::create_white();
+        m_white_id = m_white_texture ? m_white_texture->get_id() : 0;
+        init_font_texture();
+        m_vertices.reserve(MAX_VERTICES);
+        CRAYON_LOG_INFO("Batch2D initialized (software rasterizer, max quads: {})", MAX_QUADS);
+        return true;
+    }
     m_shader = std::make_unique<Shader>();
     if (!m_shader->load_from_memory(SHADER_2D_VS, SHADER_2D_FS)) {
         CRAYON_LOG_ERROR("Failed to compile 2D Batch Shader");
@@ -243,10 +255,7 @@ void Batch2D::begin(int virtual_w, int virtual_h) {
     m_current_texture = 0;
     m_blend_mode = BlendMode::Alpha;
     m_scissor_stack.clear();
-    if (m_scissor_active) {
-        glDisable(GL_SCISSOR_TEST);
-        m_scissor_active = false;
-    }
+    if (m_scissor_active) clear_scissor();
 
     // Clear any shader override so a missed setShader(nil) doesn't
     // bleed into the next frame.
@@ -264,10 +273,7 @@ void Batch2D::end() {
     m_scissor_stack.clear();
     while (!m_matrix_stack_2d.empty()) m_matrix_stack_2d.pop();
     m_model_matrix_2d = glm::mat4(1.0f);
-    if (m_scissor_active) {
-        glDisable(GL_SCISSOR_TEST);
-        m_scissor_active = false;
-    }
+    if (m_scissor_active) clear_scissor();
 }
 
 void Batch2D::set_blend_mode(BlendMode mode) {
@@ -279,16 +285,28 @@ void Batch2D::set_blend_mode(BlendMode mode) {
 
 void Batch2D::set_scissor(int x, int y, int w, int h) {
     flush();
-    glEnable(GL_SCISSOR_TEST);
-    int gl_y = m_flip_y ? y : (m_virtual_h - (y + h));
-    glScissor(x, gl_y, std::max(0, w), std::max(0, h));
+    apply_scissor(x, y, w, h);
+}
+
+void Batch2D::apply_scissor(int x, int y, int w, int h) {
+    if (soft_backend()) {
+        m_soft_scissor = glm::ivec4(x, y, std::max(0, w), std::max(0, h));
+    } else {
+        glEnable(GL_SCISSOR_TEST);
+        int gl_y = m_flip_y ? y : (m_virtual_h - (y + h));
+        glScissor(x, gl_y, std::max(0, w), std::max(0, h));
+    }
     m_scissor_active = true;
+}
+
+void Batch2D::clear_scissor() {
+    if (!soft_backend()) glDisable(GL_SCISSOR_TEST);
+    m_scissor_active = false;
 }
 
 void Batch2D::reset_scissor() {
     flush();
-    glDisable(GL_SCISSOR_TEST);
-    m_scissor_active = false;
+    clear_scissor();
     m_scissor_stack.clear();
 }
 
@@ -318,8 +336,7 @@ void Batch2D::pop_scissor() {
             const auto& prev = m_scissor_stack.back();
             set_scissor(prev.x, prev.y, prev.z, prev.w);
         } else {
-            glDisable(GL_SCISSOR_TEST);
-            m_scissor_active = false;
+            clear_scissor();
         }
     } else {
         reset_scissor();
@@ -359,10 +376,7 @@ void Batch2D::push_projection(int w, int h, bool flip_y) {
     m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
 
     // Reset any active scissor; the old rect is in the wrong space.
-    if (m_scissor_active) {
-        glDisable(GL_SCISSOR_TEST);
-        m_scissor_active = false;
-    }
+    if (m_scissor_active) clear_scissor();
 }
 
 void Batch2D::pop_projection() {
@@ -415,8 +429,26 @@ void Batch2D::reset_camera2d() {
     m_current_proj_view = m_proj_matrix * m_model_matrix_2d;
 }
 
+void Batch2D::flush_soft() {
+    const soft::Texture* tex = soft::TextureRegistry::get(m_current_texture != 0 ? m_current_texture : m_white_id);
+    soft::Rasterizer::Blend2D mode = soft::Rasterizer::Blend2D::Alpha;
+    switch (m_blend_mode) {
+        case BlendMode::Alpha:    mode = soft::Rasterizer::Blend2D::Alpha; break;
+        case BlendMode::Additive: mode = soft::Rasterizer::Blend2D::Additive; break;
+        case BlendMode::Multiply: mode = soft::Rasterizer::Blend2D::Multiply; break;
+        case BlendMode::None:     mode = soft::Rasterizer::Blend2D::None; break;
+    }
+    static_assert(sizeof(Vertex2D) == sizeof(soft::Rasterizer::Vertex2D), "Vertex2D layouts must match");
+    soft::Rasterizer::IRect sc{m_soft_scissor.x, m_soft_scissor.y, m_soft_scissor.z, m_soft_scissor.w};
+    soft::framebuffer().draw_2d(reinterpret_cast<const soft::Rasterizer::Vertex2D*>(m_vertices.data()),
+                                m_vertices.size(), m_current_proj_view, tex, mode,
+                                m_scissor_active ? &sc : nullptr);
+    m_vertices.clear();
+}
+
 void Batch2D::flush() {
     if (m_vertices.empty()) return;
+    if (soft_backend()) { flush_soft(); return; }
 
     switch (m_blend_mode) {
         case BlendMode::Alpha:

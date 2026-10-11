@@ -10,6 +10,8 @@
 #include "shader.hpp"
 #include "camera.hpp"
 #include "texture.hpp"
+#include "backend.hpp"
+#include "soft/soft_raster.hpp"
 
 namespace crayon {
 
@@ -115,6 +117,11 @@ public:
     bool has_submeshes() const { return !m_submeshes.empty(); }
     const std::vector<SubMesh>& get_submeshes() const { return m_submeshes; }
 
+    // Software backend only: the mesh lives in these CPU arrays instead of GL buffers.
+    const std::vector<Vertex3D>& cpu_vertices() const { return m_cpu_vertices; }
+    const std::vector<SkinnedVertex3D>& cpu_skinned_vertices() const { return m_cpu_skinned; }
+    const std::vector<GLuint>& cpu_indices() const { return m_cpu_indices; }
+
     static std::shared_ptr<Mesh3D> create_cube(float size = 1.0f);
     static std::shared_ptr<Mesh3D> create_plane(float width = 10.0f, float depth = 10.0f, int grid_subdivisions = 10);
     static std::shared_ptr<Mesh3D> create_sphere(float radius = 0.5f, int rings = 12, int sectors = 12);
@@ -131,8 +138,13 @@ private:
     GLuint m_ebo = 0;
     GLsizei m_index_count = 0;
     GLsizei m_vertex_count = 0;
+    GLenum m_index_type = GL_UNSIGNED_INT;   // GL_UNSIGNED_SHORT when < 65536 vertices (halves index bandwidth)
+    size_t m_index_size = sizeof(GLuint);
     bool m_is_skinned = false;
     std::vector<SubMesh> m_submeshes;
+    std::vector<Vertex3D> m_cpu_vertices;           // software backend storage
+    std::vector<SkinnedVertex3D> m_cpu_skinned;
+    std::vector<GLuint> m_cpu_indices;
 };
 
 class MeshRenderer3D {
@@ -146,9 +158,18 @@ public:
     void begin(const Camera& camera, float aspect);
     void end();
 
+    // If bounds_min/bounds_max (mesh-local AABB) are given, the draw is skipped when the
+    // box is entirely outside the camera frustum. Leave null for meshes with unknown bounds.
     void draw_mesh(const Mesh3D& mesh, const glm::mat4& model,
                    GLuint texture_id = 0,
-                   const glm::vec4& tint = glm::vec4(1.0f));
+                   const glm::vec4& tint = glm::vec4(1.0f),
+                   const glm::vec3* bounds_min = nullptr,
+                   const glm::vec3* bounds_max = nullptr);
+
+    // Frustum test of a local-space AABB transformed by `model` (includes the matrix stack).
+    bool aabb_visible(const glm::vec3& mn, const glm::vec3& mx, const glm::mat4& model) const;
+    // Number of draws skipped by frustum culling since begin() (for profiling).
+    uint32_t get_culled_draw_count() const { return m_culled_draws; }
 
     void draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model,
                            const glm::mat4* bone_matrices, size_t bone_count,
@@ -244,8 +265,51 @@ public:
 
     GLuint get_fallback_texture_id() const;
 
+    // Fixed-function state that used to be raw glEnable/glDisable calls in the Lua bindings.
+    // The GL path still sets GL state itself; these keep the software backend in sync.
+    void set_cull_mode(int mode) { m_cull_mode = mode; }   // 0 = off, 1 = back, 2 = front
+    void set_depth_test_enabled(bool on) { m_depth_test = on; }
+    void set_depth_write_enabled(bool on) { m_depth_write = on; }
+
 private:
+    // Program state for the optimized mesh path. Per-frame uniforms (camera, lights, fog,
+    // retro) are uploaded only when something changed since this program last saw them,
+    // instead of ~35 glUniform calls on every draw.
+    struct MeshProgState {
+        std::unique_ptr<Shader> shader;
+        GLint loc_model = -1, loc_normal = -1, loc_color = -1, loc_bones = -1;
+        uint64_t uploaded_version = ~0ull;
+        RetroEffects uploaded_retro;
+        ShadingMode uploaded_shading = ShadingMode::Gouraud;
+    };
+    bool init_mesh_prog(MeshProgState& st, bool skinned);
+    void upload_frame_uniforms(MeshProgState& st);
+
+    // Legacy all-in-one program, still used by billboards, lines, immediate triangles, grid.
+    // ---- software backend (mesh3d_soft.cpp) ----
+    void soft_sync();
+    void soft_draw_geometry(const Vertex3D* v, size_t nv, const GLuint* idx, size_t ni,
+                            const glm::mat4& model, GLuint tex, const glm::vec4& tint);
+    void soft_draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint tex, const glm::vec4& tint);
+    void soft_draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model, const glm::mat4* bones,
+                                size_t bone_count, GLuint tex, const glm::vec4& tint);
+    void soft_draw_billboard(GLuint tex, const Vertex3D quad[6]);
+    void soft_draw_lines(const Vertex3D* v, size_t count, const glm::mat4& model);
+    void soft_draw_triangle(const Vertex3D tri[3], GLuint tex);
+    void soft_draw_grid(float size, int divisions, float y, const glm::vec4& color);
+    std::vector<Vertex3D> m_soft_scratch;
+    std::vector<GLuint> m_soft_index_scratch;
+    int m_cull_mode = 0;
+    bool m_depth_test = true;
+    bool m_depth_write = true;
+
     std::unique_ptr<Shader> m_shader;
+    MeshProgState m_prog_static;    // draw_mesh(): no skinning code, CPU normal matrix
+    MeshProgState m_prog_skinned;   // draw_mesh_skinned()
+    int m_max_bones = 128;
+    uint64_t m_frame_version = 0;   // bumped when camera / lights change
+    glm::mat4 m_viewproj{1.0f};
+    uint32_t m_culled_draws = 0;
     std::shared_ptr<Texture> m_checker_texture;
     std::shared_ptr<Texture> m_white_texture;
 

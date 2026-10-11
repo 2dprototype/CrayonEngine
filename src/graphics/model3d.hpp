@@ -27,6 +27,9 @@ struct ModelPart {
 
     glm::vec3 min_bounds{0.0f};
     glm::vec3 max_bounds{0.0f};
+    // True only when the bounds were measured from real vertex data (glTF/OBJ loaders).
+    // Procedural / custom meshes carry placeholder bounds and are never frustum-culled.
+    bool bounds_valid = false;
 
     // Stored for collision trimesh & spatial queries
     std::vector<Vertex3D> cpu_vertices;

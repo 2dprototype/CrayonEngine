@@ -42,6 +42,9 @@ struct ModulesConfig {
 };
 
 struct GraphicsConfig {
+    // "auto" (GPU if available, else CPU rasterizer), "gl" or "soft". --renderer= and the
+    // CRAYON_RENDERER env var override this.
+    std::string renderer = "auto";
     glm::vec4 clear_color{0.08f, 0.08f, 0.12f, 1.0f};
     bool dither = false;
     bool crt = false;

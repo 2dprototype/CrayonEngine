@@ -1,4 +1,6 @@
 #include "texture.hpp"
+#include "backend.hpp"
+#include "soft/soft_raster.hpp"
 #include "../core/log.hpp"
 
 #define STB_IMAGE_IMPLEMENTATION
@@ -10,7 +12,8 @@ Texture::Texture() = default;
 
 Texture::~Texture() {
     if (m_texture_id != 0) {
-        glDeleteTextures(1, &m_texture_id);
+        if (soft_backend()) soft::TextureRegistry::remove(m_texture_id);
+        else glDeleteTextures(1, &m_texture_id);
         m_texture_id = 0;
     }
 }
@@ -34,7 +37,8 @@ bool Texture::load_from_file(const std::string& filepath, bool nearest) {
 
 bool Texture::load_from_memory(const unsigned char* data, int width, int height, int channels, bool nearest) {
     if (m_texture_id != 0) {
-        glDeleteTextures(1, &m_texture_id);
+        if (soft_backend()) soft::TextureRegistry::remove(m_texture_id);
+        else glDeleteTextures(1, &m_texture_id);
         m_texture_id = 0;
     }
 
@@ -46,6 +50,16 @@ bool Texture::load_from_memory(const unsigned char* data, int width, int height,
 
     m_width = width;
     m_height = height;
+
+    if (soft_backend()) {
+        // CPU backend: keep the pixels in a mip-mapped soft::Texture. The id handed out is a
+        // registry handle, so every id-based API above this class works unchanged. Like the GL
+        // path, "nearest" textures stay crisp (no mips, nearest) and the rest are smooth.
+        auto soft_tex = std::make_shared<soft::Texture>();
+        if (!soft_tex->create(data, width, height, channels, /*build_mips=*/!nearest, /*smooth=*/!nearest)) return false;
+        m_texture_id = soft::TextureRegistry::add(std::move(soft_tex));
+        return true;
+    }
 
     glGenTextures(1, &m_texture_id);
     glBindTexture(GL_TEXTURE_2D, m_texture_id);
@@ -103,7 +117,11 @@ bool Texture::load_from_memory(const unsigned char* data, int width, int height,
         mag_filter = GL_NEAREST;
     } else {
         glGenerateMipmap(GL_TEXTURE_2D);
+#if defined(CRAYON_GLES)
+        min_filter = GL_LINEAR_MIPMAP_NEAREST; // bilinear within one mip: half the fetches of trilinear
+#else
         min_filter = GL_LINEAR_MIPMAP_LINEAR;
+#endif
     }
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
@@ -115,11 +133,13 @@ bool Texture::load_from_memory(const unsigned char* data, int width, int height,
 }
 
 void Texture::bind(unsigned int slot) const {
+    if (soft_backend()) return;
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture(GL_TEXTURE_2D, m_texture_id);
 }
 
 void Texture::unbind(unsigned int slot) const {
+    if (soft_backend()) return;
     glActiveTexture(GL_TEXTURE0 + slot);
     glBindTexture(GL_TEXTURE_2D, 0);
 }

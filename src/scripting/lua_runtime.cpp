@@ -235,6 +235,8 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_setfield(m_L, -2, "clearColor");
     lua_pushboolean(m_L, config.graphics.dither);
     lua_setfield(m_L, -2, "dither");
+    lua_pushstring(m_L, config.graphics.renderer.c_str());
+    lua_setfield(m_L, -2, "renderer");
     lua_pushboolean(m_L, config.graphics.crt);
     lua_setfield(m_L, -2, "crt");
     lua_pushboolean(m_L, config.graphics.vignette);
@@ -448,6 +450,10 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
 
         lua_getfield(m_L, -1, "dither");
         if (lua_isboolean(m_L, -1)) config.graphics.dither = lua_toboolean(m_L, -1);
+        lua_pop(m_L, 1);
+
+        lua_getfield(m_L, -1, "renderer");
+        if (lua_isstring(m_L, -1)) config.graphics.renderer = lua_tostring(m_L, -1);
         lua_pop(m_L, 1);
 
         lua_getfield(m_L, -1, "crt");

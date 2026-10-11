@@ -1630,6 +1630,16 @@ static int l_graphics_get_model_color(lua_State* L) {
     return 4;
 }
 
+static int l_graphics_is_software_renderer(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_window().is_software_renderer());
+    return 1;
+}
+
+static int l_graphics_get_renderer_name(lua_State* L) {
+    lua_pushstring(L, Engine::get().get_window().get_gl_renderer_name().c_str());
+    return 1;
+}
+
 static int l_graphics_set_retro_effects(lua_State* L) {
     if (!lua_istable(L, 1)) return 0;
 
@@ -3048,6 +3058,8 @@ static int l_graphics_set_spot_light_enabled(lua_State* L) {
 
 static int l_graphics_set_depth_test(lua_State* L) {
     bool enable = lua_isnoneornil(L, 1) ? true : lua_toboolean(L, 1);
+    Engine::get().get_mesh_renderer().set_depth_test_enabled(enable);   // software backend state
+    if (soft_backend()) return 0;
     if (enable) {
         glEnable(GL_DEPTH_TEST);
         glDepthFunc(GL_LEQUAL);
@@ -3059,22 +3071,26 @@ static int l_graphics_set_depth_test(lua_State* L) {
 
 static int l_graphics_set_depth_write(lua_State* L) {
     bool enable = lua_isnoneornil(L, 1) ? true : lua_toboolean(L, 1);
+    Engine::get().get_mesh_renderer().set_depth_write_enabled(enable);  // software backend state
+    if (soft_backend()) return 0;
     glDepthMask(enable ? GL_TRUE : GL_FALSE);
     return 0;
 }
 
 static int l_graphics_set_cull_face(lua_State* L) {
-    if (lua_isnoneornil(L, 1) || !lua_toboolean(L, 1)) {
+    // 0 = off, 1 = back, 2 = front
+    int mode = 0;
+    if (!lua_isnoneornil(L, 1) && lua_toboolean(L, 1)) {
+        mode = 1;
+        if (lua_isstring(L, 1) && std::string(lua_tostring(L, 1)) == "front") mode = 2;
+    }
+    Engine::get().get_mesh_renderer().set_cull_mode(mode);              // software backend state
+    if (soft_backend()) return 0;
+    if (mode == 0) {
         glDisable(GL_CULL_FACE);
     } else {
         glEnable(GL_CULL_FACE);
-        if (lua_isstring(L, 1)) {
-            std::string mode = lua_tostring(L, 1);
-            if (mode == "front") glCullFace(GL_FRONT);
-            else glCullFace(GL_BACK);
-        } else {
-            glCullFace(GL_BACK);
-        }
+        glCullFace(mode == 2 ? GL_FRONT : GL_BACK);
     }
     return 0;
 }
@@ -3840,6 +3856,12 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_get_model_color);
     lua_setfield(L, -2, "getModelColor");
+
+    lua_pushcfunction(L, l_graphics_is_software_renderer);
+    lua_setfield(L, -2, "isSoftwareRenderer");
+
+    lua_pushcfunction(L, l_graphics_get_renderer_name);
+    lua_setfield(L, -2, "getRendererName");
 
     lua_pushcfunction(L, l_graphics_set_retro_effects);
     lua_setfield(L, -2, "setRetroEffects");

@@ -96,6 +96,8 @@ set(ENGINE_SOURCES
     src/graphics/camera.cpp
     src/graphics/batch2d.cpp
     src/graphics/mesh3d.cpp
+    src/graphics/mesh3d_soft.cpp
+    src/graphics/soft/soft_raster.cpp
     src/graphics/model3d.cpp
     src/graphics/animator.cpp
     src/graphics/camera2d.cpp
@@ -277,4 +279,11 @@ if(BUILD_EDITOR)
             "${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/bin/SDL3.dll"
             "$<TARGET_FILE_DIR:editor>"
     )
+endif()
+# Headless CPU-rasterizer + mesh-optimizer test/benchmark (no GL, no window needed):
+#   cmake --build . --target soft_raster_test && ./soft_raster_test ../examples/assets/models/monkey.obj out
+if(NOT ANDROID)
+    add_executable(soft_raster_test EXCLUDE_FROM_ALL
+        test/soft/soft_raster_test.cpp
+        src/graphics/soft/soft_raster.cpp)
 endif()

@@ -1,4 +1,5 @@
 #include "canvas.hpp"
+#include "backend.hpp"
 #include "../core/log.hpp"
 
 namespace crayon {
@@ -12,6 +13,10 @@ Canvas::~Canvas() {
 
 bool Canvas::init() {
     destroy();
+    if (soft_backend()) {
+        CRAYON_LOG_WARN("Canvas (render-to-texture) needs the OpenGL renderer; not available in software mode");
+        return false;
+    }
 
     if (m_width <= 0 || m_height <= 0) {
         CRAYON_LOG_ERROR("Canvas: Invalid dimensions {}x{}", m_width, m_height);

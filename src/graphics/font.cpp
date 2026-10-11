@@ -1,6 +1,8 @@
 #define STB_TRUETYPE_IMPLEMENTATION
 #include "font.hpp"
 #include "batch2d.hpp"
+#include "backend.hpp"
+#include "soft/soft_raster.hpp"
 #include "../core/log.hpp"
 #include <fstream>
 #include <sstream>
@@ -17,7 +19,8 @@ Font::~Font() {
 
 void Font::destroy() {
     if (m_texture_id) {
-        glDeleteTextures(1, &m_texture_id);
+        if (soft_backend()) soft::TextureRegistry::remove(m_texture_id);
+        else glDeleteTextures(1, &m_texture_id);
         m_texture_id = 0;
     }
     m_valid = false;
@@ -98,6 +101,18 @@ bool Font::load_from_memory(const unsigned char* data, size_t size, float pixel_
     // Upload the glyph coverage as a single-channel R8 texture (4x smaller than RGBA8)
     // and swizzle it to (1, 1, 1, coverage) so the standard 2D batch shader, which
     // computes texture(...) * color, behaves exactly as with the old RGBA atlas.
+    if (soft_backend()) {
+        // CPU backend: expand the coverage bitmap to (1,1,1,coverage) RGBA, exactly what the GL
+        // swizzle below produces.
+        std::vector<unsigned char> rgba(size_t(m_atlas_w) * m_atlas_h * 4);
+        for (size_t i = 0, n = size_t(m_atlas_w) * m_atlas_h; i < n; ++i) {
+            rgba[i * 4 + 0] = rgba[i * 4 + 1] = rgba[i * 4 + 2] = 255;
+            rgba[i * 4 + 3] = mono_bitmap[i];
+        }
+        auto soft_tex = std::make_shared<soft::Texture>();
+        soft_tex->create(rgba.data(), m_atlas_w, m_atlas_h, 4, /*build_mips=*/false, /*smooth=*/!nearest_filter);
+        m_texture_id = soft::TextureRegistry::add(std::move(soft_tex));
+    } else {
     glGenTextures(1, &m_texture_id);
     glBindTexture(GL_TEXTURE_2D, m_texture_id);
 
@@ -120,6 +135,7 @@ bool Font::load_from_memory(const unsigned char* data, size_t size, float pixel_
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_CLAMP_TO_EDGE);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_CLAMP_TO_EDGE);
     glBindTexture(GL_TEXTURE_2D, 0);
+    }
 
     // Extract font metrics
     stbtt_fontinfo info;

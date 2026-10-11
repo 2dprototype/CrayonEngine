@@ -12,6 +12,7 @@
 #endif
 
 #include "window.hpp"
+#include <cctype>
 #include "log.hpp"
 #include "platform.hpp"
 
@@ -21,6 +22,7 @@
     #define CRAYON_IS_ANDROID_BUILD 0
 #endif
 #include <glad/glad.h>
+#include "../graphics/backend.hpp"
 #include <algorithm>
 
 namespace crayon {
@@ -32,6 +34,35 @@ Window::~Window() {
 }
 
 bool Window::init(const WindowCreateInfo& info) {
+#if defined(CRAYON_GLES)
+    // Android: GPU only.
+    set_active_backend(RenderBackend::OpenGL);
+    return init_impl(info, true);
+#else
+    const RendererRequest req = requested_renderer();
+    if (req != RendererRequest::Software) {
+        if (init_impl(info, true)) {
+            if (req == RendererRequest::Auto && m_software_gl) {
+                CRAYON_LOG_INFO("No GPU detected (GL renderer '{}'): using the built-in software rasterizer. "
+                                "Force OpenGL with --renderer=gl.", m_gl_renderer_name);
+                shutdown();
+            } else {
+                set_active_backend(RenderBackend::OpenGL);
+                return true;
+            }
+        } else {
+            if (req == RendererRequest::OpenGL) return false;
+            CRAYON_LOG_WARN("OpenGL unavailable: falling back to the software rasterizer");
+            shutdown();
+        }
+    }
+    set_active_backend(RenderBackend::Software);
+    return init_impl(info, false);
+#endif
+}
+
+bool Window::init_impl(const WindowCreateInfo& info, bool use_gl) {
+    m_use_gl          = use_gl;
     m_window_w        = info.window_width;
     m_window_h        = info.window_height;
     m_virtual_w       = info.virtual_width;
@@ -48,6 +79,7 @@ bool Window::init(const WindowCreateInfo& info) {
         return false;
     }
 
+    if (use_gl) {
 #if defined(CRAYON_GLES)
     // OpenGL ES 3.0 (Android). Every GL call the engine makes exists in ES 3.0;
     // the GLSL is translated to "#version 300 es" at compile time (see glsl_compat.hpp).
@@ -64,12 +96,13 @@ bool Window::init(const WindowCreateInfo& info) {
     SDL_GL_SetAttribute(SDL_GL_DEPTH_SIZE, 24);
     SDL_GL_SetAttribute(SDL_GL_STENCIL_SIZE, 8);
     SDL_GL_SetAttribute(SDL_GL_ALPHA_SIZE, 8);
+    }
 
     SDL_PropertiesID props = SDL_CreateProperties();
     SDL_SetStringProperty (props, SDL_PROP_WINDOW_CREATE_TITLE_STRING, info.title.c_str());
     SDL_SetNumberProperty (props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER,  m_window_w);
     SDL_SetNumberProperty (props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, m_window_h);
-    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, true);
+    SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_OPENGL_BOOLEAN, use_gl);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_RESIZABLE_BOOLEAN, info.resizable);
     SDL_SetBooleanProperty(props, SDL_PROP_WINDOW_CREATE_HIGH_PIXEL_DENSITY_BOOLEAN, info.high_dpi);
 
@@ -93,7 +126,7 @@ bool Window::init(const WindowCreateInfo& info) {
 
     if (!m_window) {
         // Fallback path with raw flags
-        SDL_WindowFlags flags = SDL_WINDOW_OPENGL | SDL_WINDOW_HIGH_PIXEL_DENSITY;
+        SDL_WindowFlags flags = (use_gl ? SDL_WINDOW_OPENGL : 0) | SDL_WINDOW_HIGH_PIXEL_DENSITY;
         if (info.resizable)       flags |= SDL_WINDOW_RESIZABLE;
 #if defined(CRAYON_PLATFORM_ANDROID)
         flags |= SDL_WINDOW_FULLSCREEN;
@@ -153,6 +186,15 @@ bool Window::init(const WindowCreateInfo& info) {
         CRAYON_LOG_INFO("Window created with transparency enabled (screenpet mode)");
     }
 
+    if (!use_gl) {
+        // Software backend: no GL context at all. glad is not loaded; the engine never calls GL.
+        m_gl_renderer_name = "Crayon software rasterizer";
+        m_software_gl = true;
+        CRAYON_LOG_INFO("Window created for the software rasterizer (no OpenGL)");
+        update_viewport();
+        return true;
+    }
+
     m_gl_context = SDL_GL_CreateContext(m_window);
     if (!m_gl_context) {
         CRAYON_LOG_ERROR("Failed to create OpenGL context: {}", SDL_GetError());
@@ -176,9 +218,22 @@ bool Window::init(const WindowCreateInfo& info) {
 
     SDL_GL_SetSwapInterval(m_vsync ? 1 : 0);
 
-    CRAYON_LOG_INFO("OpenGL initialized: {} (Renderer: {})",
+    {
+        const char* r = reinterpret_cast<const char*>(glGetString(GL_RENDERER));
+        m_gl_renderer_name = r ? r : "";
+        std::string lower = m_gl_renderer_name;
+        for (auto& ch : lower) ch = static_cast<char>(std::tolower(static_cast<unsigned char>(ch)));
+        static const char* kSoftware[] = {"llvmpipe", "softpipe", "swrast", "software", "swiftshader",
+                                          "gdi generic", "basic render", "lavapipe"};
+        m_software_gl = false;
+        for (const char* needle : kSoftware) {
+            if (lower.find(needle) != std::string::npos) { m_software_gl = true; break; }
+        }
+    }
+    CRAYON_LOG_INFO("OpenGL initialized: {} (Renderer: {}){}",
         reinterpret_cast<const char*>(glGetString(GL_VERSION)),
-        reinterpret_cast<const char*>(glGetString(GL_RENDERER)));
+        m_gl_renderer_name,
+        m_software_gl ? " [software rendering: no GPU detected, use a low virtual resolution]" : "");
 
     update_viewport();
     return true;
@@ -263,7 +318,7 @@ void Window::set_fullscreen(bool enabled) {
 
 void Window::set_vsync(bool enabled) {
     m_vsync = enabled;
-    SDL_GL_SetSwapInterval(m_vsync ? 1 : 0);
+    if (m_use_gl) SDL_GL_SetSwapInterval(m_vsync ? 1 : 0);
 }
 
 void Window::set_title(const std::string& title) {
@@ -574,9 +629,27 @@ void Window::get_display_size(int& w, int& h) const {
 }
 
 void Window::swap_buffers() {
-    if (m_window) {
+    if (m_window && m_use_gl) {
         SDL_GL_SwapWindow(m_window);
     }
+}
+
+void Window::present_soft(const uint32_t* rgba, int width, int height) {
+    if (!m_window || !rgba || width <= 0 || height <= 0) return;
+    SDL_Surface* dst = SDL_GetWindowSurface(m_window);   // may be re-created by the OS on resize
+    if (!dst) return;
+    SDL_Surface* src = SDL_CreateSurfaceFrom(width, height, SDL_PIXELFORMAT_RGBA32,
+                                             const_cast<uint32_t*>(rgba), width * 4);
+    if (!src) return;
+    SDL_FillSurfaceRect(dst, nullptr, SDL_MapSurfaceRGB(dst, 0, 0, 0));   // letterbox bars
+    SDL_Rect r{m_viewport.x, m_viewport.y, m_viewport.width, m_viewport.height};
+    if (r.w == dst->w && r.h == dst->h && r.w == width && r.h == height) {
+        SDL_BlitSurface(src, nullptr, dst, nullptr);                       // 1:1, no scaling
+    } else {
+        SDL_BlitSurfaceScaled(src, nullptr, dst, &r, SDL_SCALEMODE_NEAREST);
+    }
+    SDL_DestroySurface(src);
+    SDL_UpdateWindowSurface(m_window);
 }
 
 void Window::handle_event(const SDL_Event& event) {

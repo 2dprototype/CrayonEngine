@@ -137,6 +137,10 @@ public:
 
 private:
     void init_font_texture();
+    // Scissor helpers shared by both backends (GL: scissor test, soft: CPU clip rect).
+    void apply_scissor(int x, int y, int w, int h);
+    void clear_scissor();
+    void flush_soft();
 
     // Fills a triangle fan (center + rim points) using two fan triangles per
     // quad slot. This halves the vertices a circle/arc/pie/polygon emits
@@ -164,6 +168,7 @@ private:
 
     BlendMode m_blend_mode = BlendMode::Alpha;
     bool m_scissor_active = false;
+    glm::ivec4 m_soft_scissor{0};           // x, y, w, h in virtual pixels (software backend)
     std::vector<glm::ivec4> m_scissor_stack;
 
     std::stack<glm::mat4> m_matrix_stack_2d;

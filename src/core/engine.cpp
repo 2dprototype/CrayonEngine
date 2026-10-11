@@ -1,4 +1,6 @@
 #include "engine.hpp"
+#include "../graphics/backend.hpp"
+#include "../graphics/soft/soft_raster.hpp"
 #include "log.hpp"
 #include "../graphics/default_shaders.hpp"
 #include "../graphics/model3d.hpp"
@@ -62,6 +64,10 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
     
     // Apply the console flag from crayon.config() now that it's been read.
     set_console_enabled(m_config.console);
+
+    if (!renderer_locked()) {
+        set_requested_renderer(parse_renderer_request(m_config.graphics.renderer));
+    }
 
     // 4. Initialize Window with ALL overlay flags set at creation time.
     //    This avoids the "opaque borderless-to-be" window flashing for one
@@ -129,10 +135,12 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
     }
 
     // 7. Initialize post-processing shader
-    m_post_shader = std::make_unique<Shader>();
-    if (!m_post_shader->load_from_memory(SHADER_POST_VS, SHADER_POST_FS)) {
-        CRAYON_LOG_ERROR("Engine failed to compile Post-Processing Shader");
-        return false;
+    if (!soft_backend()) {
+        m_post_shader = std::make_unique<Shader>();
+        if (!m_post_shader->load_from_memory(SHADER_POST_VS, SHADER_POST_FS)) {
+            CRAYON_LOG_ERROR("Engine failed to compile Post-Processing Shader");
+            return false;
+        }
     }
 
     // 8. Conditionally initialize Jolt PhysicsSystem
@@ -553,6 +561,37 @@ void Engine::render_to_fbo() {
     // If virtual resolution was changed in Window, resize FBO
     int virt_w = m_window.get_virtual_width();
     int virt_h = m_window.get_virtual_height();
+
+    if (soft_backend()) {
+        // ---- CPU backend: same frame structure, drawn into the shared software framebuffer ----
+        soft::Rasterizer& fb = soft::framebuffer();
+        fb.resize(virt_w, virt_h);
+
+        glm::vec4 clear_col = m_clear_color;
+        if (m_game_script_path.empty()) clear_col = glm::vec4(0.0f, 0.2f, 0.65f, 1.0f);
+        fb.clear(clear_col);
+
+        float aspect = static_cast<float>(virt_w) / static_cast<float>(virt_h);
+        if (m_config.modules.mesh3d) m_mesh_renderer.begin(m_camera, aspect);
+        m_batch2d.begin(virt_w, virt_h);
+
+        if (m_game_script_path.empty()) {
+            std::string title = "Crayon Engine";
+            float scale = 2.0f;
+            float tw = m_batch2d.get_text_width(title, scale);
+            float th = m_batch2d.get_text_height(title, scale);
+            float tx = (static_cast<float>(virt_w) - tw) * 0.5f;
+            float ty = (static_cast<float>(virt_h) - th) * 0.5f;
+            m_batch2d.draw_text(title, tx + 1.0f, ty + 1.0f, scale, glm::vec4(0.0f, 0.08f, 0.35f, 0.8f));
+            m_batch2d.draw_text(title, tx, ty, scale, glm::vec4(1.0f, 1.0f, 1.0f, 1.0f));
+        } else {
+            m_lua_runtime->call_draw();
+        }
+
+        m_batch2d.end();
+        if (m_config.modules.mesh3d) m_mesh_renderer.end();
+        return;
+    }
     if (m_fbo.get_width() != virt_w || m_fbo.get_height() != virt_h) {
         m_fbo.resize(virt_w, virt_h);
     }
@@ -596,6 +635,15 @@ void Engine::render_to_fbo() {
     if (m_config.modules.mesh3d) {
         m_mesh_renderer.end();
     }
+
+#if defined(CRAYON_GLES)
+    // Tile-based mobile GPUs keep depth/stencil in on-chip tile memory; without this hint the
+    // driver writes them back to RAM every frame even though nothing reads them again.
+    {
+        const GLenum discard[] = {GL_DEPTH_ATTACHMENT, GL_STENCIL_ATTACHMENT};
+        glInvalidateFramebuffer(GL_FRAMEBUFFER, 2, discard);
+    }
+#endif
 
     m_fbo.unbind();
 }
@@ -704,6 +752,25 @@ void Engine::step_simulation(float dt) {
 
 void Engine::render_frame() {
     render_to_fbo();
+
+    if (soft_backend()) {
+        // CPU post pass (dither / CRT scanlines / vignette), then blit to the window surface.
+        soft::Rasterizer::PostOptions po;
+        if (m_config.modules.mesh3d) {
+            const auto& retro = m_mesh_renderer.get_retro_effects();
+            po.dither = retro.dither_enabled;           po.dither_levels = retro.dither_levels;
+            po.scanlines = retro.crt_scanlines;         po.scanline_strength = retro.scanline_strength;
+            po.vignette = retro.vignette;               po.vignette_strength = retro.vignette_strength;
+        } else {
+            po.dither = m_config.graphics.dither;
+            po.scanlines = m_config.graphics.crt;
+            po.vignette = m_config.graphics.vignette;
+        }
+        soft::Rasterizer& fb = soft::framebuffer();
+        fb.post_process(po);
+        m_window.present_soft(fb.pixels(), fb.width(), fb.height());
+        return;
+    }
 
     // 2. Post-Process and Blit to Window
     int win_w = 960, win_h = 720;

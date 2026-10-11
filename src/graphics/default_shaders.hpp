@@ -47,9 +47,21 @@ uniform mat4 u_model;
 uniform mat4 u_view;
 uniform mat4 u_proj;
 
-uniform int u_is_skinned;
-const int MAX_BONES = 128;
+// Shader variants are produced by prepending #defines (see MeshRenderer3D::init):
+//   SKINNED     - compile in GPU skinning (static meshes skip the bone array entirely)
+//   NORMALMAT   - take a CPU-computed u_normal_mat instead of inverting u_model per vertex
+//   MAX_BONES   - bone palette size, clamped to what the GPU's uniform space allows
+#ifdef SKINNED
+#ifndef MAX_BONES
+#define MAX_BONES 128
+#endif
 uniform mat4 u_bone_matrices[MAX_BONES];
+#else
+uniform int u_is_skinned; // legacy program (primitives/lines/billboards) never skins
+#endif
+#ifdef NORMALMAT
+uniform mat3 u_normal_mat;
+#endif
 
 uniform int u_jitter_enabled;
 uniform vec2 u_jitter_res;
@@ -65,7 +77,8 @@ void main() {
     vec4 local_pos = vec4(a_pos, 1.0);
     vec3 local_normal = a_normal;
 
-    if (u_is_skinned != 0) {
+#ifdef SKINNED
+    {
         mat4 skin_mat = u_bone_matrices[a_joints.x] * a_weights.x +
                         u_bone_matrices[a_joints.y] * a_weights.y +
                         u_bone_matrices[a_joints.z] * a_weights.z +
@@ -73,6 +86,7 @@ void main() {
         local_pos = skin_mat * local_pos;
         local_normal = mat3(skin_mat) * local_normal;
     }
+#endif
 
     vec4 world_pos = u_model * local_pos;
     v_world_pos = world_pos.xyz;
@@ -80,8 +94,12 @@ void main() {
     vec4 view_pos = u_view * world_pos;
     v_view_pos = view_pos.xyz;
 
+#ifdef NORMALMAT
+    v_normal = normalize(u_normal_mat * local_normal);
+#else
     mat3 normal_matrix = transpose(inverse(mat3(u_model)));
     v_normal = normalize(normal_matrix * local_normal);
+#endif
 
     v_color = a_color;
     v_uv_persp = a_uv;
