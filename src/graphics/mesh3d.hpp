@@ -12,6 +12,7 @@
 #include "texture.hpp"
 #include "backend.hpp"
 #include "soft/soft_raster.hpp"
+#include "skybox.hpp"
 
 namespace crayon {
 
@@ -122,6 +123,14 @@ public:
     const std::vector<SkinnedVertex3D>& cpu_skinned_vertices() const { return m_cpu_skinned; }
     const std::vector<GLuint>& cpu_indices() const { return m_cpu_indices; }
 
+    // Local-space AABB measured from the real vertex data at creation time. Used for automatic
+    // frustum / distance culling of every mesh (primitives, custom meshes, models).
+    // Keep a CPU copy of the vertices/indices even on the GPU backend (always on for primitives).
+    void set_retain_cpu(bool on) { m_retain_cpu = on; }
+    bool has_bounds() const { return m_bounds_valid; }
+    const glm::vec3& bounds_min() const { return m_bounds_min; }
+    const glm::vec3& bounds_max() const { return m_bounds_max; }
+
     static std::shared_ptr<Mesh3D> create_cube(float size = 1.0f);
     static std::shared_ptr<Mesh3D> create_plane(float width = 10.0f, float depth = 10.0f, int grid_subdivisions = 10);
     static std::shared_ptr<Mesh3D> create_sphere(float radius = 0.5f, int rings = 12, int sectors = 12);
@@ -145,6 +154,10 @@ private:
     std::vector<Vertex3D> m_cpu_vertices;           // software backend storage
     std::vector<SkinnedVertex3D> m_cpu_skinned;
     std::vector<GLuint> m_cpu_indices;
+    glm::vec3 m_bounds_min{0.0f};
+    glm::vec3 m_bounds_max{0.0f};
+    bool m_bounds_valid = false;
+    bool m_retain_cpu = false;
 };
 
 class MeshRenderer3D {
@@ -164,10 +177,41 @@ public:
                    GLuint texture_id = 0,
                    const glm::vec4& tint = glm::vec4(1.0f),
                    const glm::vec3* bounds_min = nullptr,
-                   const glm::vec3* bounds_max = nullptr);
+                   const glm::vec3* bounds_max = nullptr,
+                   bool single_sided = false,
+                   bool alpha_blend = false);
+
+    // ---- transparency ----
+    // A draw is transparent when its colour alpha < 1 or it is flagged alpha_blend (glTF
+    // alphaMode BLEND). Transparent draws are queued, then drawn back-to-front after the opaque
+    // geometry with alpha blending and no depth writes. The queue is flushed automatically at the
+    // end of the 3D pass, when depth testing is turned off (HUD time) and by flush_transparent().
+    void flush_transparent();
+
+    // Draws the skybox behind everything already drawn (and anything drawn later is unaffected):
+    // it only fills pixels that nothing has covered, so call it first or last. `tint` multiplies it.
+    void draw_skybox(Skybox& sky, const glm::vec3& tint = glm::vec3(1.0f));
+    size_t get_transparent_queue_size() const { return m_transparent.size(); }
 
     // Frustum test of a local-space AABB transformed by `model` (includes the matrix stack).
     bool aabb_visible(const glm::vec3& mn, const glm::vec3& mx, const glm::mat4& model) const;
+    // World-space sphere vs frustum.
+    bool sphere_visible(const glm::vec3& center, float radius) const;
+
+    // ---- culling controls ----
+    // Auto culling = frustum + max-distance culling for every mesh, and backface culling for
+    // parts known to be single-sided (closed primitives, glTF materials with doubleSided=false).
+    // Two-sided geometry (planes, OBJ models, doubleSided glTF) is never backface-culled.
+    void set_auto_cull(bool on) { m_auto_cull = on; }
+    bool get_auto_cull() const { return m_auto_cull; }
+    // Objects farther than this from the camera are skipped (0 = unlimited).
+    void set_max_draw_distance(float d) { m_max_draw_distance = d; }
+    float get_max_draw_distance() const { return m_max_draw_distance; }
+    // Skinned meshes are culled with their bind-pose box grown by this fraction per axis,
+    // since animation can move vertices outside it.
+    void set_skinned_cull_margin(float m) { m_skinned_cull_margin = m; }
+    const glm::vec3& get_camera_position() const { return m_cam_position; }
+
     // Number of draws skipped by frustum culling since begin() (for profiling).
     uint32_t get_culled_draw_count() const { return m_culled_draws; }
 
@@ -299,6 +343,25 @@ private:
     void soft_draw_grid(float size, int divisions, float y, const glm::vec4& color);
     std::vector<Vertex3D> m_soft_scratch;
     std::vector<GLuint> m_soft_index_scratch;
+    bool m_auto_cull = true;
+    float m_max_draw_distance = 0.0f;
+    float m_skinned_cull_margin = 1.0f;
+    struct TransparentDraw {
+        const Mesh3D* mesh;
+        glm::mat4 model;           // final model matrix (matrix stack already applied)
+        GLuint texture;
+        glm::vec4 tint;
+        bool single_sided;
+        bool has_bounds;
+        glm::vec3 lo, hi;
+        float distance;            // camera distance, used for back-to-front sorting
+    };
+    std::vector<TransparentDraw> m_transparent;
+    std::unique_ptr<Shader> m_sky_shader;
+    GLuint m_sky_vao = 0, m_sky_vbo = 0;
+    bool m_in_transparent_flush = false;
+    bool m_blend_pass = false;
+    bool m_force_cull_back = false;     // set around a single draw when auto backface culling applies
     int m_cull_mode = 0;
     bool m_depth_test = true;
     bool m_depth_write = true;

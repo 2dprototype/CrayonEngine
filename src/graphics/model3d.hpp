@@ -31,6 +31,11 @@ struct ModelPart {
     // Procedural / custom meshes carry placeholder bounds and are never frustum-culled.
     bool bounds_valid = false;
 
+    // glTF material flags. double_sided=false lets the renderer backface-cull this part.
+    // alpha_mode: 0 = opaque, 1 = mask (cutout), 2 = blend (needs sorted transparent pass).
+    bool double_sided = true;
+    int alpha_mode = 0;
+
     // Stored for collision trimesh & spatial queries
     std::vector<Vertex3D> cpu_vertices;
     std::vector<GLuint> cpu_indices;

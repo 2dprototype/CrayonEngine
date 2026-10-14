@@ -1,4 +1,5 @@
 #include "lua_runtime.hpp"
+#include "lua_prelude.hpp"
 #include "../core/log.hpp"
 #include "../core/engine_config.hpp"
 #include <filesystem>
@@ -137,6 +138,10 @@ void LuaRuntime::register_modules(const ModulesConfig& modules) {
     } else {
         register_disabled_stub(m_L, "fs");
     }
+
+    // Built-in Lua libraries: crayon.json / sprite / tilemap / drawqueue / lights2d.
+    // They only call crayon.* at runtime, so they load fine whichever modules are enabled.
+    load_lua_prelude(m_L);
 }
 
 bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& config) {

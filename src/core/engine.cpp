@@ -9,6 +9,7 @@
 #include "../physics/physics2d_system.hpp"
 #include "../physics/physics4d_system.hpp"
 #include <filesystem>
+#include <cstring>
 
 namespace crayon {
 
@@ -220,6 +221,7 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
 void Engine::shutdown() {
     m_running = false;
     m_texture_cache.clear();
+    m_user_textures.clear();
     m_mesh_cache.clear();
     m_model_cache.clear();
 
@@ -275,6 +277,48 @@ GLuint Engine::load_texture(const std::string& path) {
     m_texture_sizes[id] = { tex->get_width(), tex->get_height() };
     m_texture_cache[path] = tex;
     return id;
+}
+
+GLuint Engine::adopt_user_texture(std::shared_ptr<Texture> tex) {
+    if (!tex || !tex->is_valid()) return 0;
+    GLuint id = tex->get_id();
+    m_texture_sizes[id] = { tex->get_width(), tex->get_height() };
+    m_user_textures[id] = std::move(tex);
+    return id;
+}
+
+void Engine::release_user_texture(GLuint id) {
+    m_user_textures.erase(id);
+    m_texture_sizes.erase(id);
+}
+
+void Engine::process_frame_capture() {
+    if (m_screenshot_path.empty() && !m_capture_requested) return;
+
+    std::shared_ptr<ImageData> img;
+    if (soft_backend()) {
+        const soft::Rasterizer& fb = soft::framebuffer();
+        img = std::make_shared<ImageData>(fb.width(), fb.height());
+        std::memcpy(img->data(), fb.pixels(), size_t(fb.width()) * fb.height() * 4);
+    } else {
+        const int w = m_window.get_virtual_width(), h = m_window.get_virtual_height();
+        img = std::make_shared<ImageData>(w, h);
+        m_fbo.bind();
+        GLint prev_align = 4;
+        glGetIntegerv(GL_PACK_ALIGNMENT, &prev_align);
+        glPixelStorei(GL_PACK_ALIGNMENT, 1);
+        glReadPixels(0, 0, w, h, GL_RGBA, GL_UNSIGNED_BYTE, img->data());
+        glPixelStorei(GL_PACK_ALIGNMENT, prev_align);
+        m_fbo.unbind();
+        img->flip_vertical();   // GL reads bottom-up
+        for (size_t i = 3; i < size_t(w) * h * 4; i += 4) img->data()[i] = 255;
+    }
+    if (!m_screenshot_path.empty()) {
+        if (img->save_png(m_screenshot_path)) CRAYON_LOG_INFO("Screenshot saved: {}", m_screenshot_path);
+        else CRAYON_LOG_WARN("Failed to write screenshot '{}'", m_screenshot_path);
+        m_screenshot_path.clear();
+    }
+    if (m_capture_requested) { m_last_capture = img; m_capture_requested = false; }
 }
 
 bool Engine::get_texture_size(GLuint tex_id, int& w, int& h) const {
@@ -367,6 +411,7 @@ void Engine::soft_restart() {
     // 2. Clear resource caches so edited textures/meshes/models reload.
     // ---------------------------------------------------------------
     m_texture_cache.clear();
+    m_user_textures.clear();
     m_texture_sizes.clear();
     m_mesh_cache.clear();
     m_model_cache.clear();
@@ -588,6 +633,7 @@ void Engine::render_to_fbo() {
             m_lua_runtime->call_draw();
         }
 
+        if (m_config.modules.mesh3d) m_mesh_renderer.flush_transparent();
         m_batch2d.end();
         if (m_config.modules.mesh3d) m_mesh_renderer.end();
         return;
@@ -631,6 +677,9 @@ void Engine::render_to_fbo() {
         m_lua_runtime->call_draw();
     }
     
+    if (m_config.modules.mesh3d) {
+        m_mesh_renderer.flush_transparent();
+    }
     m_batch2d.end();
     if (m_config.modules.mesh3d) {
         m_mesh_renderer.end();
@@ -752,6 +801,7 @@ void Engine::step_simulation(float dt) {
 
 void Engine::render_frame() {
     render_to_fbo();
+    process_frame_capture();
 
     if (soft_backend()) {
         // CPU post pass (dither / CRT scanlines / vignette), then blit to the window surface.

@@ -244,6 +244,7 @@ void Batch2D::shutdown() {
 }
 
 void Batch2D::begin(int virtual_w, int virtual_h) {
+    m_culled_quads = 0;
     m_virtual_w = virtual_w;
     m_virtual_h = virtual_h;
     m_flip_y = false;
@@ -269,6 +270,7 @@ void Batch2D::begin(int virtual_w, int virtual_h) {
 }
 
 void Batch2D::end() {
+    if (m_mask_state != 0) end_mask();
     flush();
     m_scissor_stack.clear();
     while (!m_matrix_stack_2d.empty()) m_matrix_stack_2d.pop();
@@ -446,8 +448,82 @@ void Batch2D::flush_soft() {
     m_vertices.clear();
 }
 
+// Quads are stored as 4 consecutive vertices. A quad whose 4 corners all lie beyond the same
+// edge of the view can never be visible. A custom *vertex* shader could move vertices, so the
+// test is skipped while a shader override is active.
+void Batch2D::begin_mask() {
+    flush();
+    m_mask_state = 1;
+    if (soft_backend()) {
+        soft::framebuffer().clear_mask();
+        soft::framebuffer().set_mask_mode(soft::Rasterizer::MaskMode::Write);
+        return;
+    }
+    glEnable(GL_STENCIL_TEST);
+    glStencilMask(0xFF);
+    glClear(GL_STENCIL_BUFFER_BIT);
+    glStencilFunc(GL_ALWAYS, 1, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_REPLACE);
+    glColorMask(GL_FALSE, GL_FALSE, GL_FALSE, GL_FALSE);
+}
+
+void Batch2D::use_mask(bool invert) {
+    if (m_mask_state == 0) return;
+    flush();
+    m_mask_state = 2;
+    if (soft_backend()) {
+        soft::framebuffer().set_mask_mode(invert ? soft::Rasterizer::MaskMode::TestInverted
+                                                 : soft::Rasterizer::MaskMode::Test);
+        return;
+    }
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glStencilMask(0x00);
+    glStencilFunc(invert ? GL_NOTEQUAL : GL_EQUAL, 1, 0xFF);
+    glStencilOp(GL_KEEP, GL_KEEP, GL_KEEP);
+}
+
+void Batch2D::end_mask() {
+    if (m_mask_state == 0) return;
+    flush();
+    m_mask_state = 0;
+    if (soft_backend()) {
+        soft::framebuffer().set_mask_mode(soft::Rasterizer::MaskMode::Off);
+        return;
+    }
+    glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+    glStencilMask(0xFF);
+    glDisable(GL_STENCIL_TEST);
+}
+
+void Batch2D::cull_offscreen_quads() {
+    const size_t n = m_vertices.size();
+    if (n < 8 || n % 4 != 0) return;
+    size_t out = 0;
+    for (size_t q = 0; q < n; q += 4) {
+        unsigned all = 0xF;
+        for (int i = 0; i < 4; ++i) {
+            const glm::vec4 c = m_current_proj_view * glm::vec4(m_vertices[q + i].position, 0.0f, 1.0f);
+            all &= (c.x < -c.w) | ((c.x > c.w) << 1) | ((c.y < -c.w) << 2) | ((c.y > c.w) << 3);
+            if (!all) break;
+        }
+        if (all) { ++m_culled_quads; continue; }
+        if (out != q) {
+            m_vertices[out] = m_vertices[q];
+            m_vertices[out + 1] = m_vertices[q + 1];
+            m_vertices[out + 2] = m_vertices[q + 2];
+            m_vertices[out + 3] = m_vertices[q + 3];
+        }
+        out += 4;
+    }
+    m_vertices.resize(out);
+}
+
 void Batch2D::flush() {
     if (m_vertices.empty()) return;
+    if (m_cull_offscreen && !m_shader_override) {
+        cull_offscreen_quads();
+        if (m_vertices.empty()) return;
+    }
     if (soft_backend()) { flush_soft(); return; }
 
     switch (m_blend_mode) {

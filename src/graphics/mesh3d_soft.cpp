@@ -26,10 +26,10 @@ void MeshRenderer3D::soft_sync() {
     S.fog_color = m_retro.fog_color;
     S.dither = false; // dither / CRT / vignette run as one full-screen pass at present time
     S.shading = static_cast<soft::Shading>(static_cast<int>(m_shading_mode));
-    S.cull = static_cast<soft::Cull>(m_cull_mode);
+    S.cull = m_force_cull_back ? soft::Cull::Back : static_cast<soft::Cull>(m_cull_mode);
     S.depth_test = m_depth_test;
-    S.depth_write = m_depth_write;
-    S.blend = false;
+    S.depth_write = m_depth_write && !m_blend_pass;
+    S.blend = m_blend_pass;
     S.light_dir = m_light_dir;
     S.light_color = m_light_color;
     S.ambient = m_ambient_color;

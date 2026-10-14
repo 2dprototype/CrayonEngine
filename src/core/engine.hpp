@@ -14,6 +14,7 @@
 #include "../graphics/texture.hpp"
 #include "../graphics/camera.hpp"
 #include "../graphics/batch2d.hpp"
+#include "../graphics/image_data.hpp"
 #include "../graphics/mesh3d.hpp"
 #include "../graphics/post_process_chain.hpp"
 
@@ -69,6 +70,18 @@ public:
     // Resource Management
     GLuint load_texture(const std::string& path);
     bool get_texture_size(GLuint tex_id, int& w, int& h) const;
+
+    // Textures created at runtime from pixel data (graphics.newTexture). The engine owns them until
+    // released with release_user_texture() or shutdown.
+    GLuint adopt_user_texture(std::shared_ptr<Texture> tex);
+    void release_user_texture(GLuint id);
+
+    // Frame capture. Captures the virtual-resolution game frame (before post-process effects) at the
+    // end of the current frame. request_screenshot writes a PNG; request_capture keeps an ImageData
+    // retrievable with get_last_capture().
+    void request_screenshot(const std::string& path) { m_screenshot_path = path; }
+    void request_capture() { m_capture_requested = true; }
+    std::shared_ptr<ImageData> get_last_capture() const { return m_last_capture; }
     std::shared_ptr<Mesh3D> load_model(const std::string& path);
     std::shared_ptr<Model3D> load_model3d(const std::string& path);
 
@@ -119,6 +132,11 @@ private:
     float m_physics4d_accumulator = 0.0f;
 
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_texture_cache;
+    std::unordered_map<GLuint, std::shared_ptr<Texture>> m_user_textures;
+    std::string m_screenshot_path;
+    bool m_capture_requested = false;
+    std::shared_ptr<ImageData> m_last_capture;
+    void process_frame_capture();
     std::unordered_map<GLuint, std::pair<int, int>> m_texture_sizes;
     std::unordered_map<std::string, std::shared_ptr<Mesh3D>> m_mesh_cache;
     std::unordered_map<std::string, std::shared_ptr<Model3D>> m_model_cache;

@@ -97,6 +97,11 @@ set(ENGINE_SOURCES
     src/graphics/batch2d.cpp
     src/graphics/mesh3d.cpp
     src/graphics/mesh3d_soft.cpp
+    src/graphics/image_data.cpp
+    src/graphics/lightmap2d.cpp
+    src/graphics/static_batch3d.cpp
+    src/graphics/skybox.cpp
+    src/graphics/terrain.cpp
     src/graphics/soft/soft_raster.cpp
     src/graphics/model3d.cpp
     src/graphics/animator.cpp
@@ -109,6 +114,9 @@ set(ENGINE_SOURCES
     src/scripting/lua_runtime.cpp
     src/scripting/bind_window.cpp
     src/scripting/bind_graphics.cpp
+    src/scripting/bind_graphics_extra.cpp
+    src/scripting/lua_prelude.cpp
+    src/scripting/lua_prelude_data.cpp
     src/scripting/bind_input.cpp
     src/scripting/bind_time.cpp
     src/scripting/bind_audio.cpp

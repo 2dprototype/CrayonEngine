@@ -1,4 +1,5 @@
 #include "lua_runtime.hpp"
+#include "bind_graphics_extra.hpp"
 #include "../core/engine.hpp"
 #include "../core/log.hpp"
 #include "../graphics/model3d.hpp"
@@ -1893,11 +1894,15 @@ static int l_graphics_get_camera_ray(lua_State* L) {
     return 1;
 }
 
+void crayon_lua_apply_texture_opts(lua_State* L, GLuint id, int opts_idx);
+
+// graphics.loadTexture(path [, { filter = "nearest"|"linear"|"mipmap", wrap = "repeat"|"clamp"|"mirror" }])
 static int l_graphics_load_texture(lua_State* L) {
     const char* path = luaL_checkstring(L, 1);
     GLuint id = Engine::get().load_texture(path);
     int w = 0, h = 0;
     Engine::get().get_texture_size(id, w, h);
+    if (lua_istable(L, 2)) crayon_lua_apply_texture_opts(L, id, 2);
     push_texture_userdata(L, id, w, h);
     return 1;
 }
@@ -2026,6 +2031,99 @@ static int l_graphics_create_mesh(lua_State* L) {
 }
 
 // ---------------- 3D Primitives Direct Draw ----------------
+
+// ---------------- Culling / LOD ----------------
+
+static int l_graphics_set_auto_cull(lua_State* L) {
+    Engine::get().get_mesh_renderer().set_auto_cull(lua_isnoneornil(L, 1) ? true : lua_toboolean(L, 1) != 0);
+    return 0;
+}
+
+static int l_graphics_get_auto_cull(lua_State* L) {
+    lua_pushboolean(L, Engine::get().get_mesh_renderer().get_auto_cull());
+    return 1;
+}
+
+// graphics.setMaxDrawDistance(distance)  -- 0 = unlimited
+static int l_graphics_set_max_draw_distance(lua_State* L) {
+    Engine::get().get_mesh_renderer().set_max_draw_distance(static_cast<float>(luaL_optnumber(L, 1, 0.0)));
+    return 0;
+}
+
+static int l_graphics_set_offscreen_culling(lua_State* L) {
+    Engine::get().get_batch2d().set_offscreen_culling(lua_isnoneornil(L, 1) ? true : lua_toboolean(L, 1) != 0);
+    return 0;
+}
+
+// graphics.getCullStats() -> culled3DDraws, culled2DQuads   (counts since the frame began)
+static int l_graphics_get_cull_stats(lua_State* L) {
+    lua_pushinteger(L, Engine::get().get_mesh_renderer().get_culled_draw_count());
+    lua_pushinteger(L, Engine::get().get_batch2d().get_culled_quad_count());
+    return 2;
+}
+
+// graphics.isSphereVisible(x, y, z, radius) -> bool   (against the current 3D camera)
+static int l_graphics_is_sphere_visible(lua_State* L) {
+    glm::vec3 c(static_cast<float>(luaL_checknumber(L, 1)), static_cast<float>(luaL_checknumber(L, 2)),
+                static_cast<float>(luaL_checknumber(L, 3)));
+    lua_pushboolean(L, Engine::get().get_mesh_renderer().sphere_visible(c, static_cast<float>(luaL_optnumber(L, 4, 0.0))));
+    return 1;
+}
+
+// graphics.isBoxVisible(minx,miny,minz, maxx,maxy,maxz) -> bool   (world-space AABB)
+static int l_graphics_is_box_visible(lua_State* L) {
+    glm::vec3 mn(static_cast<float>(luaL_checknumber(L, 1)), static_cast<float>(luaL_checknumber(L, 2)),
+                 static_cast<float>(luaL_checknumber(L, 3)));
+    glm::vec3 mx(static_cast<float>(luaL_checknumber(L, 4)), static_cast<float>(luaL_checknumber(L, 5)),
+                 static_cast<float>(luaL_checknumber(L, 6)));
+    lua_pushboolean(L, Engine::get().get_mesh_renderer().aabb_visible(mn, mx, glm::mat4(1.0f)));
+    return 1;
+}
+
+// graphics.drawModelLOD(models, distances, x,y,z, rx,ry,rz, sx,sy,sz, texture)
+//   models    = { highDetail, mediumDetail, lowDetail }
+//   distances = { 20, 50, 120 }   models[i] is used while camera distance < distances[i].
+// If #distances == #models the object is not drawn beyond the last distance; if it is one shorter,
+// the last model is used at any distance. Returns the LOD index drawn (or nil when culled by distance).
+static int l_graphics_draw_model_lod(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    luaL_checktype(L, 2, LUA_TTABLE);
+    const int n_models = static_cast<int>(lua_objlen(L, 1));
+    const int n_dist = static_cast<int>(lua_objlen(L, 2));
+    if (n_models < 1) return 0;
+
+    glm::vec3 pos(static_cast<float>(luaL_optnumber(L, 3, 0.0)), static_cast<float>(luaL_optnumber(L, 4, 0.0)),
+                  static_cast<float>(luaL_optnumber(L, 5, 0.0)));
+    float rx = static_cast<float>(luaL_optnumber(L, 6, 0.0)), ry = static_cast<float>(luaL_optnumber(L, 7, 0.0)),
+          rz = static_cast<float>(luaL_optnumber(L, 8, 0.0));
+    float sx = static_cast<float>(luaL_optnumber(L, 9, 1.0)), sy = static_cast<float>(luaL_optnumber(L, 10, 1.0)),
+          sz = static_cast<float>(luaL_optnumber(L, 11, 1.0));
+    GLuint tex_id = opt_texture(L, 12, 0);
+
+    const float dist = glm::length(pos - Engine::get().get_mesh_renderer().get_camera_position());
+    int lod = n_models;                               // default: farthest model
+    for (int i = 1; i <= n_dist && i <= n_models; ++i) {
+        lua_rawgeti(L, 2, i);
+        float d = static_cast<float>(lua_tonumber(L, -1));
+        lua_pop(L, 1);
+        if (dist < d) { lod = i; break; }
+        if (i == n_dist && n_dist >= n_models) return 0;   // beyond the final distance: culled
+    }
+
+    lua_rawgeti(L, 1, lod);
+    auto model = check_model(L, -1);
+    lua_pop(L, 1);
+    if (!model) return 0;
+
+    glm::mat4 m = glm::translate(glm::mat4(1.0f), pos);
+    if (rz != 0.0f) m = glm::rotate(m, rz, glm::vec3(0, 0, 1));
+    if (ry != 0.0f) m = glm::rotate(m, ry, glm::vec3(0, 1, 0));
+    if (rx != 0.0f) m = glm::rotate(m, rx, glm::vec3(1, 0, 0));
+    m = glm::scale(m, glm::vec3(sx, sy, sz));
+    model->draw(Engine::get().get_mesh_renderer(), m, tex_id);
+    lua_pushinteger(L, lod);
+    return 1;
+}
 
 static int l_graphics_draw_model(lua_State* L) {
     auto model = check_model(L, 1);
@@ -2717,6 +2815,11 @@ static int l_graphics_get_font(lua_State* L) {
     return 0;
 }
 
+static glm::vec4 parse_lua_color(lua_State* L, int idx, const glm::vec4& fallback);
+
+// graphics.drawText(text, x, y [, { scale, wrap, align, font,
+//                                   outline = { color = {r,g,b,a}, thickness = 1 },
+//                                   shadow  = { dx = 1, dy = 1, color = {r,g,b,a} } }])
 static int l_graphics_draw_text(lua_State* L) {
     const char* text = luaL_checkstring(L, 1);
     float x = static_cast<float>(luaL_checknumber(L, 2));
@@ -2724,8 +2827,42 @@ static int l_graphics_draw_text(lua_State* L) {
     float scale = 1.0f;
     float wrap_width = -1.0f;
     int align = 0; // 0 = Left, 1 = Center, 2 = Right
+    bool has_outline = false, has_shadow = false;
+    glm::vec4 outline_col(0.0f, 0.0f, 0.0f, 1.0f), shadow_col(0.0f, 0.0f, 0.0f, 0.6f);
+    float outline_t = 1.0f, shadow_dx = 1.0f, shadow_dy = 1.0f;
 
     if (lua_istable(L, 4)) {
+        lua_getfield(L, 4, "outline");
+        if (lua_istable(L, -1)) {
+            has_outline = true;
+            lua_getfield(L, -1, "color");
+            if (!lua_isnil(L, -1)) outline_col = parse_lua_color(L, -1, outline_col);
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "thickness");
+            if (lua_isnumber(L, -1)) outline_t = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+        } else if (lua_isboolean(L, -1) && lua_toboolean(L, -1)) {
+            has_outline = true;
+        }
+        lua_pop(L, 1);
+
+        lua_getfield(L, 4, "shadow");
+        if (lua_istable(L, -1)) {
+            has_shadow = true;
+            lua_getfield(L, -1, "dx");
+            if (lua_isnumber(L, -1)) shadow_dx = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "dy");
+            if (lua_isnumber(L, -1)) shadow_dy = static_cast<float>(lua_tonumber(L, -1));
+            lua_pop(L, 1);
+            lua_getfield(L, -1, "color");
+            if (!lua_isnil(L, -1)) shadow_col = parse_lua_color(L, -1, shadow_col);
+            lua_pop(L, 1);
+        } else if (lua_isboolean(L, -1) && lua_toboolean(L, -1)) {
+            has_shadow = true;
+        }
+        lua_pop(L, 1);
+
         lua_getfield(L, 4, "scale");
         if (lua_isnumber(L, -1)) scale = static_cast<float>(lua_tonumber(L, -1));
         lua_pop(L, 1);
@@ -2759,12 +2896,25 @@ static int l_graphics_draw_text(lua_State* L) {
         align = static_cast<int>(luaL_optinteger(L, 6, 0));
     }
 
-    const glm::vec4& col = Engine::get().get_active_color();
-    if (wrap_width > 0.0f || align != 0) {
-        Engine::get().get_batch2d().draw_text_ex(text, x, y, scale, col, wrap_width, align);
-    } else {
-        Engine::get().get_batch2d().draw_text(text, x, y, scale, col);
+    const glm::vec4 col = Engine::get().get_active_color();
+    auto& batch = Engine::get().get_batch2d();
+    auto pass = [&](float ox, float oy, const glm::vec4& c) {
+        if (wrap_width > 0.0f || align != 0) batch.draw_text_ex(text, x + ox, y + oy, scale, c, wrap_width, align);
+        else batch.draw_text(text, x + ox, y + oy, scale, c);
+    };
+    if (has_shadow) pass(shadow_dx * scale, shadow_dy * scale, glm::vec4(shadow_col.r, shadow_col.g, shadow_col.b, shadow_col.a * col.a));
+    if (has_outline) {
+        // Eight directions at the requested radius (plus a half-radius ring for fat outlines)
+        // closes the gaps a thin ring leaves on diagonal strokes.
+        static const float dirs[8][2] = {{1, 0}, {-1, 0}, {0, 1}, {0, -1}, {0.7071f, 0.7071f}, {-0.7071f, 0.7071f}, {0.7071f, -0.7071f}, {-0.7071f, -0.7071f}};
+        const float r = outline_t * scale;
+        const glm::vec4 oc(outline_col.r, outline_col.g, outline_col.b, outline_col.a * col.a);
+        for (int ring = (outline_t >= 2.0f ? 2 : 1); ring >= 1; --ring) {
+            const float rr = r * (ring == 2 ? 0.5f : 1.0f);
+            for (const auto& d : dirs) pass(d[0] * rr, d[1] * rr, oc);
+        }
     }
+    pass(0.0f, 0.0f, col);
     return 0;
 }
 
@@ -3056,8 +3206,15 @@ static int l_graphics_set_spot_light_enabled(lua_State* L) {
     return 0;
 }
 
+// graphics.flushTransparent() -- draws queued transparent 3D geometry (sorted back-to-front) now.
+static int l_graphics_flush_transparent(lua_State*) {
+    Engine::get().get_mesh_renderer().flush_transparent();
+    return 0;
+}
+
 static int l_graphics_set_depth_test(lua_State* L) {
     bool enable = lua_isnoneornil(L, 1) ? true : lua_toboolean(L, 1);
+    if (!enable) Engine::get().get_mesh_renderer().flush_transparent();   // 3D done: draw transparents before the HUD
     Engine::get().get_mesh_renderer().set_depth_test_enabled(enable);   // software backend state
     if (soft_backend()) return 0;
     if (enable) {
@@ -3811,6 +3968,11 @@ static int l_graphics_measure_text_markup(lua_State* L) {
     return 3;
 }
 
+// Non-static bridges for bind_graphics_extra.cpp (LuaTexture stays private to this file).
+GLuint crayon_lua_check_texture(lua_State* L, int idx) { return check_texture(L, idx); }
+std::shared_ptr<Model3D> crayon_lua_check_model(lua_State* L, int idx) { return check_model(L, idx); }
+void crayon_lua_push_texture(lua_State* L, GLuint id, int w, int h) { push_texture_userdata(L, id, w, h); }
+
 void register_graphics_bindings(lua_State* L) {
     register_texture_metatable(L);
     register_font_metatable(L);
@@ -3856,6 +4018,25 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_get_model_color);
     lua_setfield(L, -2, "getModelColor");
+
+    lua_pushcfunction(L, l_graphics_flush_transparent);
+    lua_setfield(L, -2, "flushTransparent");
+    lua_pushcfunction(L, l_graphics_set_auto_cull);
+    lua_setfield(L, -2, "setAutoCull");
+    lua_pushcfunction(L, l_graphics_get_auto_cull);
+    lua_setfield(L, -2, "getAutoCull");
+    lua_pushcfunction(L, l_graphics_set_max_draw_distance);
+    lua_setfield(L, -2, "setMaxDrawDistance");
+    lua_pushcfunction(L, l_graphics_set_offscreen_culling);
+    lua_setfield(L, -2, "setOffscreenCulling");
+    lua_pushcfunction(L, l_graphics_get_cull_stats);
+    lua_setfield(L, -2, "getCullStats");
+    lua_pushcfunction(L, l_graphics_is_sphere_visible);
+    lua_setfield(L, -2, "isSphereVisible");
+    lua_pushcfunction(L, l_graphics_is_box_visible);
+    lua_setfield(L, -2, "isBoxVisible");
+    lua_pushcfunction(L, l_graphics_draw_model_lod);
+    lua_setfield(L, -2, "drawModelLOD");
 
     lua_pushcfunction(L, l_graphics_is_software_renderer);
     lua_setfield(L, -2, "isSoftwareRenderer");
@@ -4168,6 +4349,8 @@ void register_graphics_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_graphics_measure_text_markup);
     lua_setfield(L, -2, "measureTextMarkup");
+
+    register_graphics_extra_bindings(L);   // ImageData, newTexture, texture filter/wrap, screenshots
 
     lua_setfield(L, -2, "graphics");
     lua_pop(L, 1);

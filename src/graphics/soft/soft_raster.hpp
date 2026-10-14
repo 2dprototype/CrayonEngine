@@ -11,6 +11,7 @@
 //   * framebuffer pixels are packed RGBA8 (r | g<<8 | b<<16 | a<<24), row 0 = top
 //   * depth test is LEQUAL, blending is off (alpha only drives the cutout test)
 #include <cstdint>
+#include <functional>
 #include <memory>
 #include <vector>
 #include <glm/glm.hpp>
@@ -51,8 +52,20 @@ public:
     bool has_alpha() const { return m_has_alpha; }
     bool smooth() const { return m_smooth; }
 
+    // Sampling state, switchable at runtime (graphics texture:setFilter / setWrap).
+    enum class Wrap : int { Repeat = 0, Clamp = 1, Mirror = 2 };
+    Wrap wrap() const { return m_wrap; }
+    void set_wrap(Wrap w) { m_wrap = w; }
+    void set_smooth(bool s) { m_smooth = s; }
+    // Rebuilds (or drops) the mip chain from level 0.
+    void set_mipmaps(bool enabled);
+    // Replaces level 0 pixels in place (same size) and rebuilds the mips if it had them.
+    bool update(const unsigned char* rgba, int width, int height);
+
 private:
+    void generate_mips();
     std::vector<Level> m_levels;
+    Wrap m_wrap = Wrap::Repeat;
     bool m_has_alpha = false;
     bool m_smooth = false;
 };
@@ -151,6 +164,14 @@ public:
     // Cheap axis-aligned test of a local-space AABB under `model` against the view frustum.
     bool aabb_visible(const glm::vec3& mn, const glm::vec3& mx, const glm::mat4& model) const;
 
+    // ---- skybox ----
+    // `sample` returns linear RGB for a world direction (e.g. crayon::Skybox::sample). Paints only
+    // pixels nothing has been drawn on yet (depth untouched), so it can be called at any point of
+    // the frame -- drawing it last is cheapest. View directions are affine in NDC for a perspective
+    // camera, so each pixel's direction is bilinear from the four screen corners.
+    void draw_skybox(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& tint,
+                     const std::function<glm::vec3(const glm::vec3&)>& sample);
+
     // ---- 2D batch (mirrors Batch2D::flush) ----
     struct Vertex2D { glm::vec2 position; glm::vec2 uv; glm::vec4 color; };
     struct IRect { int x, y, w, h; };
@@ -160,6 +181,14 @@ public:
     // edge rules so alpha-blended quads never double-blend along the diagonal.
     void draw_2d(const Vertex2D* v, size_t count, const glm::mat4& proj_view, const Texture* tex,
                  Blend2D mode, const IRect* scissor);
+
+    // ---- 2D stencil-style mask (graphics.beginMask / useMask / endMask) ----
+    // Write: shapes drawn set the mask and leave colour untouched. Test: drawing only affects
+    // pixels inside the mask (TestInverted: outside). Off: normal drawing.
+    enum class MaskMode { Off, Write, Test, TestInverted };
+    void set_mask_mode(MaskMode m) { m_mask_mode = m; }
+    MaskMode mask_mode() const { return m_mask_mode; }
+    void clear_mask();
 
     // ---- full-screen post effects (CPU equivalents of the GL post shader) ----
     struct PostOptions {
@@ -204,6 +233,8 @@ private:
     int m_w = 0, m_h = 0;
     std::vector<uint32_t> m_color;
     std::vector<float> m_depth;
+    std::vector<uint8_t> m_mask;
+    MaskMode m_mask_mode = MaskMode::Off;
 
     glm::mat4 m_view{1.0f}, m_proj{1.0f}, m_viewproj{1.0f};
     glm::vec3 m_cam{0.0f};

@@ -8,10 +8,26 @@
 
 namespace crayon {
 
+#include <unordered_map>
+
+namespace {
+std::unordered_map<GLuint, Texture*>& live_textures() {
+    static std::unordered_map<GLuint, Texture*> m;
+    return m;
+}
+} // namespace
+
 Texture::Texture() = default;
+
+Texture* Texture::find(GLuint id) {
+    auto& m = live_textures();
+    auto it = m.find(id);
+    return it == m.end() ? nullptr : it->second;
+}
 
 Texture::~Texture() {
     if (m_texture_id != 0) {
+        live_textures().erase(m_texture_id);
         if (soft_backend()) soft::TextureRegistry::remove(m_texture_id);
         else glDeleteTextures(1, &m_texture_id);
         m_texture_id = 0;
@@ -37,6 +53,7 @@ bool Texture::load_from_file(const std::string& filepath, bool nearest) {
 
 bool Texture::load_from_memory(const unsigned char* data, int width, int height, int channels, bool nearest) {
     if (m_texture_id != 0) {
+        live_textures().erase(m_texture_id);
         if (soft_backend()) soft::TextureRegistry::remove(m_texture_id);
         else glDeleteTextures(1, &m_texture_id);
         m_texture_id = 0;
@@ -50,6 +67,10 @@ bool Texture::load_from_memory(const unsigned char* data, int width, int height,
 
     m_width = width;
     m_height = height;
+    m_channels = channels;
+    m_nearest = nearest;
+    m_has_mips = !nearest;
+    m_wrap = TextureWrap::Repeat;
 
     if (soft_backend()) {
         // CPU backend: keep the pixels in a mip-mapped soft::Texture. The id handed out is a
@@ -58,6 +79,7 @@ bool Texture::load_from_memory(const unsigned char* data, int width, int height,
         auto soft_tex = std::make_shared<soft::Texture>();
         if (!soft_tex->create(data, width, height, channels, /*build_mips=*/!nearest, /*smooth=*/!nearest)) return false;
         m_texture_id = soft::TextureRegistry::add(std::move(soft_tex));
+        live_textures()[m_texture_id] = this;
         return true;
     }
 
@@ -128,6 +150,72 @@ bool Texture::load_from_memory(const unsigned char* data, int width, int height,
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, GL_REPEAT);
     glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, GL_REPEAT);
 
+    glBindTexture(GL_TEXTURE_2D, 0);
+    live_textures()[m_texture_id] = this;
+    return true;
+}
+
+void Texture::set_filter(bool nearest, bool mipmaps) {
+    if (m_texture_id == 0) return;
+    m_nearest = nearest;
+    m_has_mips = !nearest && mipmaps;
+    if (soft_backend()) {
+        if (auto* t = const_cast<soft::Texture*>(soft::TextureRegistry::get(m_texture_id))) {
+            t->set_smooth(!nearest);
+            t->set_mipmaps(m_has_mips);
+        }
+        return;
+    }
+    glBindTexture(GL_TEXTURE_2D, m_texture_id);
+    GLint min_filter = GL_NEAREST, mag_filter = GL_NEAREST;
+    if (!nearest) {
+        mag_filter = GL_LINEAR;
+        if (mipmaps) {
+            glGenerateMipmap(GL_TEXTURE_2D);
+#if defined(CRAYON_GLES)
+            min_filter = GL_LINEAR_MIPMAP_NEAREST;
+#else
+            min_filter = GL_LINEAR_MIPMAP_LINEAR;
+#endif
+        } else {
+            min_filter = GL_LINEAR;
+        }
+    }
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MIN_FILTER, min_filter);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_MAG_FILTER, mag_filter);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+void Texture::set_wrap(TextureWrap wrap) {
+    if (m_texture_id == 0) return;
+    m_wrap = wrap;
+    if (soft_backend()) {
+        if (auto* t = const_cast<soft::Texture*>(soft::TextureRegistry::get(m_texture_id))) {
+            t->set_wrap(wrap == TextureWrap::Clamp ? soft::Texture::Wrap::Clamp
+                       : wrap == TextureWrap::Mirror ? soft::Texture::Wrap::Mirror : soft::Texture::Wrap::Repeat);
+        }
+        return;
+    }
+    GLint mode = wrap == TextureWrap::Clamp ? GL_CLAMP_TO_EDGE : wrap == TextureWrap::Mirror ? GL_MIRRORED_REPEAT : GL_REPEAT;
+    glBindTexture(GL_TEXTURE_2D, m_texture_id);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_S, mode);
+    glTexParameteri(GL_TEXTURE_2D, GL_TEXTURE_WRAP_T, mode);
+    glBindTexture(GL_TEXTURE_2D, 0);
+}
+
+bool Texture::update_rgba(const unsigned char* rgba, int width, int height) {
+    if (m_texture_id == 0 || !rgba || width != m_width || height != m_height || m_channels != 4) return false;
+    if (soft_backend()) {
+        auto* t = const_cast<soft::Texture*>(soft::TextureRegistry::get(m_texture_id));
+        return t && t->update(rgba, width, height);
+    }
+    glBindTexture(GL_TEXTURE_2D, m_texture_id);
+    GLint prev_align = 4;
+    glGetIntegerv(GL_UNPACK_ALIGNMENT, &prev_align);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, 1);
+    glTexSubImage2D(GL_TEXTURE_2D, 0, 0, 0, width, height, GL_RGBA, GL_UNSIGNED_BYTE, rgba);
+    glPixelStorei(GL_UNPACK_ALIGNMENT, prev_align);
+    if (m_has_mips) glGenerateMipmap(GL_TEXTURE_2D);
     glBindTexture(GL_TEXTURE_2D, 0);
     return true;
 }

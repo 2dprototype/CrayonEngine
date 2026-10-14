@@ -21,6 +21,7 @@
 #include <glm/gtc/quaternion.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
+#include <limits>
 #include <cmath>
 #include <cstdint>
 #include <cstring>
@@ -48,6 +49,30 @@ static void upload_index_buffer(GLuint& ebo, const std::vector<GLuint>& indices,
     }
 }
 
+template <typename V>
+static void compute_mesh_bounds(const std::vector<V>& verts, glm::vec3& mn, glm::vec3& mx, bool& valid) {
+    valid = !verts.empty();
+    if (!valid) { mn = mx = glm::vec3(0.0f); return; }
+    mn = glm::vec3(std::numeric_limits<float>::max());
+    mx = glm::vec3(std::numeric_limits<float>::lowest());
+    for (const auto& v : verts) { mn = glm::min(mn, v.position); mx = glm::max(mx, v.position); }
+}
+
+// Flips any triangle whose winding disagrees with its vertex normals, so every generated mesh
+// is CCW-outward. (Several generators below emitted inward-wound triangles; harmless with culling
+// off, but they would disappear under backface culling.)
+static void orient_to_normals(const std::vector<Vertex3D>& verts, std::vector<GLuint>& idx) {
+    for (size_t t = 0; t + 2 < idx.size(); t += 3) {
+        const glm::vec3& a = verts[idx[t]].position;
+        const glm::vec3& b = verts[idx[t + 1]].position;
+        const glm::vec3& c = verts[idx[t + 2]].position;
+        glm::vec3 fn = glm::cross(b - a, c - a);
+        if (glm::dot(fn, fn) < 1e-16f) continue;                    // degenerate (pole) triangle
+        glm::vec3 vn = verts[idx[t]].normal + verts[idx[t + 1]].normal + verts[idx[t + 2]].normal;
+        if (glm::dot(fn, vn) < 0.0f) std::swap(idx[t + 1], idx[t + 2]);
+    }
+}
+
 Mesh3D::Mesh3D() = default;
 
 Mesh3D::~Mesh3D() {
@@ -66,6 +91,8 @@ Mesh3D::~Mesh3D() {
 }
 
 void Mesh3D::create_from_data(const std::vector<Vertex3D>& vertices, const std::vector<GLuint>& indices) {
+    compute_mesh_bounds(vertices, m_bounds_min, m_bounds_max, m_bounds_valid);
+    if (m_retain_cpu && !soft_backend()) { m_cpu_vertices = vertices; m_cpu_indices = indices; }
     if (soft_backend()) {
         // CPU backend: no GL objects, the mesh simply lives in memory.
         m_cpu_vertices = vertices;
@@ -118,6 +145,7 @@ void Mesh3D::create_from_data(const std::vector<Vertex3D>& vertices, const std::
 }
 
 void Mesh3D::create_skinned_from_data(const std::vector<SkinnedVertex3D>& vertices, const std::vector<GLuint>& indices) {
+    compute_mesh_bounds(vertices, m_bounds_min, m_bounds_max, m_bounds_valid);
     if (soft_backend()) {
         m_cpu_skinned = vertices;
         m_cpu_indices = indices;
@@ -418,6 +446,7 @@ std::shared_ptr<Mesh3D> Mesh3D::create_cube(float size) {
     };
 
     auto mesh = std::make_shared<Mesh3D>();
+    mesh->set_retain_cpu(true);
     mesh->create_from_data(vertices, indices);
     return mesh;
 }
@@ -461,6 +490,7 @@ std::shared_ptr<Mesh3D> Mesh3D::create_plane(float width, float depth, int subdi
     }
 
     auto mesh = std::make_shared<Mesh3D>();
+    mesh->set_retain_cpu(true);
     mesh->create_from_data(vertices, indices);
     return mesh;
 }
@@ -505,6 +535,8 @@ std::shared_ptr<Mesh3D> Mesh3D::create_sphere(float radius, int rings, int secto
     }
 
     auto mesh = std::make_shared<Mesh3D>();
+    mesh->set_retain_cpu(true);
+    orient_to_normals(vertices, indices);
     mesh->create_from_data(vertices, indices);
     return mesh;
 }
@@ -598,6 +630,8 @@ std::shared_ptr<Mesh3D> Mesh3D::create_cylinder(float radius, float height, int 
     }
 
     auto mesh = std::make_shared<Mesh3D>();
+    mesh->set_retain_cpu(true);
+    orient_to_normals(vertices, indices);
     mesh->create_from_data(vertices, indices);
     return mesh;
 }
@@ -618,7 +652,8 @@ std::shared_ptr<Mesh3D> Mesh3D::create_cone(float radius, float height, int sect
         glm::vec3 b0(std::cos(a0) * radius, -half_h, std::sin(a0) * radius);
         glm::vec3 b1(std::cos(a1) * radius, -half_h, std::sin(a1) * radius);
 
-        glm::vec3 n = glm::normalize(glm::cross(b0 - apex, b1 - apex));
+        // outward-facing side normal (the previous cross-product order pointed inward)
+        glm::vec3 n = -glm::normalize(glm::cross(b0 - apex, b1 - apex));
 
         GLuint base_idx = static_cast<GLuint>(vertices.size());
         vertices.push_back({ apex, n, {0.5f, 1.0f}, {1, 1, 1, 1} });
@@ -651,6 +686,8 @@ std::shared_ptr<Mesh3D> Mesh3D::create_cone(float radius, float height, int sect
     }
 
     auto mesh = std::make_shared<Mesh3D>();
+    mesh->set_retain_cpu(true);
+    orient_to_normals(vertices, indices);
     mesh->create_from_data(vertices, indices);
     return mesh;
 }
@@ -700,6 +737,7 @@ std::shared_ptr<Mesh3D> Mesh3D::create_pyramid(float base_size, float height) {
     indices.push_back(base + 1);
 
     auto mesh = std::make_shared<Mesh3D>();
+    mesh->set_retain_cpu(true);
     mesh->create_from_data(vertices, indices);
     return mesh;
 }
@@ -750,6 +788,8 @@ std::shared_ptr<Mesh3D> Mesh3D::create_torus(float radius, float tube_radius, in
     }
 
     auto mesh = std::make_shared<Mesh3D>();
+    mesh->set_retain_cpu(true);
+    orient_to_normals(vertices, indices);
     mesh->create_from_data(vertices, indices);
     return mesh;
 }
@@ -805,6 +845,8 @@ std::shared_ptr<Mesh3D> Mesh3D::create_capsule(float radius, float height, int r
     }
 
     auto mesh = std::make_shared<Mesh3D>();
+    mesh->set_retain_cpu(true);
+    orient_to_normals(vertices, indices);
     mesh->create_from_data(vertices, indices);
     return mesh;
 }
@@ -929,6 +971,9 @@ void MeshRenderer3D::shutdown() {
     m_shader.reset();
     m_prog_static.shader.reset();
     m_prog_skinned.shader.reset();
+    m_sky_shader.reset();
+    if (m_sky_vbo) { glDeleteBuffers(1, &m_sky_vbo); m_sky_vbo = 0; }
+    if (m_sky_vao) { glDeleteVertexArrays(1, &m_sky_vao); m_sky_vao = 0; }
 }
 
 void MeshRenderer3D::begin(const Camera& camera, float aspect) {
@@ -944,6 +989,7 @@ void MeshRenderer3D::begin(const Camera& camera, float aspect) {
     m_cam_position = camera.get_position();
     ++m_frame_version;
     m_culled_draws = 0;
+    m_transparent.clear();
     if (soft_backend()) soft::framebuffer().begin(m_view, m_proj, m_cam_position);
 
     m_current_matrix = glm::mat4(1.0f);
@@ -953,6 +999,7 @@ void MeshRenderer3D::begin(const Camera& camera, float aspect) {
 }
 
 void MeshRenderer3D::end() {
+    flush_transparent();
     if (soft_backend()) return;
     glDisable(GL_DEPTH_TEST);
     glUseProgram(0); // draw_mesh() leaves its program bound between draws
@@ -1143,6 +1190,21 @@ void MeshRenderer3D::upload_frame_uniforms(MeshProgState& st) {
     st.uploaded_retro = m_retro;
 }
 
+bool MeshRenderer3D::sphere_visible(const glm::vec3& c, float r) const {
+    // Gribb-Hartmann planes from the view-projection matrix (columns of m_viewproj).
+    const glm::mat4& m = m_viewproj;
+    for (int i = 0; i < 6; ++i) {
+        const int axis = i >> 1;
+        const float sign = (i & 1) ? -1.0f : 1.0f;
+        glm::vec4 plane(m[0][3] + sign * m[0][axis], m[1][3] + sign * m[1][axis],
+                        m[2][3] + sign * m[2][axis], m[3][3] + sign * m[3][axis]);
+        float len = glm::length(glm::vec3(plane));
+        if (len <= 1e-8f) continue;
+        if (glm::dot(glm::vec3(plane), c) + plane.w < -r * len) return false;
+    }
+    return true;
+}
+
 bool MeshRenderer3D::aabb_visible(const glm::vec3& mn, const glm::vec3& mx, const glm::mat4& model) const {
     const glm::mat4 mvp = m_viewproj * model;
     unsigned all = 0x3F;
@@ -1158,16 +1220,58 @@ bool MeshRenderer3D::aabb_visible(const glm::vec3& mn, const glm::vec3& mx, cons
 }
 
 void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuint texture_id, const glm::vec4& tint,
-                               const glm::vec3* bounds_min, const glm::vec3* bounds_max) {
+                               const glm::vec3* bounds_min, const glm::vec3* bounds_max, bool single_sided,
+                               bool alpha_blend) {
     glm::mat4 final_model = m_current_matrix * model;
 
-    if (bounds_min && bounds_max && !aabb_visible(*bounds_min, *bounds_max, final_model)) {
-        ++m_culled_draws;
+    // ---- auto culling: frustum + max distance (bounds come from the part, else from the mesh) ----
+    if (m_auto_cull) {
+        const glm::vec3* lo = bounds_min;
+        const glm::vec3* hi = bounds_max;
+        if (!(lo && hi) && mesh.has_bounds()) { lo = &mesh.bounds_min(); hi = &mesh.bounds_max(); }
+        if (lo && hi) {
+            glm::vec3 lo_v = *lo, hi_v = *hi;
+            if (mesh.is_skinned()) {   // animation can leave the bind-pose box: grow it
+                glm::vec3 c = (lo_v + hi_v) * 0.5f, e = (hi_v - lo_v) * 0.5f * (1.0f + m_skinned_cull_margin);
+                lo_v = c - e; hi_v = c + e;
+            }
+            if (!aabb_visible(lo_v, hi_v, final_model)) { ++m_culled_draws; return; }
+            if (m_max_draw_distance > 0.0f) {
+                glm::vec3 wc = glm::vec3(final_model * glm::vec4((lo_v + hi_v) * 0.5f, 1.0f));
+                float scale = std::max({glm::length(glm::vec3(final_model[0])), glm::length(glm::vec3(final_model[1])),
+                                        glm::length(glm::vec3(final_model[2]))});
+                float radius = glm::length((hi_v - lo_v) * 0.5f) * scale;
+                if (glm::length(wc - m_cam_position) - radius > m_max_draw_distance) { ++m_culled_draws; return; }
+            }
+        }
+    }
+
+    // ---- transparent draws are deferred and sorted (see flush_transparent) ----
+    if ((alpha_blend || tint.a < 0.999f) && !m_in_transparent_flush) {
+        TransparentDraw d;
+        d.mesh = &mesh;
+        d.model = final_model;
+        d.texture = texture_id;
+        d.tint = tint;
+        d.single_sided = single_sided;
+        d.has_bounds = false;
+        const glm::vec3* lo = bounds_min;
+        const glm::vec3* hi = bounds_max;
+        if (!(lo && hi) && mesh.has_bounds()) { lo = &mesh.bounds_min(); hi = &mesh.bounds_max(); }
+        glm::vec3 local_center(0.0f);
+        if (lo && hi) { d.has_bounds = true; d.lo = *lo; d.hi = *hi; local_center = (*lo + *hi) * 0.5f; }
+        d.distance = glm::length(glm::vec3(final_model * glm::vec4(local_center, 1.0f)) - m_cam_position);
+        m_transparent.push_back(d);
         return;
     }
 
+    // Single-sided geometry gets backface culling even when the global cull state is off.
+    const bool auto_back = m_auto_cull && single_sided && m_cull_mode == 0;
+
     if (soft_backend()) {
+        m_force_cull_back = auto_back;
         soft_draw_mesh(mesh, final_model, texture_id != 0 ? texture_id : m_checker_texture->get_id(), tint);
+        m_force_cull_back = false;
         return;
     }
 
@@ -1183,11 +1287,137 @@ void MeshRenderer3D::draw_mesh(const Mesh3D& mesh, const glm::mat4& model, GLuin
     glActiveTexture(GL_TEXTURE0);
     glBindTexture(GL_TEXTURE_2D, texture_id != 0 ? texture_id : m_checker_texture->get_id());
 
+    if (auto_back) { glEnable(GL_CULL_FACE); glCullFace(GL_BACK); }
     mesh.draw();
+    if (auto_back) glDisable(GL_CULL_FACE);
+}
+
+// ---------------------------------------------------------------------------
+// Skybox
+// ---------------------------------------------------------------------------
+static const char* kSkyVS = R"(#version 330 core
+layout(location = 0) in vec3 a_pos;
+uniform mat4 u_view_rot;
+uniform mat4 u_proj;
+out vec3 v_dir;
+void main() {
+    v_dir = a_pos;
+    vec4 p = u_proj * u_view_rot * vec4(a_pos, 1.0);
+    gl_Position = p.xyww;   // depth = 1.0: only fills pixels nothing else has covered
+}
+)";
+
+static const char* kSkyFS = R"(#version 330 core
+in vec3 v_dir;
+uniform samplerCube u_sky;
+uniform vec3 u_tint;
+out vec4 frag_color;
+void main() {
+    frag_color = vec4(texture(u_sky, v_dir).rgb * u_tint, 1.0);
+}
+)";
+
+void MeshRenderer3D::draw_skybox(Skybox& sky, const glm::vec3& tint) {
+    if (!sky.valid()) return;
+    if (soft_backend()) {
+        soft::framebuffer().draw_skybox(m_view, m_proj, tint,
+                                        [&sky](const glm::vec3& d) { return sky.sample(d); });
+        return;
+    }
+    if (!m_sky_shader) {
+        m_sky_shader = std::make_unique<Shader>();
+        if (!m_sky_shader->load_from_memory(kSkyVS, kSkyFS)) {
+            CRAYON_LOG_ERROR("Skybox shader failed to compile");
+            m_sky_shader.reset();
+            return;
+        }
+        static const float cube[] = {
+            -1, 1,-1, -1,-1,-1,  1,-1,-1,  1,-1,-1,  1, 1,-1, -1, 1,-1,
+            -1,-1, 1, -1,-1,-1, -1, 1,-1, -1, 1,-1, -1, 1, 1, -1,-1, 1,
+             1,-1,-1,  1,-1, 1,  1, 1, 1,  1, 1, 1,  1, 1,-1,  1,-1,-1,
+            -1,-1, 1, -1, 1, 1,  1, 1, 1,  1, 1, 1,  1,-1, 1, -1,-1, 1,
+            -1, 1,-1,  1, 1,-1,  1, 1, 1,  1, 1, 1, -1, 1, 1, -1, 1,-1,
+            -1,-1,-1, -1,-1, 1,  1,-1,-1,  1,-1,-1, -1,-1, 1,  1,-1, 1};
+        glGenVertexArrays(1, &m_sky_vao);
+        glGenBuffers(1, &m_sky_vbo);
+        glBindVertexArray(m_sky_vao);
+        glBindBuffer(GL_ARRAY_BUFFER, m_sky_vbo);
+        glBufferData(GL_ARRAY_BUFFER, sizeof(cube), cube, GL_STATIC_DRAW);
+        glEnableVertexAttribArray(0);
+        glVertexAttribPointer(0, 3, GL_FLOAT, GL_FALSE, 3 * sizeof(float), nullptr);
+        glBindVertexArray(0);
+    }
+    GLuint cube_tex = sky.gl_texture();
+    if (cube_tex == 0) return;
+
+    glm::mat4 rot_view = m_view;
+    rot_view[3] = glm::vec4(0, 0, 0, 1);
+    glDepthMask(GL_FALSE);
+    glDepthFunc(GL_LEQUAL);
+    const bool cull_was_on = m_cull_mode != 0;
+    if (cull_was_on) glDisable(GL_CULL_FACE);
+
+    m_sky_shader->bind();
+    m_sky_shader->set_mat4("u_view_rot", rot_view);
+    m_sky_shader->set_mat4("u_proj", m_proj);
+    m_sky_shader->set_vec3("u_tint", tint);
+    m_sky_shader->set_int("u_sky", 0);
+    glActiveTexture(GL_TEXTURE0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, cube_tex);
+    glBindVertexArray(m_sky_vao);
+    glDrawArrays(GL_TRIANGLES, 0, 36);
+    glBindVertexArray(0);
+    glBindTexture(GL_TEXTURE_CUBE_MAP, 0);
+    glUseProgram(0);
+
+    if (cull_was_on) glEnable(GL_CULL_FACE);
+    glDepthMask(m_depth_write ? GL_TRUE : GL_FALSE);
+}
+
+void MeshRenderer3D::flush_transparent() {
+    if (m_transparent.empty() || m_in_transparent_flush) return;
+    std::vector<TransparentDraw> queue;
+    queue.swap(m_transparent);
+    std::stable_sort(queue.begin(), queue.end(),
+                     [](const TransparentDraw& a, const TransparentDraw& b) { return a.distance > b.distance; });
+
+    m_in_transparent_flush = true;
+    m_blend_pass = true;
+    const glm::mat4 saved_stack = m_current_matrix;
+    m_current_matrix = glm::mat4(1.0f);          // queued matrices already include the stack
+    if (!soft_backend()) {
+        glEnable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+        glDepthMask(GL_FALSE);
+    }
+    for (const TransparentDraw& d : queue) {
+        draw_mesh(*d.mesh, d.model, d.texture, d.tint, d.has_bounds ? &d.lo : nullptr, d.has_bounds ? &d.hi : nullptr,
+                  d.single_sided, true);
+    }
+    if (!soft_backend()) {
+        glDepthMask(m_depth_write ? GL_TRUE : GL_FALSE);
+        glDisable(GL_BLEND);
+    }
+    m_current_matrix = saved_stack;
+    m_blend_pass = false;
+    m_in_transparent_flush = false;
 }
 
 void MeshRenderer3D::draw_mesh_skinned(const Mesh3D& mesh, const glm::mat4& model, const glm::mat4* bone_matrices, size_t bone_count, GLuint texture_id, const glm::vec4& tint) {
     glm::mat4 final_model = m_current_matrix * model;
+
+    if (m_auto_cull && mesh.has_bounds()) {
+        glm::vec3 c = (mesh.bounds_min() + mesh.bounds_max()) * 0.5f;
+        glm::vec3 e = (mesh.bounds_max() - mesh.bounds_min()) * 0.5f * (1.0f + m_skinned_cull_margin);
+        bool vis = aabb_visible(c - e, c + e, final_model);
+        if (vis && m_max_draw_distance > 0.0f) {
+            glm::vec3 wc = glm::vec3(final_model * glm::vec4(c, 1.0f));
+            float scale = std::max({glm::length(glm::vec3(final_model[0])), glm::length(glm::vec3(final_model[1])),
+                                    glm::length(glm::vec3(final_model[2]))});
+            vis = glm::length(wc - m_cam_position) - glm::length(e) * scale <= m_max_draw_distance;
+        }
+        if (!vis) { ++m_culled_draws; return; }
+    }
 
     if (soft_backend()) {
         soft_draw_mesh_skinned(mesh, final_model, bone_matrices, bone_count,
@@ -1233,7 +1463,7 @@ static glm::mat4 make_transform(const glm::vec3& pos, const glm::vec3& scale, co
 }
 
 void MeshRenderer3D::draw_cube(const glm::vec3& pos, const glm::vec3& size, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_cube) draw_mesh(*m_prim_cube, make_transform(pos, size, rot), texture_id, m_active_color_3d);
+    if (m_prim_cube) draw_mesh(*m_prim_cube, make_transform(pos, size, rot), texture_id, m_active_color_3d, nullptr, nullptr, true);
 }
 
 void MeshRenderer3D::draw_plane(const glm::vec3& pos, float width, float depth, GLuint texture_id, const glm::vec3& rot) {
@@ -1241,34 +1471,35 @@ void MeshRenderer3D::draw_plane(const glm::vec3& pos, float width, float depth, 
 }
 
 void MeshRenderer3D::draw_sphere(const glm::vec3& pos, float radius, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_sphere) draw_mesh(*m_prim_sphere, make_transform(pos, glm::vec3(radius * 2.0f), rot), texture_id, m_active_color_3d);
+    if (m_prim_sphere) draw_mesh(*m_prim_sphere, make_transform(pos, glm::vec3(radius * 2.0f), rot), texture_id, m_active_color_3d, nullptr, nullptr, true);
 }
 
 void MeshRenderer3D::draw_cylinder(const glm::vec3& pos, float radius, float height, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_cylinder) draw_mesh(*m_prim_cylinder, make_transform(pos, glm::vec3(radius * 2.0f, height, radius * 2.0f), rot), texture_id, m_active_color_3d);
+    if (m_prim_cylinder) draw_mesh(*m_prim_cylinder, make_transform(pos, glm::vec3(radius * 2.0f, height, radius * 2.0f), rot), texture_id, m_active_color_3d, nullptr, nullptr, true);
 }
 
 void MeshRenderer3D::draw_cone(const glm::vec3& pos, float radius, float height, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_cone) draw_mesh(*m_prim_cone, make_transform(pos, glm::vec3(radius * 2.0f, height, radius * 2.0f), rot), texture_id, m_active_color_3d);
+    if (m_prim_cone) draw_mesh(*m_prim_cone, make_transform(pos, glm::vec3(radius * 2.0f, height, radius * 2.0f), rot), texture_id, m_active_color_3d, nullptr, nullptr, true);
 }
 
 void MeshRenderer3D::draw_pyramid(const glm::vec3& pos, float base_size, float height, GLuint texture_id, const glm::vec3& rot) {
-    if (m_prim_pyramid) draw_mesh(*m_prim_pyramid, make_transform(pos, glm::vec3(base_size, height, base_size), rot), texture_id, m_active_color_3d);
+    if (m_prim_pyramid) draw_mesh(*m_prim_pyramid, make_transform(pos, glm::vec3(base_size, height, base_size), rot), texture_id, m_active_color_3d, nullptr, nullptr, true);
 }
 
 void MeshRenderer3D::draw_torus(const glm::vec3& pos, float radius, float tube_radius, GLuint texture_id, const glm::vec3& rot) {
     (void)radius; (void)tube_radius;
-    if (m_prim_torus) draw_mesh(*m_prim_torus, make_transform(pos, glm::vec3(1.0f), rot), texture_id, m_active_color_3d);
+    if (m_prim_torus) draw_mesh(*m_prim_torus, make_transform(pos, glm::vec3(1.0f), rot), texture_id, m_active_color_3d, nullptr, nullptr, true);
 }
 
 void MeshRenderer3D::draw_capsule(const glm::vec3& pos, float radius, float height, GLuint texture_id, const glm::vec3& rot) {
     (void)radius; (void)height;
-    if (m_prim_capsule) draw_mesh(*m_prim_capsule, make_transform(pos, glm::vec3(1.0f), rot), texture_id, m_active_color_3d);
+    if (m_prim_capsule) draw_mesh(*m_prim_capsule, make_transform(pos, glm::vec3(1.0f), rot), texture_id, m_active_color_3d, nullptr, nullptr, true);
 }
 
 void MeshRenderer3D::draw_billboard(GLuint texture_id, const glm::vec3& position, const glm::vec2& size,
                                     BillboardMode mode, const glm::vec4& color,
                                     float u0, float v0, float u1, float v1) {
+    if (m_auto_cull && !sphere_visible(position, 0.5f * std::max(size.x, size.y) * 1.4143f)) { ++m_culled_draws; return; }
     glm::vec3 right, up;
     if (mode == BillboardMode::Spherical) {
         right = glm::vec3(m_view[0][0], m_view[1][0], m_view[2][0]);

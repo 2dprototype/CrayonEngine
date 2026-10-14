@@ -42,7 +42,13 @@ bool Texture::create(const unsigned char* data, int width, int height, int chann
     l0.hmask = height - 1;
     m_levels.push_back(std::move(l0));
 
-    while (build_mips && (m_levels.back().w > 1 || m_levels.back().h > 1)) {
+    if (build_mips) generate_mips();
+    return true;
+}
+
+void Texture::generate_mips() {
+    m_levels.resize(1);
+    while ((m_levels.back().w > 1 || m_levels.back().h > 1)) {
         const Level& s = m_levels.back();
         Level d;
         d.w = std::max(1, s.w / 2);
@@ -65,6 +71,25 @@ bool Texture::create(const unsigned char* data, int width, int height, int chann
         d.hmask = d.h - 1;
         m_levels.push_back(std::move(d));
     }
+}
+
+void Texture::set_mipmaps(bool enabled) {
+    if (m_levels.empty()) return;
+    m_levels.resize(1);
+    if (enabled) generate_mips();
+}
+
+bool Texture::update(const unsigned char* rgba, int width, int height) {
+    if (m_levels.empty() || !rgba || width != m_levels[0].w || height != m_levels[0].h) return false;
+    const bool had_mips = m_levels.size() > 1;
+    Level& l0 = m_levels[0];
+    m_has_alpha = false;
+    for (size_t i = 0, n = l0.px.size(); i < n; ++i) {
+        const unsigned char* p = rgba + i * 4;
+        if (p[3] < 255) m_has_alpha = true;
+        l0.px[i] = pack_rgba8(p[0], p[1], p[2], p[3]);
+    }
+    if (had_mips) { m_levels.resize(1); generate_mips(); }
     return true;
 }
 
@@ -80,13 +105,21 @@ void Texture::create_solid(uint32_t rgba) {
     m_smooth = false;
 }
 
-static inline uint32_t fetch_texel(const Texture::Level& L, int x, int y) {
-    if (L.pow2) {
+static inline int wrap_coord(int v, int n, int mode) {
+    switch (mode) {
+        case 1: return v < 0 ? 0 : (v >= n ? n - 1 : v);                      // clamp to edge
+        case 2: { int p = n * 2; int m = v % p; if (m < 0) m += p; return m < n ? m : p - 1 - m; } // mirrored repeat
+        default: { int m = v % n; return m < 0 ? m + n : m; }                // repeat
+    }
+}
+
+static inline uint32_t fetch_texel(const Texture::Level& L, int x, int y, int wrap) {
+    if (wrap == 0 && L.pow2) {
         x &= L.wmask;
         y &= L.hmask;
     } else {
-        x %= L.w; if (x < 0) x += L.w;
-        y %= L.h; if (y < 0) y += L.h;
+        x = wrap_coord(x, L.w, wrap);
+        y = wrap_coord(y, L.h, wrap);
     }
     return L.px[static_cast<size_t>(y) * L.w + x];
 }
@@ -141,7 +174,10 @@ void Rasterizer::resize(int width, int height) {
     m_h = height;
     m_color.assign(static_cast<size_t>(m_w) * m_h, 0u);
     m_depth.assign(static_cast<size_t>(m_w) * m_h, 2.0f);
+    m_mask.assign(static_cast<size_t>(m_w) * m_h, 0);
 }
+
+void Rasterizer::clear_mask() { std::fill(m_mask.begin(), m_mask.end(), 0); }
 
 void Rasterizer::clear(const glm::vec4& c, bool clear_depth) {
     auto q = [](float v) { return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
@@ -446,6 +482,7 @@ void Rasterizer::raster_triangle(const SPoint& a, const SPoint& b, const SPoint&
         edges[ecount++] = {p->x, p->y, q->y, (q->x - p->x) / (q->y - p->y)};
     }
 
+    const int wrap = tex ? static_cast<int>(tex->wrap()) : 0;
     const bool bilin = S.bilinear || (tex && tex->smooth());
     const bool depth_test = S.depth_test, depth_write = S.depth_write, blend_on = S.blend;
     const bool use_affine = S.affine;
@@ -542,8 +579,8 @@ void Rasterizer::raster_triangle(const SPoint& a, const SPoint& b, const SPoint&
                         float fx = std::floor(tx), fy = std::floor(ty);
                         int ix = int(fx), iy = int(fy);
                         float wx = tx - fx, wy = ty - fy;
-                        uint32_t t00 = fetch_texel(*lvl, ix, iy), t10 = fetch_texel(*lvl, ix + 1, iy);
-                        uint32_t t01 = fetch_texel(*lvl, ix, iy + 1), t11 = fetch_texel(*lvl, ix + 1, iy + 1);
+                        uint32_t t00 = fetch_texel(*lvl, ix, iy, wrap), t10 = fetch_texel(*lvl, ix + 1, iy, wrap);
+                        uint32_t t01 = fetch_texel(*lvl, ix, iy + 1, wrap), t11 = fetch_texel(*lvl, ix + 1, iy + 1, wrap);
                         auto ch = [&](int sh) {
                             float a0 = float((t00 >> sh) & 255), a1 = float((t10 >> sh) & 255);
                             float b0 = float((t01 >> sh) & 255), b1 = float((t11 >> sh) & 255);
@@ -552,7 +589,7 @@ void Rasterizer::raster_triangle(const SPoint& a, const SPoint& b, const SPoint&
                         r *= ch(0) * (1.0f / 255.0f); g *= ch(8) * (1.0f / 255.0f);
                         bl *= ch(16) * (1.0f / 255.0f); al *= ch(24) * (1.0f / 255.0f);
                     } else {
-                        texel = fetch_texel(*lvl, int(std::floor(u * fw)), int(std::floor(v * fh)));
+                        texel = fetch_texel(*lvl, int(std::floor(u * fw)), int(std::floor(v * fh)), wrap);
                         r *= float(texel & 255) * (1.0f / 255.0f);
                         g *= float((texel >> 8) & 255) * (1.0f / 255.0f);
                         bl *= float((texel >> 16) & 255) * (1.0f / 255.0f);
@@ -662,8 +699,10 @@ void Rasterizer::draw_2d(const Vertex2D* v, size_t count, const glm::mat4& pv, c
     }
     if (cx0 >= cx1 || cy0 >= cy1) return;
 
+    const MaskMode mask_mode = m_mask_mode;
     const Texture::Level* lvl = (tex && tex->level_count() > 0) ? &tex->level(0) : nullptr;
     const bool smooth = tex && tex->smooth();
+    const int wrap = tex ? static_cast<int>(tex->wrap()) : 0;
     const float fw = lvl ? float(lvl->w) : 1.0f, fh = lvl ? float(lvl->h) : 1.0f;
     const float hw = m_w * 0.5f, hh = m_h * 0.5f;
 
@@ -702,6 +741,11 @@ void Rasterizer::draw_2d(const Vertex2D* v, size_t count, const glm::mat4& pv, c
                 for (int i = 0; i < 3; ++i) {
                     if (e[i] < 0 || (e[i] == 0 && !top[i])) { in = false; break; }
                 }
+                if (in && mask_mode != MaskMode::Off) {
+                    uint8_t& m = m_mask[size_t(y) * m_w + x];
+                    if (mask_mode == MaskMode::Write) { m = 1; in = false; }              // mark, don't paint
+                    else if ((mask_mode == MaskMode::Test) != (m != 0)) in = false;       // outside the allowed region
+                }
                 if (in) {
                     float l0 = float(e[0]) * inv_area, l1 = float(e[1]) * inv_area, l2 = float(e[2]) * inv_area;
                     glm::vec4 col = a.col * l0 + b.col * l1 + c.col * l2;
@@ -713,8 +757,8 @@ void Rasterizer::draw_2d(const Vertex2D* v, size_t count, const glm::mat4& pv, c
                             float fx = std::floor(tx), fy = std::floor(ty);
                             int ix = int(fx), iy = int(fy);
                             float wx = tx - fx, wy = ty - fy;
-                            uint32_t t00 = fetch_texel(*lvl, ix, iy), t10 = fetch_texel(*lvl, ix + 1, iy);
-                            uint32_t t01 = fetch_texel(*lvl, ix, iy + 1), t11 = fetch_texel(*lvl, ix + 1, iy + 1);
+                            uint32_t t00 = fetch_texel(*lvl, ix, iy, wrap), t10 = fetch_texel(*lvl, ix + 1, iy, wrap);
+                            uint32_t t01 = fetch_texel(*lvl, ix, iy + 1, wrap), t11 = fetch_texel(*lvl, ix + 1, iy + 1, wrap);
                             auto ch = [&](int sh) {
                                 float a0 = float((t00 >> sh) & 255), a1 = float((t10 >> sh) & 255);
                                 float b0 = float((t01 >> sh) & 255), b1 = float((t11 >> sh) & 255);
@@ -723,7 +767,7 @@ void Rasterizer::draw_2d(const Vertex2D* v, size_t count, const glm::mat4& pv, c
                             };
                             tr = ch(0); tg = ch(8); tb = ch(16); ta = ch(24);
                         } else {
-                            uint32_t t = fetch_texel(*lvl, int(std::floor(uv.x * fw)), int(std::floor(uv.y * fh)));
+                            uint32_t t = fetch_texel(*lvl, int(std::floor(uv.x * fw)), int(std::floor(uv.y * fh)), wrap);
                             tr = float(t & 255) * (1.0f / 255.0f); tg = float((t >> 8) & 255) * (1.0f / 255.0f);
                             tb = float((t >> 16) & 255) * (1.0f / 255.0f); ta = float(t >> 24) * (1.0f / 255.0f);
                         }
@@ -805,6 +849,32 @@ void Rasterizer::post_process(const PostOptions& o) {
             }
             auto q8 = [](float x2) { return static_cast<uint32_t>(std::clamp(x2, 0.0f, 1.0f) * 255.0f + 0.5f); };
             row[x] = pack_rgba8(q8(r), q8(g), q8(b), 255u);
+        }
+    }
+}
+
+void Rasterizer::draw_skybox(const glm::mat4& view, const glm::mat4& proj, const glm::vec3& tint,
+                             const std::function<glm::vec3(const glm::vec3&)>& sample) {
+    if (m_w == 0) return;
+    glm::mat4 rot_view = view;
+    rot_view[3] = glm::vec4(0, 0, 0, 1);                       // rotation only: the sky follows the camera
+    const glm::mat4 inv = glm::inverse(proj * rot_view);
+    auto corner = [&](float nx, float ny) {
+        glm::vec4 p = inv * glm::vec4(nx, ny, 1.0f, 1.0f);
+        return glm::vec3(p) / p.w;
+    };
+    const glm::vec3 d00 = corner(-1, 1), d10 = corner(1, 1), d01 = corner(-1, -1), d11 = corner(1, -1);
+    auto q = [](float v) { return static_cast<uint32_t>(std::clamp(v, 0.0f, 1.0f) * 255.0f + 0.5f); };
+    for (int y = 0; y < m_h; ++y) {
+        const float fy = (float(y) + 0.5f) / float(m_h);
+        const glm::vec3 left = d00 + (d01 - d00) * fy, right = d10 + (d11 - d10) * fy;
+        uint32_t* row = m_color.data() + size_t(y) * m_w;
+        const float* drow = m_depth.data() + size_t(y) * m_w;
+        for (int x = 0; x < m_w; ++x) {
+            if (drow[x] < 1.99f) continue;                      // geometry already here
+            const float fx = (float(x) + 0.5f) / float(m_w);
+            const glm::vec3 c = sample(left + (right - left) * fx) * tint;
+            row[x] = q(c.r) | (q(c.g) << 8) | (q(c.b) << 16) | (255u << 24);
         }
     }
 }

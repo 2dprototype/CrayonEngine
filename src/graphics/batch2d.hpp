@@ -49,6 +49,19 @@ public:
 
     // Blend Mode & Scissor
     void set_blend_mode(BlendMode mode);
+    // Offscreen culling: sprites / shapes / glyphs entirely outside the current view (camera 2D,
+    // canvas, scissor excluded) are dropped before they reach the GPU / CPU rasterizer.
+    // Stencil-style masking. beginMask(); draw the shape(s) that define the visible region;
+    // useMask([invert]); draw content (clipped to the shape, or to everything outside it when
+    // inverted); endMask(). Shapes define the mask by coverage (the sprite's alpha is ignored).
+    void begin_mask();
+    void use_mask(bool invert = false);
+    void end_mask();
+
+    void set_offscreen_culling(bool on) { m_cull_offscreen = on; }
+    bool get_offscreen_culling() const { return m_cull_offscreen; }
+    uint32_t get_culled_quad_count() const { return m_culled_quads; }
+    void reset_culled_quad_count() { m_culled_quads = 0; }
     BlendMode get_blend_mode() const { return m_blend_mode; }
     void set_scissor(int x, int y, int w, int h);
     void reset_scissor();
@@ -141,6 +154,7 @@ private:
     void apply_scissor(int x, int y, int w, int h);
     void clear_scissor();
     void flush_soft();
+    void cull_offscreen_quads();
 
     // Fills a triangle fan (center + rim points) using two fan triangles per
     // quad slot. This halves the vertices a circle/arc/pie/polygon emits
@@ -168,6 +182,9 @@ private:
 
     BlendMode m_blend_mode = BlendMode::Alpha;
     bool m_scissor_active = false;
+    bool m_cull_offscreen = true;      // drop quads entirely outside the visible area at flush time
+    uint32_t m_culled_quads = 0;
+    int m_mask_state = 0;              // 0 off, 1 writing mask, 2 testing mask
     glm::ivec4 m_soft_scissor{0};           // x, y, w, h in virtual pixels (software backend)
     std::vector<glm::ivec4> m_scissor_stack;
 

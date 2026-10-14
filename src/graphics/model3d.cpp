@@ -218,6 +218,8 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
     // 2. Map Materials to Texture IDs and Base Colors
     std::vector<GLuint> mat_textures(model.materials_count, 0);
     std::vector<glm::vec4> mat_colors(model.materials_count, glm::vec4(1.0f));
+    std::vector<char> mat_double_sided(model.materials_count, 1);
+    std::vector<int> mat_alpha_mode(model.materials_count, 0);
 
     for (uint32_t i = 0; i < model.materials_count; ++i) {
         const tg3_material& mat = model.materials[i];
@@ -227,6 +229,12 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
             (float)mat.pbr_metallic_roughness.base_color_factor[2],
             (float)mat.pbr_metallic_roughness.base_color_factor[3]
         );
+
+        mat_double_sided[i] = mat.double_sided ? 1 : 0;
+        {
+            std::string am = tg3_str_to_string(mat.alpha_mode, "OPAQUE");
+            mat_alpha_mode[i] = (am == "BLEND") ? 2 : (am == "MASK") ? 1 : 0;
+        }
 
         int tex_idx = mat.pbr_metallic_roughness.base_color_texture.index;
         if (tex_idx >= 0 && tex_idx < (int)model.textures_count) {
@@ -614,6 +622,8 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
                 part.material_name = tg3_str_to_string(model.materials[prim.material].name, "mat_" + std::to_string(prim.material));
                 part.color = mat_colors[prim.material];
                 part.texture_id = mat_textures[prim.material];
+                part.double_sided = mat_double_sided[prim.material] != 0;
+                part.alpha_mode = mat_alpha_mode[prim.material];
             } else {
                 part.material_name = "default";
                 part.color = glm::vec4(1.0f);
@@ -792,6 +802,15 @@ std::shared_ptr<Model3D> Model3D::create_from_mesh(std::shared_ptr<Mesh3D> mesh,
     part.texture_id = 0;
     part.min_bounds = glm::vec3(-0.5f);
     part.max_bounds = glm::vec3( 0.5f);
+    if (mesh->has_bounds()) {                 // real bounds from the vertex data -> accurate culling
+        part.min_bounds = mesh->bounds_min();
+        part.max_bounds = mesh->bounds_max();
+        part.bounds_valid = true;
+    }
+    if (!mesh->cpu_vertices().empty()) {      // primitives keep a CPU copy: batching / collision data
+        part.cpu_vertices = mesh->cpu_vertices();
+        part.cpu_indices = mesh->cpu_indices();
+    }
 
     ModelNode node;
     node.name = name;
@@ -860,7 +879,8 @@ void Model3D::draw(MeshRenderer3D& renderer, const glm::mat4& world_transform, G
         GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
         const bool cull = part.bounds_valid && !part.is_skinned;
         renderer.draw_mesh(*part.mesh, world_transform * part.transform, tex, part.color,
-                           cull ? &part.min_bounds : nullptr, cull ? &part.max_bounds : nullptr);
+                           cull ? &part.min_bounds : nullptr, cull ? &part.max_bounds : nullptr, !part.double_sided,
+                           part.alpha_mode == 2);
     }
 }
 
@@ -894,7 +914,8 @@ void Model3D::draw_part(MeshRenderer3D& renderer, int part_index, const glm::mat
     GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
     const bool cull = part.bounds_valid && !part.is_skinned;
     renderer.draw_mesh(*part.mesh, final_tf, tex, part.color,
-                       cull ? &part.min_bounds : nullptr, cull ? &part.max_bounds : nullptr);
+                       cull ? &part.min_bounds : nullptr, cull ? &part.max_bounds : nullptr, !part.double_sided,
+                           part.alpha_mode == 2);
 }
 
 const ModelNode* Model3D::get_node(size_t index) const {
