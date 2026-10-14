@@ -1,9 +1,9 @@
 # Crayon Engine - Lua API Documentation
 
 ## Overview
-Crayon Engine is a 2D/3D game engine with retro aesthetics, modern physics, and Lua scripting. All engine functionality is accessed through the global `crayon` table.
+Crayon Engine is a 2D/3D/4D game engine with retro aesthetics, modern physics, and Lua scripting. All engine functionality is accessed through the global `crayon` table.
 
-**Conventions:** All exposed functions, methods, and config keys use strict camelCase. Acronyms that appear as a suffix capitalize only their first letter (`getFps`, `getEngineRpm`, `setSfxVolume`, `getId`, `setVsync`). Numeric suffixes are `2D` / `3D` (capital `D`).
+**Conventions:** All exposed functions, methods, and config keys use strict camelCase. Acronyms that appear as a suffix capitalize only their first letter (`getFps`, `getEngineRpm`, `setSfxVolume`, `getId`, `setVsync`). Numeric suffixes are `2D` / `3D` / `4D` (capital `D`).
 
 ## Table of Contents
 1. [Time Module](#time-module)
@@ -17,9 +17,15 @@ Crayon Engine is a 2D/3D game engine with retro aesthetics, modern physics, and 
 9. [Particles Module](#particles-module)
 10. [Math Module](#math-module)
 11. [File System Module](#file-system-module)
-12. [Configuration (`crayon.config`)](#configuration)
-13. [Lua Callbacks](#lua-callbacks)
-14. [Complete Examples](#complete-examples)
+12. [JSON Module](#json-module)
+13. [Sprite Module](#sprite-module)
+14. [Tilemap Module](#tilemap-module)
+15. [Drawqueue Module](#drawqueue-module)
+16. [Lights2D Module](#lights2d-module)
+17. [Print](#print)
+18. [Configuration (`crayon.config`)](#configuration)
+19. [Lua Callbacks](#lua-callbacks)
+20. [Complete Examples](#complete-examples)
 
 ---
 
@@ -131,7 +137,7 @@ Access via: `crayon.window`
 | `setSkipTaskbar(skip)` / `isSkipTaskbar()` | Hide from taskbar |
 | `setNotFocusable(nf)` / `isNotFocusable()` | Prevent focus stealing |
 | `setUtilityWindow(util)` / `isUtilityWindow()` | Utility chrome |
-| `getDisplays()` | Array of display tables |
+| `getDisplays()` | Array of display tables (`{x, y, w, h, primary}`) |
 | `getVirtualDesktopBounds()` | x, y, w, h of virtual desktop |
 
 ### Misc
@@ -139,6 +145,7 @@ Access via: `crayon.window`
 | Function | Description |
 |----------|-------------|
 | `getFps()` | Returns current FPS |
+| `getPlatform()` | Returns lowercased platform name: `"windows"`, `"linux"`, `"macos"`, `"android"`, `"ios"`, … |
 | `quit()` | Quit the engine |
 
 ### Window Examples
@@ -152,6 +159,7 @@ crayon.window.setScalingMode("integer")
 
 local w, h = crayon.window.getDisplaySize()
 print("Display:", w, "x", h)
+print("Platform:", crayon.window.getPlatform())
 ```
 
 ---
@@ -230,6 +238,14 @@ Input is exposed as three sub-tables: `crayon.key`, `crayon.mouse`, and `crayon.
 | `getName([idx])` | Gamepad name string |
 | `getCount()` | Number of connected gamepads |
 
+### `crayon.touch`
+
+| Function | Description |
+|----------|-------------|
+| `getCount()` | Number of active touches |
+| `getTouches()` | Array of `{id, x, y, pressure}` (virtual-canvas coords) |
+| `isAvailable()` | True if the device has a touchscreen |
+
 ### Input Examples
 
 ```lua
@@ -247,6 +263,11 @@ local wx, wy = crayon.mouse.getWheel()
 -- Gamepad
 if crayon.gamepad.isDown(0) then fire() end
 local lx = crayon.gamepad.getAxis("leftx")
+
+-- Touch
+for _, t in ipairs(crayon.touch.getTouches()) do
+    print(t.id, t.x, t.y, t.pressure)
+end
 ```
 
 ---
@@ -260,6 +281,7 @@ Access via: `crayon.graphics`
 |----------|-------------|
 | `clear(r, g, b [, a])` | Clear screen with color (0–1) |
 | `setColor(r, g, b [, a])` | Set active drawing color (0–1) |
+| `setModelColor(r, g, b [, a])` / `getModelColor()` | Global model tint |
 | `createCanvas([w, h])` | Create offscreen canvas (defaults to virtual resolution) |
 | `setCanvas(canvas_or_nil)` | Bind canvas for rendering, or unbind with nil |
 
@@ -289,6 +311,8 @@ crayon.graphics.drawSprite(canvas:getTexture(), 0, 0)
 | Function | Description |
 |----------|-------------|
 | `setRetroEffects(opts)` | Apply retro visual effects |
+| `isSoftwareRenderer()` | True when running on the software backend |
+| `getRendererName()` | GL renderer name string |
 
 **Options Table:**
 ```lua
@@ -319,6 +343,7 @@ crayon.graphics.drawSprite(canvas:getTexture(), 0, 0)
 | Function | Description |
 |----------|-------------|
 | `setCamera3D(cam)` | Set 3D camera parameters |
+| `setCamera3D(x, y, z [, yaw, pitch, fov])` | Position + orient using yaw/pitch (degrees) |
 | `getCameraRay(sx, sy)` | Returns `{origin={x,y,z}, direction={x,y,z}}` for screen pos |
 
 **Camera Table:**
@@ -334,8 +359,6 @@ crayon.graphics.drawSprite(canvas:getTexture(), 0, 0)
     orthoSize = 10.0      -- half-height in world units
 }
 ```
-
-Alternative: `setCamera3D(x, y, z [, yaw, pitch, fov])` — sets position and orients using yaw/pitch in degrees.
 
 ### Lighting
 
@@ -355,42 +378,97 @@ Alternative: `setCamera3D(x, y, z [, yaw, pitch, fov])` — sets position and or
 | `setDepthTest([enabled])` | Toggle depth testing (default: true) |
 | `setDepthWrite([enabled])` | Toggle depth writes (default: true) |
 | `setCullFace(mode)` | "back", "front", or false to disable |
+| `flushTransparent()` | Immediately draw queued transparent geometry |
+| `setAutoCull([enabled])` / `getAutoCull()` | Frustum culling toggle |
+| `setMaxDrawDistance(dist)` | 0 = unlimited |
+| `setOffscreenCulling([enabled])` | Cull 2D quads outside the virtual canvas |
+| `getCullStats()` | Returns `culled3DDraws, culled2DQuads` |
+| `isSphereVisible(x, y, z, r)` | Frustum test |
+| `isBoxVisible(minx,miny,minz, maxx,maxy,maxz)` | Frustum test |
 
 ### Textures
 
 | Function | Description |
 |----------|-------------|
-| `loadTexture(path)` | Load texture, returns `Graphics.Texture` userdata |
+| `loadTexture(path [, {filter, wrap}])` | Load texture, returns `Graphics.Texture` userdata |
 | `getTextureSize(tex_or_id)` | Returns width, height |
 | `getWhiteTexture()` | Returns white 1x1 texture userdata |
+| `newTexture(imageData [, {filter, wrap}])` | Create texture from `ImageData` (RGBA) |
+| `setTextureFilter(tex, mode)` | "nearest" / "linear" / "mipmap" (or true/false) |
+| `setTextureWrap(tex, mode)` | "repeat" / "clamp" / "mirror" |
 
-**Texture Methods**: `:getSize()`, `:getWidth()`, `:getHeight()`, `:getId()`, `:isValid()`
+**Texture Methods**: `:getSize()`, `:getWidth()`, `:getHeight()`, `:getId()`, `:isValid()`, `:setFilter(mode)`, `:getFilter()`, `:setWrap(mode)`, `:getWrap()`, `:update(imageData)`, `:destroy()`
 
-### Fonts
+`texture:update` requires an RGBA texture of the same size as the ImageData (only textures created by `newTexture`).
+
+### ImageData
+
+| Function | Description |
+|----------|-------------|
+| `newImageData(w, h [, r, g, b, a])` | Create a new image (default transparent black) |
+| `loadImageData(path)` | Load image from disk (returns nil, err on failure) |
+
+**ImageData Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `:getWidth()` / `:getHeight()` / `:getSize()` | Dimensions |
+| `:getPixel(x, y)` | Returns r, g, b, a (0–1) |
+| `:setPixel(x, y, r, g, b [, a])` | Set pixel |
+| `:fill(r, g, b, a)` | Fill whole image |
+| `:paste(src, dx, dy [, sx, sy, sw, sh])` | Blit from another ImageData |
+| `:copy()` | Clone to a new ImageData |
+| `:save(path)` | Save to PNG. Returns bool |
+| `:mapPixels(fn)` | `fn(x, y, r, g, b, a) -> r, g, b, a` for each pixel. Return nil to skip |
+
+### Screenshots & Frame Capture
+
+| Function | Description |
+|----------|-------------|
+| `screenshot(path)` | Request a screenshot to be saved on the next frame |
+| `captureFrame()` | Request a frame capture to an ImageData |
+| `getCapture()` | Returns the last captured ImageData (or nil) |
+
+### 2D Lighting (CPU light map)
+
+| Function | Description |
+|----------|-------------|
+| `renderLightmap(img, ambient, lights [, view])` | Render a light map into an ImageData |
+
+**Ambient**: `{ambR, ambG, ambB}`
+
+**Light Entry**: `{x, y, radius, color={r,g,b}, intensity, falloff, spot, direction, cone, softness}`
+
+**View**: `{offsetX=0, offsetY=0, scaleX=1, scaleY=1}` (world → light-map pixels)
+
+### Masks
+
+| Function | Description |
+|----------|-------------|
+| `beginMask()` | Begin mask rendering (drawn geometry defines the mask) |
+| `useMask(enabled)` | Apply the mask for subsequent draws |
+| `endMask()` | End mask |
+
+### Textures, Fonts, Models
 
 | Function | Description |
 |----------|-------------|
 | `loadFont(path [, size, nearest])` | Load a font (default size: 16, nearest: true) |
 | `setFont(font_or_nil)` | Set active font for subsequent drawText calls |
 | `getFont()` | Get the currently active font |
-
-**Font Methods**: `:getSize()`, `:getLineHeight()`, `:getAscent()`, `:getDescent()`, `:measure(text [, scale])`, `:getWidth(text [, scale])`, `:getHeight(text [, scale])`
-
-### Models & Meshes
-
-| Function | Description |
-|----------|-------------|
 | `loadModel(name)` | Load/create model. Primitives or file path (`.obj`, `.gltf`, `.glb`) |
 | `createMesh(data)` | Create custom mesh from `{vertices, indices}` |
 | `createAnimator(model)` | Create skeletal `Graphics.Animator` from a skinned model |
 
 **Primitive Names**: `"cube"`, `"plane"`, `"sphere"`, `"cylinder"`, `"cone"`, `"pyramid"`, `"torus"`, `"capsule"`, `"grid"`.
 
+**Font Methods**: `:getSize()`, `:getLineHeight()`, `:getAscent()`, `:getDescent()`, `:measure(text [, scale])`, `:getWidth(text [, scale])`, `:getHeight(text [, scale])`
+
 **Model Methods:**
 - `:isValid()`
 - `:getNodeCount()` / `:getNode(idx_or_name)` / `:getNodes()`
 - `:getPartCount()` / `:getPartName(idx)` → name, material_name
-- `:getPartTexture(idx)` / `:setPartTexture(idx, tex)` / `:setPartColor(idx, r, g, b [, a])`
+- `:getPartTexture(idx)` / `:setPartTexture(idx, tex)` / `:setPartColor(idx, r, g, b [, a])` / `:getPartColor(idx)`
 - `:getBounds()` → minX, minY, minZ, maxX, maxY, maxZ
 - `:getCenter()` → cx, cy, cz
 - `:getSize()` → sx, sy, sz
@@ -448,6 +526,7 @@ Alternative: `setCamera3D(x, y, z [, yaw, pitch, fov])` — sets position and or
 | `drawModel(model, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw static model |
 | `drawModelSkinned(model, anim_or_pose, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw skinned model |
 | `drawModelNode(model, node, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | Draw single node |
+| `drawModelLOD(models, distances, x, y, z, rx, ry, rz, sx, sy, sz, tex)` | LOD chain. Returns LOD index or nil |
 | `drawCube(x, y, z, sx, sy, sz, tex, rx, ry, rz)` | Draw cube |
 | `drawPlane(x, y, z, w, d, tex, rx, ry, rz)` | Draw plane |
 | `drawSphere(x, y, z, radius, tex, rx, ry, rz)` | Draw sphere |
@@ -472,6 +551,7 @@ Alternative: `setCamera3D(x, y, z [, yaw, pitch, fov])` — sets position and or
 | `drawSegmentedMesh(meshes, transforms [, textures])` | Draw segmented mesh; transforms = array of 16-element matrices |
 | `project(x, y, z)` | Returns sx, sy, visible |
 | `unproject(sx, sy)` | Returns ox, oy, oz, dx, dy, dz |
+| `drawSkyGradient([topColor, bottomColor])` | Full-screen vertical gradient |
 
 ### 2D Drawing
 
@@ -500,8 +580,7 @@ Alternative: `setCamera3D(x, y, z [, yaw, pitch, fov])` — sets position and or
 | `drawGradientRect(x, y, w, h, cTl, cTr, cBr, cBl)` | 4-corner gradient |
 | `drawGradientH(x, y, w, h, cLeft, cRight)` | Horizontal gradient |
 | `drawGradientV(x, y, w, h, cTop, cBottom)` | Vertical gradient |
-| `drawSkyGradient([topColor, bottomColor])` | Draw vertical sky gradient across screen |
-| `drawText(text, x, y [, scale_or_opts])` | Draw text. Opts: `{scale, wrap, align, font}` |
+| `drawText(text, x, y [, scale_or_opts])` | Draw text. Opts: `{scale, wrap, align, font, outline={color,thickness}, shadow={dx,dy,color}}` |
 | `getTextWidth(text, scale)` | Text width |
 | `getTextHeight(text, scale)` | Text height |
 
@@ -588,6 +667,91 @@ crayon.graphics.setEffectUniform("bloom2D", "threshold", 0.9)
 
 **2D:** `pushMatrix2D()`, `popMatrix2D()`, `translate2D(x,y)`, `rotate2D(angle)`, `scale2D(sx,sy)`
 
+### 3D Primitives Direct (see also model-based drawing)
+
+Direct primitive calls draw an internal unit mesh with the current color; if you need a persistent model, use `loadModel` + `drawModel`.
+
+### StaticBatch3D
+
+| Function | Description |
+|----------|-------------|
+| `newStaticBatch([chunkSize=32])` | Create a `Graphics.StaticBatch` for many instances of one model |
+
+**StaticBatch Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `:add(model, x, y, z, rx, ry, rz, sx, sy, sz [, texture])` | Add an instance (same args as `drawModel`). Returns instance index |
+| `:build()` | Compile into GPU buffers |
+| `:draw()` | Draw all instances |
+| `:clear()` | Remove all instances |
+| `:getStats()` | Returns `instances, groups, vertices, triangles` |
+
+```lua
+local batch = crayon.graphics.newStaticBatch(64)
+for i = 1, 500 do
+    batch:add(treeModel, math.random() * 200 - 100, 0, math.random() * 200 - 100,
+              0, math.random() * 6.28, 0, 1, 1, 1)
+end
+batch:build()
+-- in draw: batch:draw()
+```
+
+### Skybox
+
+| Function | Description |
+|----------|-------------|
+| `loadSkybox(path_or_ImageData [, faceSize])` | Load equirectangular panorama |
+| `loadSkybox({px, nx, py, ny, pz, nz})` | Six face images (paths or ImageData) in `+X -X +Y -Y +Z -Z` order |
+| `loadSkybox({right=, left=, top=, bottom=, front=, back=})` | Named keys form |
+| `drawSkybox(sky [, r, g, b])` | Draw the skybox (call first or last; only fills empty pixels) |
+
+**Skybox Methods**: `:getFaceSize()`, `:draw([r,g,b])`
+
+```lua
+local sky = crayon.graphics.loadSkybox("assets/sky.jpg")
+-- or
+local sky = crayon.graphics.loadSkybox({ "right.png", "left.png", "top.png", "bottom.png", "back.png", "front.png" })
+```
+
+### Terrain
+
+| Function | Description |
+|----------|-------------|
+| `createTerrain(source, opts)` | Build a heightmap terrain. `source` = ImageData, image path, or `{{row1}, {row2}, ...}` of 0..1 heights |
+
+**Options**:
+```lua
+{
+    width = 200, height = 30, depth = 200,
+    x = -100, y = 0, z = -100,
+    uvRepeat = 32,                     -- or {32, 32}
+    chunkCells = 32,
+    colorLow  = {r, g, b},             -- low-altitude tint
+    colorHigh = {r, g, b}              -- high-altitude tint
+}
+```
+
+**Terrain Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `:draw([texture [, r, g, b, a]])` | Draw the terrain |
+| `:getHeightAt(x, z)` | Sample height at world (x, z) |
+| `:getNormalAt(x, z)` | Returns nx, ny, nz |
+| `:contains(x, z)` | True if the point is within the terrain footprint |
+| `:raycast(ox, oy, oz, dx, dy, dz [, maxDist])` | Returns hx, hy, hz or nil |
+| `:getInfo()` | Returns `columns, rows, chunks, triangles` |
+
+```lua
+local t = crayon.graphics.createTerrain("heightmap.png", {
+    width = 200, depth = 200, height = 25,
+    x = -100, z = -100, uvRepeat = 32,
+    colorLow = {0.3, 0.5, 0.2}, colorHigh = {0.9, 0.9, 0.9}
+})
+-- in draw: t:draw(grassTexture)
+```
+
 ---
 
 ## Physics3D Module
@@ -619,6 +783,7 @@ Access via: `crayon.physics3D`
 | `:destroy()` | Destroy body |
 | `:getPosition()` / `:setPosition(x, y, z [, activate])` | Position |
 | `:getRotation()` / `:setRotation(rx, ry, rz [, activate])` | Euler rotation (radians) |
+| `:getQuaternion()` | Returns qx, qy, qz, qw (use for rendering — no gimbal lock) |
 | `:getVelocity()` / `:setVelocity(vx, vy, vz)` | Linear velocity |
 | `:getAngularVelocity()` / `:setAngularVelocity(wx, wy, wz)` | Angular velocity |
 | `:applyForce(fx, fy, fz)` | Apply force |
@@ -712,10 +877,10 @@ Access via: `crayon.physics3D`
 | `createTrackedVehicle(cfg)` | Tracked vehicle |
 | `createMotorcycle(cfg)` | Motorcycle |
 
-**Wheel Config:**
+**Wheel Config** (`pos`, `radius`, `width`, suspension…):
 ```lua
 {
-    position = {x, y, z},
+    pos = {x, y, z},
     radius = 0.3,
     width = 0.2,
     suspensionMinLength = 0.1,
@@ -726,7 +891,10 @@ Access via: `crayon.physics3D`
     maxBrakeTorque = 100.0,
     maxHandBrakeTorque = 200.0,
     isFront = true,
-    isDrive = true
+    isDrive = true,
+    steer = true,                    -- true/false, or nil = follow isFront
+    longitudinalGrip = 1.0,          -- or grip = 1.0 for both
+    lateralGrip = 1.0
 }
 ```
 
@@ -735,10 +903,21 @@ Access via: `crayon.physics3D`
 {
     chassis = body,
     wheels = { wheel1, wheel2, ... },
-    maxPitchRollAngle = 0.5,
-    engineMaxTorque = 500.0,
-    engineMinRpm = 1000.0,
-    engineMaxRpm = 6000.0
+    engineMaxTorque = 500.0, engineMinRpm = 1000.0, engineMaxRpm = 6000.0,
+    engineInertia = 0.5, engineAngularDamping = 0.1,
+    shiftUpRpm = 5000, shiftDownRpm = 2000,
+    clutchStrength = 10, switchTime = 0.5, switchLatency = 0.1,
+    clutchReleaseTime = 0.1, differentialRatio = 3.4, limitedSlipRatio = 1.4,
+    centerLimitedSlipRatio = 1.4, frontTorqueSplit = 0.5,
+    antiRollFront = 5000, antiRollRear = 5000,
+    maxPitchRollAngle = 0.5, maxSlopeAngleRad = 0.5,
+    testerRadius = 0.5, sphere_cast = false,
+    collisionTestSteps = 4, manual_transmission = false,
+    transmission = "auto",           -- or "manual"
+    collisionTester = "ray",         -- or "sphere"
+    torqueCurve = { {0.0, 1.0}, {1.0, 0.7} },   -- array of {rpmFraction, torqueFraction}
+    gearRatios = {2.5, 1.5, 1.0}, reverseGearRatios = {-2.5},
+    antiRollBars = { {left=1, right=2, stiffness=4000} }
 }
 ```
 
@@ -746,8 +925,7 @@ Access via: `crayon.physics3D`
 ```lua
 {
     chassis = body,
-    leftWheels = { ... },
-    rightWheels = { ... },
+    leftWheels = { ... }, rightWheels = { ... },
     engineMaxTorque = 500.0
 }
 ```
@@ -756,17 +934,14 @@ Access via: `crayon.physics3D`
 ```lua
 {
     chassis = body,
-    frontWheel = { ... },
-    rearWheel = { ... },
-    maxLeanAngleRad = 0.7,
-    leanSpringConstant = 500.0,
-    leanSpringDamping = 50.0,
-    leanSmoothingFactor = 0.15,
+    frontWheel = { ... }, rearWheel = { ... },
+    maxLeanAngleRad = 0.7, leanSpringConstant = 500.0,
+    leanSpringDamping = 50.0, leanSmoothingFactor = 0.15,
     engineMaxTorque = 200.0
 }
 ```
 
-**Vehicle Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:setInputWheeled(forward, steer, brake, handbrake)`, `:setInputTracked(leftRatio, rightRatio, brake)`, `:setInputMotorcycle(forward, steer, brake)`, `:enableLeanController(enabled)`, `:isLeanControllerEnabled()`, `:getLeanAngle()`, `:getSpeedKmh()`, `:getEngineRpm()`, `:getTransmissionGear()`, `:getWheelCount()`, `:getWheelTransform(idx)`
+**Vehicle Methods**: `:getId()`, `:isValid()`, `:destroy()`, `:setInputWheeled(forward, steer, brake, handbrake)`, `:setInputTracked(leftRatio, rightRatio, brake)`, `:setInputMotorcycle(forward, steer, brake)`, `:enableLeanController(enabled)`, `:isLeanControllerEnabled()`, `:getLeanAngle()`, `:getSpeedKmh()`, `:getEngineRpm()`, `:getTransmissionGear()`, `:getWheelCount()`, `:getWheelTransform(idx)`, `:getWheelInfo(idx)`, `:getForwardSpeed()`, `:getChassisId()`, `:getMaxSkid()`, `:isSkidding([threshold])`, `:setManualTransmission(b)`, `:isManualTransmission()`, `:setGear(gear [, clutch])`, `:setAntiRoll(barIdx, stiffness)`, `:setWheelSuspension(wheelIdx, freq, ratio)`
 
 ### Skeleton / Pose / Mapper
 
@@ -803,14 +978,10 @@ Access via: `crayon.physics3D`
             motion = "dynamic",
             mass = 5.0,
             friction = 0.5,
-            swingLimitY = 0.5,
-            swingLimitZ = 0.5,
-            twistMin = -0.3,
-            twistMax = 0.3,
+            swingLimitY = 0.5, swingLimitZ = 0.5,
+            twistMin = -0.3, twistMax = 0.3,
             enableMotors = true,
-            motorSpringK = 100.0,
-            motorDampingC = 10.0,
-            motorMaxTorque = 50.0
+            motorSpringK = 100.0, motorDampingC = 10.0, motorMaxTorque = 50.0
         }
     }
 }
@@ -821,7 +992,7 @@ Access via: `crayon.physics3D`
 - Pose: `:setPose(pose)`, `:getPose(pose)`, `:setHardKeying(enabled)`
 - Driving: `:driveToPoseKinematics(pose, dt)`, `:driveToPoseMotors(pose)`, `:driveToPoseMotorsVelocity(prevPose, pose, dt)`
 - Velocities: `:setLinearVelocity(x,y,z)`, `:setLinearAndAngularVelocity(lx,ly,lz, ax,ay,az)`, `:addLinearVelocity(x,y,z)`, `:addImpulse(x,y,z)`, `:addImpulseToPart(partIdx, x,y,z)`, `:addImpulseToPartAtPos(partIdx, ix,iy,iz, px,py,pz)`, `:resetWarmStart()`
-- Transforms: `:getRootTransform()` → px,py,pz, qx,qy,qz,qw; `:getGroundOrientation()` → "back"/"belly"/"unknown"; `:getBounds()` → 6 values
+- Transforms: `:getRootTransform()`, `:getGroundOrientation()` → "back"/"belly"/"unknown", `:getBounds()`
 - Parts: `:getBodyId(partIdx)`, `:getPartPosition(i)`, `:getPartRotation(i)`, `:getPartLinearVelocity(i)`, `:getLinearVelocity()`, `:getBody(i)`
 - Motors: `:setMotorsStiffness(k [, c, maxTorque])`, `:setPartMotor(i, k [, c, maxTorque])`, `:setPartMotionType(i, motion)`, `:setPartFriction(i, f)`, `:setPartRestitution(i, r)`
 
@@ -849,7 +1020,7 @@ Access via: `crayon.physics3D`
 **Rod Options:**
 ```lua
 {
-    points = { {x,y,z}, {x,y,z}, ... },   -- required
+    points = { {x,y,z}, {x,y,z}, ... },
     stretchCompliance = 0.0,
     bendTwistCompliance = 0.001,
     pinRoot = true
@@ -870,25 +1041,16 @@ Access via: `crayon.physics3D`
     rods = { {v1, v2, compliance}, ... },             -- or `rodStretchShearConstraints`
     rodBendTwistConstraints = { {rod0, rod1, compliance}, ... },
 
-    pressure = 0.0,
-    vertexRadius = 0.0,
-    linearDamping = 0.0,
-    maxLinearVelocity = 0.0,
-    friction = 0.5,
-    restitution = 0.2,
-    gravityFactor = 1.0,
-    numIterations = 3,
-    updatePosition = true,
-    allowSleeping = true,
-    facesDoubleSided = true,
+    pressure = 0.0, vertexRadius = 0.0, linearDamping = 0.0,
+    maxLinearVelocity = 0.0, friction = 0.5, restitution = 0.2,
+    gravityFactor = 1.0, numIterations = 3, updatePosition = true,
+    allowSleeping = true, facesDoubleSided = true,
 
     autoGenerateConstraints = true,
-    compliance = 0.0,
-    shearCompliance = 0.0,
-    bendCompliance = 0.0,
+    compliance = 0.0, shearCompliance = 0.0, bendCompliance = 0.0,
     lraMultiplier = 1.0,
     bendType = "dihedral",                -- "dihedral", "distance", "none"
-    lraType = "euclidean"                 -- "euclidean", "geodesic", "none"
+    lraType  = "euclidean"                -- "euclidean", "geodesic", "none"
 }
 ```
 
@@ -989,10 +1151,6 @@ ground:addBox(320, 20)
 local box = crayon.physics2D.createBody("dynamic", 160, 100)
 box:addBox(20, 20, 0, 0, 0, 1.0, 0.3, 0.1)
 
-function crayon.update(dt)
-    -- Physics step happens automatically via the engine
-end
-
 function crayon.draw()
     crayon.graphics.clear(0.1, 0.1, 0.15)
     crayon.graphics.setColor(1, 1, 1)
@@ -1006,16 +1164,10 @@ end
 ## Physics4D Module
 Access via: `crayon.physics4D`
 
-A real 4D rigid-body engine (the **hv4d** library in `vendor/hypervis4d`, a C++ re-creation of the
-*hypervis* 4D physics engine). Bodies live in a world with four spatial axes `x, y, z, w` (`y` is up;
-`w` is the extra dimension). Since you can only *see* 3D, the engine renders the **3D slice** where the
-world meets a hyperplane (by default `w = sliceW`): move the slice to scan through the objects.
+A real 4D rigid-body engine (the **hv4d** library in `vendor/hypervis4d`). Bodies live in a world with four spatial axes `x, y, z, w` (`y` is up; `w` is the extra dimension). Since you can only *see* 3D, the engine renders the **3D slice** where the world meets a hyperplane (by default `w = sliceW`).
 
-* Shapes: the six regular 4-polytopes — `"5cell"`, `"8cell"` (tesseract), `"16cell"`, `"24cell"`,
-  `"120cell"`, `"600cell"` — plus hyperspheres and half-spaces (infinite walls/floors).
-* Rotations are **bivectors** (rotation *planes*), not quaternions. Order everywhere is
-  `xy, xz, xw, yz, yw, zw`. `xy, xz, yz` are ordinary 3D rotations; `xw, yw, zw` turn an object
-  "into" the 4th axis (this is what makes a cross-section morph as it spins).
+* Shapes: the six regular 4-polytopes — `"5cell"`, `"8cell"` (tesseract), `"16cell"`, `"24cell"`, `"120cell"`, `"600cell"` — plus hyperspheres and half-spaces.
+* Rotations are **bivectors** (rotation *planes*), not quaternions. Order everywhere is `xy, xz, xw, yz, yw, zw`. `xy, xz, yz` are ordinary 3D rotations; `xw, yw, zw` turn an object "into" the 4th axis.
 * The engine steps the world at a fixed 60 Hz automatically.
 
 ### Body Creation
@@ -1023,19 +1175,19 @@ world meets a hyperplane (by default `w = sliceW`): move the slice to scan throu
 | Function | Description |
 |----------|-------------|
 | `createPolytope(shape, x, y, z, w [, scale] [, opts])` | Convex 4-polytope. `scale` = circumradius (default 1) |
-| `createTesseract(x, y, z, w [, edgeLength] [, opts])` | Shortcut for `"8cell"` (scale = edge length) |
+| `createTesseract(x, y, z, w [, edgeLength] [, opts])` | Shortcut for `"8cell"` |
 | `createHypersphere(x, y, z, w [, radius] [, opts])` | Hypersphere (default radius 0.5) |
-| `createHalfSpace(px, py, pz, pw, nx, ny, nz, nw [, opts])` | Static infinite wall; the normal points to the *empty* side |
+| `createHalfSpace(px, py, pz, pw, nx, ny, nz, nw [, opts])` | Static infinite wall; normal points to the empty side |
 | `createArena([halfSize=10, friction=0.4, restitution=0.4])` | Floor at `y=0` + walls at `±halfSize` on `x`, `z`, `w` |
 | `getShapes()` | List of valid polytope names |
 
 **Options** (`opts`, all optional):
 ```lua
-{ type = "dynamic" | "static" | "sensor",   -- "sensor": static trigger volume, no collision response
+{ type = "dynamic" | "static" | "sensor",
   mass = 1.0, restitution = 0.2, friction = 0.4, sensor = false,
   linearDamping = 0, angularDamping = 0, gravityScale = 1,
-  scale = 1,                                 -- (polytopes) same as the positional argument
-  rotation = {xy, xz, xw, yz, yw, zw},       -- initial orientation (plane angles, radians)
+  scale = 1,
+  rotation = {xy, xz, xw, yz, yw, zw},
   velocity = {vx, vy, vz, vw},
   angularVelocity = {xy, xz, xw, yz, yw, zw} }
 ```
@@ -1049,38 +1201,31 @@ world meets a hyperplane (by default `w = sliceW`): move the slice to scan throu
 | `setGravity(gx, gy, gz, gw)` / `getGravity()` | World gravity (default `0, -9.8, 0, 0`) |
 | `setSolverIterations(n)` | Contact solver iterations (default 20) |
 | `step(dt)` | Manual step (the engine already steps at 60 Hz) |
-| `raycast(ox,oy,oz,ow, dx,dy,dz,dw [, maxDist])` | `hit, px,py,pz,pw, nx,ny,nz,nw, distance, bodyId` (just `false` on a miss) |
+| `raycast(ox,oy,oz,ow, dx,dy,dz,dw [, maxDist])` | `hit, px,py,pz,pw, nx,ny,nz,nw, distance, bodyId` |
 | `overlapSphere(x, y, z, w, radius)` | Table of body ids overlapping a hypersphere |
-| `testOverlap(bodyA, bodyB)` | Exact GJK+EPA test. Overlap: `true, depth, nx,ny,nz,nw`. Apart: `false, distance, dx,dy,dz,dw` (A → B). No half-spaces |
+| `testOverlap(bodyA, bodyB)` | GJK+EPA. Overlap: `true, depth, nx,ny,nz,nw`. Apart: `false, distance, dx,dy,dz,dw` |
 
 ### Slice Control
 
 | Function | Description |
 |----------|-------------|
-| `setSlice(w)` / `getSlice()` | Slice at constant `w` (the default `w = 0`) |
-| `setSliceHyperplane(nx,ny,nz,nw [, bx,by,bz,bw])` | Any hyperplane: a normal plus a point on it |
+| `setSlice(w)` / `getSlice()` | Slice at constant `w` (default `w = 0`) |
+| `setSliceHyperplane(nx,ny,nz,nw [, bx,by,bz,bw])` | Any hyperplane: normal + a point on it |
 | `getSliceNormal()` | Current slice normal |
 | `sliceToWorld(x, y, z)` | 3D slice-space point → 4D world point |
 | `sliceDirectionToWorld(x, y, z)` | 3D slice-space direction → 4D direction |
 | `worldToSlice(x, y, z, w)` | `sx, sy, sz, distanceToSlice` |
 
-Use `sliceToWorld` / `sliceDirectionToWorld` to turn `crayon.graphics.getCameraRay()` into a 4D ray for
-mouse picking (see `examples/19_physics4d.lua`).
+Use `sliceToWorld` / `sliceDirectionToWorld` to turn `crayon.graphics.getCameraRay()` into a 4D ray for mouse picking.
 
 ### Debug Rendering
 
-`drawDebug([flags])` draws everything through the 3D renderer — call it from `crayon.draw()` after
-`setCamera3D`:
+`drawDebug([flags])` draws everything through the 3D renderer — call it from `crayon.draw()` after `setCamera3D`:
 
 ```lua
 crayon.physics4D.drawDebug({
-    shapes = true,       -- wireframe of each body's current 3D cross-section
-    fill = false,        -- lit, filled cross-section surfaces
-    projection = false,  -- ghost wireframe of the *whole* 4D body, fading with distance from the slice
-    contacts = true,     -- contact points + normals (projected into the slice)
-    bounds = false,      -- bounding hyperspheres
-    velocities = false,  -- velocity arrows (a +/- cross marks motion along the slice normal, i.e. w)
-    planes = true,       -- grid patches for half-spaces
+    shapes = true, fill = false, projection = false,
+    contacts = true, bounds = false, velocities = false, planes = true,
     color = {0.2, 1, 0.4, 1}, staticColor = {...}, sensorColor = {...}, contactColor = {...},
     projectionRange = 3.0, planeExtent = 8.0, planeDivisions = 8,
 })
@@ -1092,27 +1237,27 @@ crayon.physics4D.drawDebug({
 |--------|-------------|
 | `:getId()` / `:isValid()` / `:destroy()` | Identity & lifetime |
 | `:getPosition()` / `:setPosition(x,y,z,w)` | Position (4 values) |
-| `:getLinearVelocity()` / `:setLinearVelocity(x,y,z,w)` | Linear velocity (`getVelocity`/`setVelocity` are aliases) |
+| `:getLinearVelocity()` / `:setLinearVelocity(x,y,z,w)` | Linear velocity (`getVelocity`/`setVelocity` aliases) |
 | `:getAngularVelocity()` / `:setAngularVelocity(xy,xz,xw,yz,yw,zw)` | Angular velocity bivector (body frame) |
 | `:getRotor()` | Orientation rotor: `s, xy,xz,xw,yz,yw,zw, xyzw` |
-| `:setRotation(xy,xz,xw,yz,yw,zw)` / `:rotateBy(...)` / `:resetRotation()` | Set / add a rotation / identity |
+| `:setRotation(xy,xz,xw,yz,yw,zw)` / `:rotateBy(...)` / `:resetRotation()` | Set / add / identity |
 | `:localToWorld(x,y,z,w)` / `:worldToLocal(x,y,z,w)` / `:localDirectionToWorld(...)` | Frame conversion |
-| `:applyImpulse(ix,iy,iz,iw [, px,py,pz,pw])` | Impulse (optional world point → also spins the body) |
+| `:applyImpulse(ix,iy,iz,iw [, px,py,pz,pw])` | Impulse (optional world point) |
 | `:applyForce(fx,fy,fz,fw)` / `:applyTorque(xy,xz,xw,yz,yw,zw)` | Applied on the next step |
 | `:getMass()` / `:setMass(m)` | Mass (inertia is recomputed from the shape) |
-| `:isStatic()` / `:setStatic(bool)` | Static ↔ dynamic (original mass is kept) |
-| `:isSensor()` / `:setSensor(bool)` | Sensors report overlaps (trigger events) but never push |
+| `:isStatic()` / `:setStatic(bool)` | Static ↔ dynamic |
+| `:isSensor()` / `:setSensor(bool)` | Sensors report overlaps but never push |
 | `:getRestitution()` / `:setRestitution(r)` / `:getFriction()` / `:setFriction(f)` | Material |
 | `:getGravityScale()` / `:setGravityScale(s)` / `:setDamping(linear [, angular])` | Dynamics tweaks |
 | `:getShape()` | `"8cell"`, `"600cell"`, …, `"hypersphere"`, `"halfspace"` |
-| `:getRadius()` / `:getHalfSpaceNormal()` / `:getVertices()` | Shape info (world-space vertices, flat `{x,y,z,w,...}`) |
-| `:getSliceSegments()` / `:getSliceTriangles()` / `:getSliceSphere()` | The body's current cross-section as raw 3D geometry, for custom rendering |
+| `:getRadius()` / `:getHalfSpaceNormal()` / `:getVertices()` | Shape info (world-space, flat `{x,y,z,w,...}`) |
+| `:getSliceSegments()` / `:getSliceTriangles()` / `:getSliceSphere()` | Raw 3D geometry of the body's cross-section |
 | `:distanceToSlice()` | Signed distance of the body's centre from the slice |
 
 ### Physics4D Callbacks
 
 ```lua
-function crayon.onCollision4DEnter(a, b, nx, ny, nz, nw, impulse) end  -- normal points a -> b
+function crayon.onCollision4DEnter(a, b, nx, ny, nz, nw, impulse) end
 function crayon.onCollision4DExit(a, b) end
 function crayon.onTrigger4DEnter(sensor, other) end
 function crayon.onTrigger4DExit(sensor, other) end
@@ -1122,15 +1267,15 @@ function crayon.onTrigger4DExit(sensor, other) end
 
 ```lua
 local P = crayon.physics4D
-P.createArena(6.0)                                   -- floor + walls (x, z and w)
+P.createArena(6.0)
 
-local box  = P.createTesseract(0, 3, 0, 0.4)         -- 4D box, slightly off the w = 0 slice
+local box  = P.createTesseract(0, 3, 0, 0.4)
 local ball = P.createHypersphere(2, 1, 0, 0, 0.5)
 ball:setLinearVelocity(-3, 2, 0, 0)
 
 function crayon.update(dt)
-    P.setSlice(math.sin(crayon.time.getTime()) * 1.5) -- sweep the slice through the objects
-    box:rotateBy(0, 0, 0.01, 0, 0, 0)                 -- spin in the xw plane (impossible in 3D)
+    P.setSlice(math.sin(crayon.time.getTime()) * 1.5)
+    box:rotateBy(0, 0, 0.01, 0, 0, 0)   -- spin in the xw plane
 end
 
 function crayon.draw()
@@ -1152,7 +1297,7 @@ Access via: `crayon.audio`
 | `loadSound(path)` | Load a sound effect, returns ID |
 | `unloadSound(id)` | Unload a sound, returns bool |
 | `playSound(id [, volume, pitch, pan, loop])` | Play a sound effect, returns voice ID |
-| `playSound(id, opts)` | Play with `{volume, pitch, pan, loop}` table |
+| `playSound(id, opts)` | Play with `{volume, pitch, pan, loop, priority}` |
 | `playSound3D(id, x, y, z [, opts])` | Positional 3D sound. Opts: `{volume, pitch, minDist, maxDist}` |
 | `stopSound(voiceId)` | Stop a specific voice |
 | `stopAllSounds()` | Stop all playing sounds |
@@ -1178,6 +1323,58 @@ Access via: `crayon.audio`
 | `setListenerPosition(x, y, z)` | 3D audio listener position |
 | `setListenerOrientation(fx, fy, fz [, ux, uy, uz])` | Listener forward and up vectors |
 
+### Procedural Sound
+
+| Function | Description |
+|----------|-------------|
+| `createSound(template)` | Bake a procedural sound. Returns sound ID |
+| `createBuffer(frames, fn(t, i) -> sample)` | Generate a raw mono buffer. Returns sound ID |
+
+**Template:**
+```lua
+{
+    wave = "sine",                       -- "sample", "sine", "square", "saw", "triangle", "noise"
+    freq = 440, duration = 0.5,
+    envelope = { attack = 0.01, decay = 0.1, sustain = 0.7, release = 0.2 },
+    filter = { cutoff = 2000, highpass = false, type = "lowpass" },
+    pitchSweep = { from = 440, to = 880, time = 0.3 }
+}
+```
+
+```lua
+local hit = crayon.audio.createSound({
+    wave = "square", freq = 220, duration = 0.2,
+    envelope = { attack = 0.005, decay = 0.05, sustain = 0.4, release = 0.15 }
+})
+crayon.audio.playSound(hit)
+```
+
+### Live Voice Control
+
+| Function | Description |
+|----------|-------------|
+| `setVoiceGain(voiceId, gain, time)` | Gain + ramp time |
+| `setVoiceVolume(voiceId, v)` / `setVoicePitch(voiceId, p)` / `setVoicePan(voiceId, pan)` | Live voice properties |
+| `setVoicePosition(voiceId, x, y, z)` | 3D positional update |
+| `setVoicePriority(voiceId, priority)` | Voice priority for stealing |
+| `setVoiceLoop(voiceId, loop)` | Loop toggle |
+
+### Custom Lua Block Generators
+
+| Function | Description |
+|----------|-------------|
+| `setBlockGenerator(voiceId, blockSize, fn)` | Attach a Lua callback that fills audio blocks. Returns a ref you can `clearBlockGenerator` |
+| `clearBlockGenerator(voiceId [, ref])` | Detach; optionally `luaL_unref` the callback ref |
+
+The callback receives `t_start, sampleRate, frames` and must return a table of `frames` samples in `[-1, 1]`.
+
+### Stats
+
+| Function | Description |
+|----------|-------------|
+| `getActiveVoiceCount()` | Currently active voices |
+| `getMaxVoices()` | Voice cap |
+
 ```lua
 local coin = crayon.audio.loadSound("coin.wav")
 crayon.audio.playSound(coin, { volume = 0.8, pitch = 1.0 })
@@ -1197,12 +1394,10 @@ Access via: `crayon.particles`
 ```lua
 {
     maxParticles = 1000,
-    emissionRate = 50.0,            -- particles per second
-    lifetimeMin = 0.5,
-    lifetimeMax = 1.5,
-    sizeStart = 0.5,
-    sizeEnd = 0.0,
-    gravity = -9.8,                 -- applied to Y axis
+    emissionRate = 50.0,
+    lifetimeMin = 0.5, lifetimeMax = 1.5,
+    sizeStart = 0.5, sizeEnd = 0.0,
+    gravity = -9.8,
     blendMode = "additive",         -- "alpha", "additive", "multiply"
     is3d = false
 }
@@ -1225,21 +1420,14 @@ Access via: `crayon.particles`
 
 ```lua
 local fire = crayon.particles.createEmitter({
-    maxParticles = 500,
-    emissionRate = 100,
+    maxParticles = 500, emissionRate = 100,
     lifetimeMin = 0.3, lifetimeMax = 0.8,
-    blendMode = "additive",
-    is3d = true
+    blendMode = "additive", is3d = true
 })
 fire:setPosition(0, 1, 0)
 
-function crayon.update(dt)
-    fire:update(dt)
-end
-
-function crayon.draw()
-    fire:draw3D()
-end
+function crayon.update(dt) fire:update(dt) end
+function crayon.draw() fire:draw3D() end
 ```
 
 ---
@@ -1288,7 +1476,6 @@ Access via: `crayon.math`
 local t = crayon.math.clamp(crayon.time.getTime(), 0, 1)
 local x = crayon.math.lerp(0, 100, t)
 local nx, ny = crayon.math.vec2Normalize(3, 4)
-local value = crayon.math.noise(10.5, 3.2)
 ```
 
 ---
@@ -1310,10 +1497,251 @@ Access via: `crayon.fs`
 ```lua
 local data = crayon.fs.readText("config.json")
 crayon.fs.writeText("saves/slot1.dat", "player data")
-local save_dir = crayon.fs.getSaveDir("MyGame", "MyProject")
-for _, f in ipairs(crayon.fs.listDir("assets/")) do
-    print(f)
+for _, f in ipairs(crayon.fs.listDir("assets/")) do print(f) end
+```
+
+---
+
+## JSON Module
+Access via: `crayon.json`
+
+A small JSON decoder/encoder. Handy for save files and for Tiled maps (which `crayon.tilemap` uses internally).
+
+| Function | Description |
+|----------|-------------|
+| `decode(str)` | Parse a JSON string. Returns the value. JSON `null` becomes `crayon.json.null` |
+| `encode(value [, indent])` | Serialize. `indent` = `nil` (compact) or a string like `"  "` (pretty) |
+
+**Rules:**
+- Object keys must be strings.
+- Arrays are tables with a contiguous numeric `1..n` sequence. Empty table `{}` encodes as `[]` (empty object isn't distinguished). Mixing numeric and string keys encodes as an object.
+- `NaN` / `±inf` raise an error.
+- Circular references raise an error.
+- UTF-8 BOM at start of input is skipped. `\uXXXX` escapes (including surrogate pairs) are decoded.
+
+```lua
+local data = crayon.json.decode('{"x":1,"arr":[1,2,3],"ok":true}')
+print(data.x, data.arr[2], data.ok)
+
+crayon.fs.writeText("save.json", crayon.json.encode({level = 3, hp = 87}, "  "))
+
+if crayon.json.decode("null") == crayon.json.null then
+    print("JSON null")
 end
+```
+
+---
+
+## Sprite Module
+Access via: `crayon.sprite`
+
+Sprite sheets, atlases and frame animation.
+
+### Sheet creation
+
+```lua
+local sheet = crayon.sprite.newSheet(tex, 32, 32)                        -- uniform grid
+local sheet = crayon.sprite.newSheet(tex, 32, 32, { margin=1, spacing=1, columns=8, rows=4 })
+local sheet = crayon.sprite.newSheet(tex, 32, 32, { names = { idle = 1, run = 9 } })
+
+local atlas = crayon.sprite.newAtlas(tex, {
+    idle   = { 0,   0, 32, 32 },
+    jump   = { 32,  0, 32, 40, ox = 16, oy = 40 },   -- or x=,y=,w=,h=,ox=,oy=
+})
+```
+
+**Sheet Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `:getFrame(id_or_name)` | Get a frame quad |
+| `:getFrameCount()` | Number of frames |
+| `:range(a, b)` | Build a frame index list (inclusive) |
+| `:draw(frame, x, y [, opts])` | Draw a frame. Opts: `{scale, sx, sy, rotation, ox, oy, flipX, flipY, color={r,g,b,a}}` |
+
+### Animation
+
+```lua
+local run = crayon.sprite.newAnimation(sheet, sheet:range(9, 16), 14)
+local jump = crayon.sprite.newAnimation(sheet, {17, 18, 19}, 12, { mode = "once" })
+local ping = crayon.sprite.newAnimation(sheet, {1, 2, 3}, 8, { mode = "pingpong" })
+local keyed = crayon.sprite.newAnimation(sheet, {1, 2, 3}, 10, {
+    durations = { 0.1, 0.2, 0.05 },
+    onFinish = function(anim) print("done") end,
+    onLoop   = function(anim) print("loop") end
+})
+```
+
+**Animation modes**: `"loop"` (default), `"once"`, `"pingpong"`.
+
+**Animation Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `:update(dt)` | Advance |
+| `:draw(x, y [, opts])` | Draw current frame |
+| `:getFrame()` / `:getFrameIndex()` | Current frame index |
+| `:isFinished()` / `:isPlaying()` | State |
+| `:pause()` / `:resume()` | Playback control |
+| `:setSpeed(s)` | Speed multiplier |
+| `:setFps(fps)` | Recompute per-frame durations |
+| `:reset()` | Restart from frame 1 |
+| `:seek(i)` | Jump to frame i |
+
+### Animator
+
+```lua
+local player = crayon.sprite.newAnimator(sheet, {
+    idle = { frames = {1, 2}, fps = 2 },
+    run  = { frames = sheet:range(9, 16), fps = 14 },
+    jump = { frames = {17}, mode = "once" }
+})
+player:play("run")
+```
+
+**Animator Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `:play(name [, restart])` | Play (no-op if already playing that clip, unless restart) |
+| `:update(dt)` / `:draw(x, y [, opts])` | Forward to current animation |
+| `:getCurrent()` | Current clip name |
+| `:isFinished()` | True if current one-shot has completed |
+
+---
+
+## Tilemap Module
+Access via: `crayon.tilemap`
+
+Tile layers, tile properties/animations/collision helpers, and Tiled (JSON) import.
+
+### Creating a map
+
+```lua
+-- Manual:
+local map = crayon.tilemap.new(40, 30, 16, 16, sheet)   -- cells, tile size, sprite sheet
+local ground = map:addLayer("ground")
+map:setTile("ground", 3, 5, 12)                         -- cell (3, 5) = frame/gid 12
+map:setTileProperty(12, "solid", true)
+
+-- Or from Tiled:
+local map = crayon.tilemap.loadTiled("assets/level1.tmj", {
+    textures = { ["tiles.png"] = preloadedTexture },
+    textureOptions = { filter = "nearest", wrap = "clamp" }
+})
+```
+
+**Cells are 0-based** (like pixel coordinates). Tile id `0` = empty; ids start at 1 (Tiled "gid"). Tiled flip flags are handled automatically: H=4, V=2, D=1.
+
+### Map Methods
+
+| Method | Description |
+|--------|-------------|
+| `:addTileset(sheet, firstgid)` | Register a tileset at the given first gid |
+| `:addLayer(name [, opts])` | Add a layer. Opts: `{data, visible, opacity, parallaxx, parallaxy, offsetx, offsety, collision}` |
+| `:getLayer(name_or_idx)` | Fetch a layer |
+| `:setTile(layer, cx, cy, gid)` | Set tile |
+| `:getTile(layer, cx, cy)` | Returns `gid, flags` (flags = 0..7: H=4, V=2, D=1) |
+| `:worldToCell(wx, wy)` | Returns cx, cy |
+| `:cellToWorld(cx, cy)` | Returns wx, wy |
+| `:setTileProperty(gid, key, value)` | Set per-tile metadata |
+| `:getTileProperty(gid, key)` | Read it |
+| `:setTileAnimation(gid, frames)` | `frames = {{gid=5, duration=0.2}, ...}` |
+| `:update(dt)` | Advance tile animations |
+| `:isSolidAt(wx, wy [, layerName])` | Collision query |
+| `:solidRects(x, y, w, h [, layerName])` | Rects of solid tiles overlapping a box |
+| `:getObjects(layerName)` | Objects from a Tiled object layer |
+| `:draw([opts])` | Draw. Opts: `{x, y, scale, view={x,y,w,h}, layers={name=true, ...}}`. Returns tile count drawn |
+
+```lua
+function crayon.draw()
+    local cam = { x = camX, y = camY, w = 320, h = 240 }
+    map:update(crayon.time.getDt())
+    map:draw({ view = cam })
+end
+```
+
+**Tiled limitations**: only orthogonal orientation; infinite maps are not supported; tile layer data must be in CSV/array form (set *Map properties → Tile Layer Format = CSV* in Tiled).
+
+---
+
+## Drawqueue Module
+Access via: `crayon.drawqueue`
+
+Z-ordered draw calls (2D layers, y-sorting, mixed sprite/shape depth).
+
+```lua
+local q = crayon.drawqueue.new()
+q:add(10, function() crayon.graphics.drawRect("fill", 0, 0, 50, 50) end)
+q:add(player.y, function() player_anim:draw(player.x, player.y) end)  -- y-sort
+q:flush()   -- runs everything sorted by z (ties keep insertion order), then clears
+```
+
+**Queue Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `:add(z, fn, ...)` | Queue a call. `fn` receives the extra arguments when flushed |
+| `:count()` | Number of queued items |
+| `:clear()` | Discard items without flushing |
+| `:flush()` | Sort by `z` (stable) and run each `fn` |
+
+---
+
+## Lights2D Module
+Access via: `crayon.lights2d`
+
+2D point/spot lighting for any scene (GPU or CPU renderer). Positions are in world units; call `lights:setView(camX, camY [, zoom])` when using a camera.
+
+```lua
+local lights = crayon.lights2d.new()                        -- virtual resolution
+local lights = crayon.lights2d.new({ width = 320, height = 240, resolution = 0.5 })
+
+lights:setAmbient(0.15, 0.15, 0.25)
+
+-- every frame, AFTER drawing the scene and BEFORE the HUD:
+lights:clear()
+lights:add({ x = px, y = py, radius = 120, color = {1, 0.8, 0.5}, intensity = 1.1 })
+lights:add({ x = lx, y = ly, radius = 160, spot = true, direction = 0.5, cone = 0.4, color = {0.6, 0.8, 1} })
+lights:draw()
+```
+
+`resolution < 1` renders the light map at lower resolution (cheaper; the linear upsample hides it).
+
+**Lights Methods**:
+
+| Method | Description |
+|--------|-------------|
+| `:setAmbient(r, g, b)` | Ambient color |
+| `:setView(x, y [, zoom])` | Camera offset / zoom |
+| `:clear()` | Remove all lights |
+| `:add(light)` | Add a light. Returns the light |
+| `:count()` | Light count |
+| `:render()` | Render light map into ImageData + upload. Returns the ImageData |
+| `:draw()` | Render + composite with multiply blend |
+| `:destroy()` | Free GPU texture |
+
+**Light Entry**:
+```lua
+{ x, y, radius, color = {r, g, b}, intensity = 1, falloff = 2,
+  spot = false, direction = 0, cone = 0.6, softness = 0.25 }
+```
+
+---
+
+## Print
+Access via: `crayon.print`
+
+Formatting-aware `print(...)`:
+
+- Tables are printed recursively; short tables of primitives on one line, larger ones expanded.
+- Detects and marks cycles with `<cycle>`.
+- Strings get quoted and escaped.
+- Integer-valued numbers print without a decimal point.
+- ANSI colors when the console is enabled (disabled on Android/logcat).
+
+```lua
+crayon.print("player", { x = 10, y = 20, hp = 100, items = {"sword", "shield"} })
 ```
 
 ---
@@ -1365,18 +1793,19 @@ function crayon.config(t)
         clearColor = {0.1, 0.1, 0.15, 1.0},
         dither = false,
         crt = false,
-        vignette = false
+        vignette = false,
+        renderer = "auto"           -- renderer selection string
     }
 end
 ```
 
-**Disabling a module** replaces its table with a stub that raises an error when any member is accessed. For example, `t.modules.physics3D = false` will make `crayon.physics3D` unusable at runtime.
+**Disabling a module** replaces its table with a stub that raises an error when any member is accessed. For example, `t.modules.physics3D = false` makes `crayon.physics3D` unusable at runtime.
 
 ---
 
 ## Lua Callbacks
 
-The runtime invokes these optional `crayon.*` functions. Only the canonical camelCase names are supported — the previous snake_case aliases have been removed.
+The runtime invokes these optional `crayon.*` functions. Only the canonical camelCase names are supported.
 
 ### Lifecycle
 
@@ -1402,6 +1831,9 @@ The runtime invokes these optional `crayon.*` functions. Only the canonical came
 | `crayon.gamepaddown(btn)` | btn |
 | `crayon.gamepadup(btn)` | btn |
 | `crayon.gamepadaxis(axis, value)` | axis, value |
+| `crayon.touchdown(id, x, y, pressure)` | touch id, virtual coords, pressure |
+| `crayon.touchmoved(id, x, y, pressure)` | — |
+| `crayon.touchup(id, x, y, pressure)` | — |
 
 ### Window Events
 
@@ -1464,10 +1896,10 @@ end
 
 function crayon.update(dt)
     local dx, dy = 0, 0
-    if crayon.key.isDown("a", "left") then dx = dx - 1 end
+    if crayon.key.isDown("a", "left")  then dx = dx - 1 end
     if crayon.key.isDown("d", "right") then dx = dx + 1 end
-    if crayon.key.isDown("w", "up") then dy = dy - 1 end
-    if crayon.key.isDown("s", "down") then dy = dy + 1 end
+    if crayon.key.isDown("w", "up")    then dy = dy - 1 end
+    if crayon.key.isDown("s", "down")  then dy = dy + 1 end
     player.x = player.x + dx * player.speed * dt
     player.y = player.y + dy * player.speed * dt
 end
@@ -1481,10 +1913,34 @@ function crayon.draw()
 end
 ```
 
-### Example 2: 3D Scene with Physics
+### Example 2: Sprite Animation
 
 ```lua
-local cam = { yaw = 0, pitch = -20, dist = 10 }
+local sheet, run, player_anim
+
+function crayon.init()
+    local tex = crayon.graphics.loadTexture("player.png")
+    sheet = crayon.sprite.newSheet(tex, 32, 32)
+    player_anim = crayon.sprite.newAnimator(sheet, {
+        idle = { frames = {1, 2}, fps = 2 },
+        run  = { frames = sheet:range(9, 16), fps = 14 }
+    })
+    player_anim:play("idle")
+end
+
+function crayon.update(dt)
+    if crayon.key.isDown("d") then player_anim:play("run") else player_anim:play("idle") end
+    player_anim:update(dt)
+end
+
+function crayon.draw()
+    player_anim:draw(160, 120, { scale = 2 })
+end
+```
+
+### Example 3: 3D Scene with Physics
+
+```lua
 local ground, ball
 
 function crayon.init()
@@ -1496,11 +1952,7 @@ function crayon.init()
     })
 
     ground = crayon.physics3D.createPlane(0, 0, 0)
-    ball = crayon.physics3D.createSphere(0, 5, 0, 0.5)
-end
-
-function crayon.update(dt)
-    crayon.physics3D.step(dt)
+    ball   = crayon.physics3D.createSphere(0, 5, 0, 0.5)
 end
 
 function crayon.draw()
@@ -1518,7 +1970,29 @@ function crayon.draw()
 end
 ```
 
-### Example 3: Raycast Picking
+### Example 4: Terrain + Skybox
+
+```lua
+local terrain, sky
+
+function crayon.init()
+    sky = crayon.graphics.loadSkybox("assets/sky.jpg")
+    terrain = crayon.graphics.createTerrain("heightmap.png", {
+        width = 200, depth = 200, height = 30,
+        x = -100, z = -100, uvRepeat = 32,
+        colorLow = {0.3, 0.5, 0.2}, colorHigh = {0.9, 0.9, 0.9}
+    })
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0.3, 0.5, 0.8)
+    crayon.graphics.setCamera3D({ position = {0, 20, 40}, target = {0, 0, 0}, fov = 60 })
+    crayon.graphics.drawSkybox(sky)
+    terrain:draw()
+end
+```
+
+### Example 5: Raycast Picking
 
 ```lua
 function crayon.update(dt)
@@ -1530,14 +2004,12 @@ function crayon.update(dt)
         local hit, px, py, pz, nx, ny, nz, dist, body =
             crayon.physics3D.raycast(o.x, o.y, o.z, d.x, d.y, d.z, 1000)
 
-        if hit then
-            print("Hit at", px, py, pz, "distance:", dist)
-        end
+        if hit then print("Hit at", px, py, pz, "distance:", dist) end
     end
 end
 ```
 
-### Example 4: Skeletal Animation
+### Example 6: Skeletal Animation
 
 ```lua
 local model, animator, physics_skel, pose
@@ -1564,7 +2036,7 @@ function crayon.draw()
 end
 ```
 
-### Example 5: Cloth Simulation
+### Example 7: Cloth Simulation
 
 ```lua
 local cloth
@@ -1575,14 +2047,9 @@ function crayon.init()
         x = 0, y = 5, z = 0,
         width = 4, height = 4,
         segmentsX = 12, segmentsY = 12,
-        compliance = 0.0,
-        bendCompliance = 0.01,
+        compliance = 0.0, bendCompliance = 0.01,
         pinCorners = true
     })
-end
-
-function crayon.update(dt)
-    crayon.physics3D.step(dt)
 end
 
 function crayon.draw()
@@ -1592,88 +2059,9 @@ function crayon.draw()
     local verts = cloth:getVertices()
     local faces = cloth:getFaces()
     crayon.graphics.setColor(0.8, 0.3, 0.4)
-
     for _, f in ipairs(faces) do
-        local p1, p2, p3 = verts[f[1]], verts[f[2]], verts[f[3]]
-        crayon.graphics.drawTriangle3D(p1, p2, p3)
+        crayon.graphics.drawTriangle3D(verts[f[1]], verts[f[2]], verts[f[3]])
     end
-end
-```
-
-### Example 6: Audio & Particles
-
-```lua
-local explosion_sfx, music
-local fire
-
-function crayon.init()
-    explosion_sfx = crayon.audio.loadSound("explosion.wav")
-    crayon.audio.playMusic("bgm.ogg", { loop = true, fadeIn = 2.0 })
-    crayon.audio.setSfxVolume(0.8)
-
-    fire = crayon.particles.createEmitter({
-        maxParticles = 500,
-        emissionRate = 80,
-        lifetimeMin = 0.4, lifetimeMax = 1.0,
-        sizeStart = 0.6, sizeEnd = 0.1,
-        gravity = -2.0,
-        blendMode = "additive",
-        is3d = true
-    })
-    fire:setPosition(0, 1, 0)
-end
-
-function crayon.update(dt)
-    fire:update(dt)
-    if crayon.key.isPressed("space") then
-        crayon.audio.playSound(explosion_sfx)
-        fire:burst(100)
-    end
-end
-
-function crayon.draw()
-    crayon.graphics.clear(0.05, 0.05, 0.1)
-    fire:draw3D()
-end
-```
-
-### Example 7: Canvas & Shader
-
-```lua
-local canvas, shader
-
-function crayon.init()
-    crayon.window.setResolution(640, 360)
-    canvas = crayon.graphics.createCanvas(320, 240)
-    shader = crayon.graphics.loadShader([[
-        #version 330 core
-        layout(location=0) in vec3 aPos;
-        layout(location=1) in vec2 aUV;
-        out vec2 uv;
-        uniform mat4 uProjection;
-        uniform mat4 uView;
-        void main() {
-            uv = aUV;
-            gl_Position = uProjection * uView * vec4(aPos, 1.0);
-        }
-    ]], [[
-        #version 330 core
-        in vec2 uv;
-        out vec4 fragColor;
-        void main() {
-            fragColor = vec4(uv, 0.5, 1.0);
-        }
-    ]])
-end
-
-function crayon.draw()
-    crayon.graphics.clear(0, 0, 0)
-    canvas:renderTo(function()
-        canvas:clear(0.2, 0.0, 0.4, 1.0)
-        crayon.graphics.setColor(1, 1, 1)
-        crayon.graphics.drawText("On Canvas", 10, 10, 2)
-    end)
-    crayon.graphics.drawSprite(canvas:getTexture(), 0, 0, 640, 480)
 end
 ```
 
@@ -1689,11 +2077,58 @@ function crayon.draw()
 end
 ```
 
+### Example 9: ImageData + New Texture
+
+```lua
+local img, tex
+
+function crayon.init()
+    img = crayon.graphics.newImageData(64, 64)
+    for y = 0, 63 do
+        for x = 0, 63 do
+            img:setPixel(x, y, x / 64, y / 64, 0.5, 1)
+        end
+    end
+    tex = crayon.graphics.newTexture(img, { filter = "linear", wrap = "repeat" })
+end
+
+function crayon.draw()
+    crayon.graphics.drawSprite(tex, 0, 0, 128, 128)
+end
+```
+
+### Example 10: Tilemap + Lights2D + Drawqueue
+
+```lua
+local map, lights, dq
+
+function crayon.init()
+    map = crayon.tilemap.loadTiled("assets/level.tmj")
+    lights = crayon.lights2d.new()
+    lights:setAmbient(0.2, 0.2, 0.3)
+    dq = crayon.drawqueue.new()
+end
+
+function crayon.draw()
+    crayon.graphics.clear(0.1, 0.1, 0.15)
+
+    -- Add tilemap and player to the queue, y-sorted
+    dq:add(0, function() map:draw() end)
+    dq:add(player.y, function() drawPlayer() end)
+    dq:flush()
+
+    -- Add a torch and composite the light map
+    lights:clear()
+    lights:add({ x = player.x, y = player.y, radius = 120, color = {1, 0.8, 0.5} })
+    lights:draw()
+end
+```
+
 ---
 
 ## Migration Notes (from pre-camelCase API)
 
-The following names have been **renamed**; update any existing scripts:
+The following names have been **renamed**:
 
 | Old | New |
 |---|---|
@@ -1716,3 +2151,16 @@ The following names have been **removed**:
 - `"linear_cast"` and `"ccd"` string values accepted by `Body:setMotionQuality` — use `"linearCast"` (or boolean `true`) only.
 
 C++ identifiers, metatable registry keys (e.g. `"Physics3D.Body"`), file names, and internal helpers retain their original names and are not part of the Lua surface.
+
+## Update Summary
+
+Changes made against the previous version of this document:
+
+- **Window**: added `getPlatform()`.
+- **Input**: added a `crayon.touch` section (`getCount`, `getTouches`, `isAvailable`) and the matching `crayon.touchdown/touchmoved/touchup` callbacks.
+- **Graphics**: added ImageData (`newImageData`, `loadImageData` + methods), extra texture methods and helpers (`newTexture`, `setTextureFilter/Wrap`, `:setFilter`, `:setWrap`, `:update`, `:destroy`), screenshots/capture (`screenshot`, `captureFrame`, `getCapture`), CPU 2D lighting (`renderLightmap`), masks (`beginMask`/`useMask`/`endMask`), `Graphics.StaticBatch`, `Graphics.Skybox`, and `Graphics.Terrain`.
+- **Physics3D**: added `Body:getQuaternion()` (safer for rendering than Euler), expanded Vehicle wheel config with `pos`/`steer`/grip fields, added vehicle getters (`getWheelInfo`, `getForwardSpeed`, `getChassisId`, `getMaxSkid`, `isSkidding`, `setManualTransmission`/`isManualTransmission`, `setGear`, `setAntiRoll`, `setWheelSuspension`) and the extra vehicle config fields used by `bind_physics3d.cpp` (torque curve, gear ratios, transmission mode, collision tester, anti-roll bars).
+- **Audio**: added procedural sound (`createSound`, `createBuffer`), live voice control (`setVoiceGain/Volume/Pitch/Pan/Position/Priority/Loop`), custom Lua block generators (`setBlockGenerator`, `clearBlockGenerator`), and stats (`getActiveVoiceCount`, `getMaxVoices`).
+- **New sections**: JSON, Sprite (sheets/atlases/animations/animator), Tilemap (manual + Tiled import), Drawqueue (z-sorted calls), Lights2D, and `crayon.print`.
+- **Callbacks**: added touch callbacks table.
+- **Examples**: added Examples 2, 4, 9, 10 covering sprite animation, terrain+skybox, ImageData+newTexture, and tilemap+lights2d+drawqueue.
