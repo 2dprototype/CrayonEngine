@@ -109,6 +109,7 @@ set(ENGINE_SOURCES
     src/graphics/post_process_chain.cpp
     src/graphics/rich_text.cpp
     src/physics/physics_system.cpp
+    src/physics/model_colliders.cpp
     src/physics/physics2d_system.cpp
     src/physics/physics4d_system.cpp
     src/scripting/lua_runtime.cpp

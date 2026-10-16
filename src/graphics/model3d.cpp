@@ -12,6 +12,7 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 #include <algorithm>
+#include <cctype>
 #include <cmath>
 #include <cstring>
 #include <fstream>
@@ -114,6 +115,30 @@ struct AccessorReader {
 
 Model3D::Model3D() = default;
 Model3D::~Model3D() = default;
+
+static ModelProperty convert_tg3_value(const tg3_value& v, int depth = 0) {
+    ModelProperty p;
+    if (depth > 16) return p;
+    switch (v.type) {
+        case TG3_VALUE_BOOL:   p.type = ModelProperty::Type::Bool;   p.boolean = v.bool_val != 0; break;
+        case TG3_VALUE_INT:    p.type = ModelProperty::Type::Number; p.number = static_cast<double>(v.int_val); break;
+        case TG3_VALUE_REAL:   p.type = ModelProperty::Type::Number; p.number = v.real_val; break;
+        case TG3_VALUE_STRING: p.type = ModelProperty::Type::String; p.string = tg3_str_to_string(v.string_val); break;
+        case TG3_VALUE_ARRAY:
+            p.type = ModelProperty::Type::Array;
+            for (uint32_t i = 0; i < v.array_count; ++i) p.array.push_back(convert_tg3_value(v.array_data[i], depth + 1));
+            break;
+        case TG3_VALUE_OBJECT:
+            p.type = ModelProperty::Type::Object;
+            for (uint32_t i = 0; i < v.object_count; ++i) {
+                p.keys.push_back(tg3_str_to_string(v.object_data[i].key));
+                p.values.push_back(convert_tg3_value(v.object_data[i].value, depth + 1));
+            }
+            break;
+        default: break;
+    }
+    return p;
+}
 
 bool Model3D::load_from_file(const std::string& filepath) {
     m_filepath = filepath;
@@ -252,6 +277,7 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
         ModelNode& mn = m_nodes[i];
         mn.name = gn.name.len > 0 ? tg3_str_to_string(gn.name) : ("node_" + std::to_string(i));
         mn.parent_index = -1;
+        if (gn.ext.extras) mn.extras = convert_tg3_value(*gn.ext.extras);
 
         if (gn.has_matrix) {
             for (int col = 0; col < 4; ++col) {
@@ -639,6 +665,7 @@ bool Model3D::load_from_gltf(const std::string& filepath) {
     tg3_model_free(&model);
     tg3_error_stack_free(&errors);
 
+    classify_collision_parts();
     compute_bounds();
     m_valid = !m_parts.empty();
     return m_valid;
@@ -783,6 +810,7 @@ bool Model3D::load_from_obj(const std::string& filepath) {
         m_nodes.push_back(std::move(node));
     }
 
+    classify_collision_parts();
     compute_bounds();
     m_valid = !m_parts.empty();
     return m_valid;
@@ -843,6 +871,84 @@ void Model3D::update_node_world_matrices() {
     }
 }
 
+const char* collision_kind_name(CollisionKind k) {
+    switch (k) {
+        case CollisionKind::Mesh: return "mesh";
+        case CollisionKind::Convex: return "convex";
+        case CollisionKind::Box: return "box";
+        case CollisionKind::Sphere: return "sphere";
+        case CollisionKind::Capsule: return "capsule";
+        default: return "none";
+    }
+}
+
+static std::vector<std::string> name_tokens(std::string name) {
+    // strip Blender's duplicate suffix ".001"
+    size_t dot = name.rfind('.');
+    if (dot != std::string::npos && dot + 1 < name.size() &&
+        name.find_first_not_of("0123456789", dot + 1) == std::string::npos) name.erase(dot);
+    std::vector<std::string> tokens;
+    std::string cur;
+    for (char c : name) {
+        if (std::isalnum(static_cast<unsigned char>(c))) cur += static_cast<char>(std::tolower(static_cast<unsigned char>(c)));
+        else if (!cur.empty()) { tokens.push_back(cur); cur.clear(); }
+    }
+    if (!cur.empty()) tokens.push_back(cur);
+    return tokens;
+}
+
+CollisionKind Model3D::classify_collision_name(const std::string& name) {
+    const std::vector<std::string> t = name_tokens(name);
+    if (t.empty()) return CollisionKind::None;
+    if (t[0] == "ubx") return CollisionKind::Box;
+    if (t[0] == "usp") return CollisionKind::Sphere;
+    if (t[0] == "ucp") return CollisionKind::Capsule;
+    if (t[0] == "ucx") return CollisionKind::Convex;
+    bool has_col = false;
+    for (const auto& tok : t)
+        if (tok == "col" || tok == "collision" || tok == "collider" || tok == "colmesh") has_col = true;
+    if (!has_col) return CollisionKind::None;
+    for (const auto& tok : t) {
+        if (tok == "convex" || tok == "hull") return CollisionKind::Convex;
+        if (tok == "box") return CollisionKind::Box;
+        if (tok == "sphere") return CollisionKind::Sphere;
+        if (tok == "capsule") return CollisionKind::Capsule;
+    }
+    return CollisionKind::Mesh;
+}
+
+bool Model3D::has_collision_parts() const {
+    for (const auto& p : m_parts) if (p.collision != CollisionKind::None) return true;
+    return false;
+}
+
+void Model3D::classify_collision_parts() {
+    for (auto& part : m_parts) {
+        const bool node_ok = part.node_index >= 0 && part.node_index < static_cast<int>(m_nodes.size());
+        const std::string& name = node_ok ? m_nodes[part.node_index].name : part.name;
+        CollisionKind kind = classify_collision_name(name);
+        bool hidden = kind != CollisionKind::None;
+        if (node_ok) {
+            const ModelProperty& ex = m_nodes[part.node_index].extras;
+            if (const ModelProperty* c = ex.find("collision")) {
+                if (c->type == ModelProperty::Type::String) {
+                    const std::string v = c->string;
+                    CollisionKind ov = v == "none" ? CollisionKind::None : v == "mesh" ? CollisionKind::Mesh
+                                     : v == "convex" ? CollisionKind::Convex : v == "box" ? CollisionKind::Box
+                                     : v == "sphere" ? CollisionKind::Sphere : v == "capsule" ? CollisionKind::Capsule : kind;
+                    if (v == "none" || ov != kind) hidden = false;   // authored via property: stays visible by default
+                    kind = ov;
+                }
+            }
+            if (const ModelProperty* co = ex.find("collision_only")) {
+                if (co->type == ModelProperty::Type::Bool && kind != CollisionKind::None) hidden = co->boolean;
+            }
+        }
+        part.collision = kind;
+        part.collision_only = hidden && kind != CollisionKind::None;
+    }
+}
+
 void Model3D::compute_bounds() {
     if (m_parts.empty()) {
         m_min_bounds = glm::vec3(0.0f);
@@ -854,6 +960,7 @@ void Model3D::compute_bounds() {
     m_max_bounds = glm::vec3(-1e30f);
 
     for (const auto& part : m_parts) {
+        if (part.collision_only) continue;   // invisible collision geometry must not inflate the visual bounds
         glm::vec3 corners[8] = {
             part.min_bounds,
             {part.max_bounds.x, part.min_bounds.y, part.min_bounds.z},
@@ -875,7 +982,7 @@ void Model3D::compute_bounds() {
 
 void Model3D::draw(MeshRenderer3D& renderer, const glm::mat4& world_transform, GLuint override_texture) const {
     for (const auto& part : m_parts) {
-        if (!part.mesh) continue;
+        if (!part.mesh || (part.collision_only && !m_show_collision)) continue;
         GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
         const bool cull = part.bounds_valid && !part.is_skinned;
         renderer.draw_mesh(*part.mesh, world_transform * part.transform, tex, part.color,
@@ -908,7 +1015,7 @@ void Model3D::draw_node(MeshRenderer3D& renderer, const std::string& node_name, 
 void Model3D::draw_part(MeshRenderer3D& renderer, int part_index, const glm::mat4& world_transform, GLuint override_texture) const {
     if (part_index < 0 || part_index >= (int)m_parts.size()) return;
     const auto& part = m_parts[part_index];
-    if (!part.mesh) return;
+    if (!part.mesh || (part.collision_only && !m_show_collision)) return;
 
     glm::mat4 final_tf = world_transform * part.transform;
     GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
@@ -974,7 +1081,12 @@ void Model3D::get_collision_data(std::vector<glm::vec3>& out_vertices, std::vect
     out_vertices.clear();
     out_indices.clear();
 
+    // When the model has authored collision geometry (UBX_/_col/... nodes) only that is used; otherwise
+    // every visible part. Skinned parts have no static pose and are skipped.
+    const bool authored = has_collision_parts();
     for (const auto& part : m_parts) {
+        if (part.is_skinned) continue;
+        if (authored && part.collision == CollisionKind::None) continue;
         uint32_t base_idx = (uint32_t)out_vertices.size();
         for (const auto& v : part.cpu_vertices) {
             glm::vec3 p = v.position;
@@ -992,7 +1104,7 @@ void Model3D::get_collision_data(std::vector<glm::vec3>& out_vertices, std::vect
 
 void Model3D::draw_skinned(MeshRenderer3D& renderer, const glm::mat4& world_transform, const glm::mat4* bone_matrices, size_t bone_count, GLuint override_texture) const {
     for (const auto& part : m_parts) {
-        if (!part.mesh) continue;
+        if (!part.mesh || (part.collision_only && !m_show_collision)) continue;
         GLuint tex = (override_texture != 0) ? override_texture : part.texture_id;
         if (part.is_skinned && bone_matrices && bone_count > 0) {
             renderer.draw_mesh_skinned(*part.mesh, world_transform, bone_matrices, bone_count, tex, part.color);

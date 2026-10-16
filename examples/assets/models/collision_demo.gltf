@@ -1,0 +1,237 @@
+{
+ "asset": {
+  "version": "2.0",
+  "generator": "tools/make_collision_demo_gltf.py"
+ },
+ "scene": 0,
+ "scenes": [
+  {
+   "nodes": [
+    0,
+    1,
+    2,
+    3,
+    4,
+    5,
+    6,
+    7,
+    8,
+    9
+   ]
+  }
+ ],
+ "nodes": [
+  {
+   "name": "Ground",
+   "mesh": 0,
+   "translation": [
+    0,
+    -0.5,
+    0
+   ],
+   "scale": [
+    30,
+    1,
+    30
+   ]
+  },
+  {
+   "name": "Ground_col",
+   "mesh": 0,
+   "translation": [
+    0,
+    -0.5,
+    0
+   ],
+   "scale": [
+    30,
+    1,
+    30
+   ]
+  },
+  {
+   "name": "Ramp",
+   "mesh": 0,
+   "translation": [
+    -6,
+    0.9,
+    6
+   ],
+   "rotation": [
+    0,
+    0,
+    0.15643446504023087,
+    0.9876883405951378
+   ],
+   "scale": [
+    8,
+    0.4,
+    5
+   ]
+  },
+  {
+   "name": "Ramp_col",
+   "mesh": 0,
+   "translation": [
+    -6,
+    0.9,
+    6
+   ],
+   "rotation": [
+    0,
+    0,
+    0.15643446504023087,
+    0.9876883405951378
+   ],
+   "scale": [
+    8,
+    0.4,
+    5
+   ]
+  },
+  {
+   "name": "Crate",
+   "mesh": 0,
+   "translation": [
+    5,
+    0.75,
+    -3
+   ],
+   "scale": [
+    1.5,
+    1.5,
+    1.5
+   ]
+  },
+  {
+   "name": "UBX_Crate",
+   "mesh": 0,
+   "translation": [
+    5,
+    0.75,
+    -3
+   ],
+   "scale": [
+    1.5,
+    1.5,
+    1.5
+   ]
+  },
+  {
+   "name": "Pillar",
+   "mesh": 0,
+   "translation": [
+    -7,
+    2,
+    -5
+   ],
+   "scale": [
+    1.6,
+    4,
+    1.6
+   ]
+  },
+  {
+   "name": "UCX_Pillar",
+   "mesh": 0,
+   "translation": [
+    -7,
+    2,
+    -5
+   ],
+   "scale": [
+    1.6,
+    4,
+    1.6
+   ]
+  },
+  {
+   "name": "spawn_player",
+   "translation": [
+    0,
+    1,
+    8
+   ],
+   "extras": {
+    "team": "blue",
+    "kind": "player",
+    "health": 100
+   }
+  },
+  {
+   "name": "spawn_enemy",
+   "translation": [
+    8,
+    1,
+    -8
+   ],
+   "extras": {
+    "team": "red",
+    "kind": "enemy",
+    "patrol": [
+     8,
+     -8,
+     2,
+     -8
+    ]
+   }
+  }
+ ],
+ "meshes": [
+  {
+   "name": "UnitCube",
+   "primitives": [
+    {
+     "attributes": {
+      "POSITION": 0
+     },
+     "indices": 1
+    }
+   ]
+  }
+ ],
+ "accessors": [
+  {
+   "bufferView": 0,
+   "componentType": 5126,
+   "count": 8,
+   "type": "VEC3",
+   "min": [
+    -0.5,
+    -0.5,
+    -0.5
+   ],
+   "max": [
+    0.5,
+    0.5,
+    0.5
+   ]
+  },
+  {
+   "bufferView": 1,
+   "componentType": 5123,
+   "count": 36,
+   "type": "SCALAR"
+  }
+ ],
+ "bufferViews": [
+  {
+   "buffer": 0,
+   "byteOffset": 0,
+   "byteLength": 96,
+   "target": 34962
+  },
+  {
+   "buffer": 0,
+   "byteOffset": 96,
+   "byteLength": 72,
+   "target": 34963
+  }
+ ],
+ "buffers": [
+  {
+   "byteLength": 168,
+   "uri": "data:application/octet-stream;base64,AAAAvwAAAL8AAAC/AAAAPwAAAL8AAAC/AAAAPwAAAD8AAAC/AAAAvwAAAD8AAAC/AAAAvwAAAL8AAAA/AAAAPwAAAL8AAAA/AAAAPwAAAD8AAAA/AAAAvwAAAD8AAAA/AAADAAIAAAACAAEABAAFAAYABAAGAAcAAAAEAAcAAAAHAAMAAQACAAYAAQAGAAUAAAABAAUAAAAFAAQAAwAHAAYAAwAGAAIA"
+  }
+ ]
+}

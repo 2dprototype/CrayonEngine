@@ -14,6 +14,26 @@ namespace crayon {
 
 class MeshRenderer3D;
 
+// Custom node properties (glTF "extras": Blender custom properties land here).
+struct ModelProperty {
+    enum class Type { Null, Bool, Number, String, Array, Object };
+    Type type = Type::Null;
+    bool boolean = false;
+    double number = 0.0;
+    std::string string;
+    std::vector<ModelProperty> array;            // Type::Array
+    std::vector<std::string> keys;               // Type::Object (parallel arrays)
+    std::vector<ModelProperty> values;
+    const ModelProperty* find(const std::string& key) const {
+        for (size_t i = 0; i < keys.size(); ++i) if (keys[i] == key) return &values[i];
+        return nullptr;
+    }
+};
+
+// What a part is for when it carries collision geometry (see Model3D::classify_collision_name).
+enum class CollisionKind { None = 0, Mesh, Convex, Box, Sphere, Capsule };
+const char* collision_kind_name(CollisionKind k);
+
 struct ModelPart {
     std::shared_ptr<Mesh3D> mesh;
     glm::mat4 transform{1.0f};
@@ -36,6 +56,11 @@ struct ModelPart {
     bool double_sided = true;
     int alpha_mode = 0;
 
+    // Collision geometry authored in the model (see Model3D::classify_collision_name). Parts with
+    // collision_only are never drawn (unless Model3D::set_collision_visible(true)).
+    CollisionKind collision = CollisionKind::None;
+    bool collision_only = false;
+
     // Stored for collision trimesh & spatial queries
     std::vector<Vertex3D> cpu_vertices;
     std::vector<GLuint> cpu_indices;
@@ -54,6 +79,7 @@ struct ModelNode {
     glm::mat4 world_matrix{1.0f};
 
     std::vector<int> part_indices;
+    ModelProperty extras;   // custom properties (Type::Object when the node has any)
 };
 
 struct ModelJoint {
@@ -124,6 +150,18 @@ public:
     const ModelNode* find_node(const std::string& name) const;
     const std::vector<ModelNode>& get_nodes() const { return m_nodes; }
 
+    // ---- authored collision geometry ----
+    // Node (or OBJ object) names select collision parts, Blender-friendly:
+    //   UBX_name  box          USP_name  sphere        UCP_name  capsule      UCX_name  convex hull
+    //   name_col  /  col_name  /  name-collision  -> triangle mesh   (add _convex/_hull/_box/_sphere/_capsule
+    //   as another token to pick the shape, e.g. Wall_col_convex)
+    // A numeric ".001" suffix is ignored. A node custom property  collision = "none"|"mesh"|"convex"|"box"|
+    // "sphere"|"capsule"  overrides the name (and keeps the part visible unless collision_only = true).
+    static CollisionKind classify_collision_name(const std::string& name);
+    bool has_collision_parts() const;
+    void set_collision_visible(bool on) { m_show_collision = on; }
+    bool get_collision_visible() const { return m_show_collision; }
+
     // Parts / Submeshes
     size_t get_part_count() const { return m_parts.size(); }
     const ModelPart* get_part(size_t index) const;
@@ -161,6 +199,8 @@ private:
 
     std::vector<ModelPart> m_parts;
     std::vector<ModelNode> m_nodes;
+    bool m_show_collision = false;
+    void classify_collision_parts();
     std::vector<std::shared_ptr<Texture>> m_owned_textures;
     std::vector<ModelSkin> m_skins;
     std::vector<AnimationClip> m_animations;

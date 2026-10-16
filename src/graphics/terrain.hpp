@@ -42,6 +42,8 @@ public:
     size_t chunk_count() const { return m_chunks.size(); }
     size_t triangle_count() const { return m_triangles; }
     const Options& options() const { return m_opt; }
+    // Normalised heights (0..1), columns*rows, row-major: what the physics heightfield is built from.
+    const std::vector<float>& heights() const { return m_h; }
 
 private:
     float cell_height(int cx, int cz) const { return m_h[size_t(cz) * m_cols + cx] * m_opt.size.y + m_opt.origin.y; }

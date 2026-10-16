@@ -9,6 +9,7 @@ function crayon.config(config)
     config.window.virtualHeight = 240
     config.modules.physics3D = false
     config.modules.mesh3D = false
+    config.graphics.renderer = "gl"
 end
 
 local effectsList = {

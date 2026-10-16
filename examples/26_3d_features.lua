@@ -23,7 +23,6 @@ function crayon.config(t)
     t.modules.physics3D = false
     t.modules.audio = false
     t.modules.mesh3D = true
-    t.graphics.renderer = "soft"
 end
 
 local S = { angle = 30, dist = 38, cull = true, batch_on = true, t = 0 }
@@ -66,7 +65,7 @@ local function make_heights(n)
             row[x + 1] = math.max(0, math.min(1, h))
         end
         rows[z + 1] = row
-        end
+    end
     return rows
 end
 

@@ -27,6 +27,9 @@
 #include <Jolt/Physics/Collision/Shape/CylinderShape.h>
 #include <Jolt/Physics/Collision/Shape/PlaneShape.h>
 #include <Jolt/Physics/Collision/Shape/MeshShape.h>
+#include <Jolt/Physics/Collision/Shape/HeightFieldShape.h>
+#include <Jolt/Physics/Collision/Shape/ConvexHullShape.h>
+#include <Jolt/Physics/Collision/Shape/StaticCompoundShape.h>
 #include <Jolt/Physics/Collision/RayCast.h>
 #include <Jolt/Physics/Collision/CastResult.h>
 #include <Jolt/Physics/Body/BodyCreationSettings.h>
@@ -389,6 +392,160 @@ static JPH::EMotionType to_jolt_motion(MotionType motion) {
 
 static JPH::ObjectLayer to_jolt_layer(MotionType motion) {
     return (motion == MotionType::Static) ? Layers::NON_MOVING : Layers::MOVING;
+}
+
+// ---------------------------------------------------------------------------------------------
+// Heightfield / convex hull / compound bodies
+// ---------------------------------------------------------------------------------------------
+uint32_t PhysicsSystem::create_heightfield_body(const glm::vec3& origin, const std::vector<float>& heights01, int columns, int rows,
+                                                const glm::vec3& size, float friction, float restitution) {
+    if (!m_impl->initialized || columns < 2 || rows < 2 || heights01.size() != size_t(columns) * rows) return 0;
+
+    // Jolt wants a square grid whose side is a multiple of the block size: resample bilinearly.
+    constexpr int kBlock = 4;
+    const int n = std::max(2 * kBlock, ((std::max(columns, rows) + kBlock - 1) / kBlock) * kBlock);
+    std::vector<float> samples(size_t(n) * n);
+    for (int j = 0; j < n; ++j) {
+        const float fz = float(j) / float(n - 1) * float(rows - 1);
+        const int z0 = std::min(int(fz), rows - 2);
+        const float tz = fz - float(z0);
+        for (int i = 0; i < n; ++i) {
+            const float fx = float(i) / float(n - 1) * float(columns - 1);
+            const int x0 = std::min(int(fx), columns - 2);
+            const float tx = fx - float(x0);
+            const float h00 = heights01[size_t(z0) * columns + x0], h10 = heights01[size_t(z0) * columns + x0 + 1];
+            const float h01 = heights01[size_t(z0 + 1) * columns + x0], h11 = heights01[size_t(z0 + 1) * columns + x0 + 1];
+            const float top = h00 + (h10 - h00) * tx, bot = h01 + (h11 - h01) * tx;
+            samples[size_t(j) * n + i] = (top + (bot - top) * tz) * size.y;
+        }
+    }
+
+    JPH::HeightFieldShapeSettings shape_settings(samples.data(), JPH::Vec3(origin.x, origin.y, origin.z),
+                                                 JPH::Vec3(size.x / float(n - 1), 1.0f, size.z / float(n - 1)), uint32_t(n));
+    shape_settings.mBlockSize = kBlock;
+    shape_settings.mBitsPerSample = 14;
+    JPH::ShapeSettings::ShapeResult result = shape_settings.Create();
+    if (result.HasError()) {
+        CRAYON_LOG_ERROR("Jolt create_heightfield_body error: {}", result.GetError().c_str());
+        return 0;
+    }
+
+    JPH::BodyCreationSettings settings(result.Get(), JPH::RVec3(0, 0, 0), JPH::Quat::sIdentity(),
+                                       JPH::EMotionType::Static, Layers::NON_MOVING);
+    settings.mFriction = friction;
+    settings.mRestitution = restitution;
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    JPH::Body* body = bi.CreateBody(settings);
+    if (!body) return 0;
+    JPH::BodyID id = body->GetID();
+    bi.AddBody(id, JPH::EActivation::DontActivate);
+    uint32_t raw_id = id.GetIndexAndSequenceNumber();
+    m_impl->alive_bodies.insert(raw_id);
+    return raw_id;
+}
+
+// Builds Jolt shape settings for one part. Returns null (and sets `err`) on failure.
+static JPH::Ref<JPH::ShapeSettings> make_part_settings(const ShapePartDesc& part, float density, bool allow_mesh, std::string& err) {
+    using Kind = ShapePartDesc::Kind;
+    switch (part.kind) {
+        case Kind::Box: {
+            const glm::vec3 h = glm::max(part.half_extent, glm::vec3(0.001f));
+            const float conv = std::min(JPH::cDefaultConvexRadius, std::min({h.x, h.y, h.z}) * 0.5f);
+            auto* s = new JPH::BoxShapeSettings(JPH::Vec3(h.x, h.y, h.z), conv);
+            s->mDensity = density;
+            return s;
+        }
+        case Kind::Sphere: {
+            auto* s = new JPH::SphereShapeSettings(std::max(part.radius, 0.001f));
+            s->mDensity = density;
+            return s;
+        }
+        case Kind::Capsule: {
+            auto* s = new JPH::CapsuleShapeSettings(std::max(part.half_height, 0.001f), std::max(part.radius, 0.001f));
+            s->mDensity = density;
+            return s;
+        }
+        case Kind::Cylinder: {
+            const float r = std::max(part.radius, 0.001f);
+            auto* s = new JPH::CylinderShapeSettings(std::max(part.half_height, 0.001f), r, std::min(JPH::cDefaultConvexRadius, r * 0.5f));
+            s->mDensity = density;
+            return s;
+        }
+        case Kind::Convex: {
+            if (part.points.size() < 4) { err = "convex hull needs at least 4 points"; return nullptr; }
+            JPH::Array<JPH::Vec3> pts;
+            pts.reserve(part.points.size());
+            for (const auto& p : part.points) pts.push_back(JPH::Vec3(p.x, p.y, p.z));
+            auto* s = new JPH::ConvexHullShapeSettings(pts);
+            s->mDensity = density;
+            return s;
+        }
+        case Kind::Mesh: {
+            if (!allow_mesh) { err = "triangle-mesh shapes are static-only: use a convex hull (or primitives) for moving bodies"; return nullptr; }
+            if (part.vertices.empty() || part.indices.size() < 3) { err = "mesh part has no triangles"; return nullptr; }
+            JPH::VertexList vl;
+            vl.reserve(part.vertices.size());
+            for (const auto& v : part.vertices) vl.push_back(JPH::Float3(v.x, v.y, v.z));
+            JPH::IndexedTriangleList tl;
+            tl.reserve(part.indices.size() / 3);
+            for (size_t i = 0; i + 2 < part.indices.size(); i += 3) tl.push_back(JPH::IndexedTriangle(part.indices[i], part.indices[i + 1], part.indices[i + 2], 0));
+            return new JPH::MeshShapeSettings(vl, tl);
+        }
+    }
+    err = "unknown shape kind";
+    return nullptr;
+}
+
+uint32_t PhysicsSystem::create_convex_body(const glm::vec3& pos, const std::vector<glm::vec3>& points, MotionType motion,
+                                           float friction, float restitution, float density, const glm::quat& rotation) {
+    ShapePartDesc part;
+    part.kind = ShapePartDesc::Kind::Convex;
+    part.points = points;
+    std::string err;
+    uint32_t id = create_compound_body(pos, {part}, motion, friction, restitution, density, rotation, &err);
+    if (id == 0 && !err.empty()) CRAYON_LOG_ERROR("create_convex_body: {}", err);
+    return id;
+}
+
+uint32_t PhysicsSystem::create_compound_body(const glm::vec3& pos, const std::vector<ShapePartDesc>& parts, MotionType motion,
+                                             float friction, float restitution, float density, const glm::quat& rotation,
+                                             std::string* error) {
+    auto fail = [&](const std::string& msg) -> uint32_t { if (error) *error = msg; return 0; };
+    if (!m_impl->initialized) return fail("physics is not initialized");
+    if (parts.empty()) return fail("no shapes given");
+
+    const bool allow_mesh = motion == MotionType::Static;
+    JPH::Ref<JPH::ShapeSettings> final_settings;
+    if (parts.size() == 1 && glm::length(parts[0].position) < 1e-6f && std::fabs(parts[0].rotation.w) > 0.99999f) {
+        std::string err;
+        final_settings = make_part_settings(parts[0], density, allow_mesh, err);
+        if (!final_settings) return fail(err);
+    } else {
+        JPH::StaticCompoundShapeSettings compound;
+        for (const auto& part : parts) {
+            std::string err;
+            JPH::Ref<JPH::ShapeSettings> child = make_part_settings(part, density, allow_mesh, err);
+            if (!child) return fail(err);
+            compound.AddShape(JPH::Vec3(part.position.x, part.position.y, part.position.z), to_jolt_quat(part.rotation).Normalized(), child);
+        }
+        final_settings = new JPH::StaticCompoundShapeSettings(compound);
+    }
+
+    JPH::ShapeSettings::ShapeResult result = final_settings->Create();
+    if (result.HasError()) return fail(std::string(result.GetError().c_str()));
+
+    JPH::BodyCreationSettings settings(result.Get(), JPH::RVec3(pos.x, pos.y, pos.z), to_jolt_quat(rotation).Normalized(),
+                                       to_jolt_motion(motion), to_jolt_layer(motion));
+    settings.mFriction = friction;
+    settings.mRestitution = restitution;
+    auto& bi = m_impl->physics_system.GetBodyInterface();
+    JPH::Body* body = bi.CreateBody(settings);
+    if (!body) return fail("could not create body");
+    JPH::BodyID id = body->GetID();
+    bi.AddBody(id, motion == MotionType::Static ? JPH::EActivation::DontActivate : JPH::EActivation::Activate);
+    uint32_t raw_id = id.GetIndexAndSequenceNumber();
+    m_impl->alive_bodies.insert(raw_id);
+    return raw_id;
 }
 
 uint32_t PhysicsSystem::create_box(const glm::vec3& pos, const glm::vec3& half_extent, MotionType motion, float friction, float restitution, float density) {

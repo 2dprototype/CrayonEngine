@@ -9,7 +9,7 @@ static constexpr size_t kMaxVerticesPerGroup = 200000;
 size_t StaticBatch3D::add(const Model3D& model, const glm::mat4& transform, GLuint tex_override) {
     size_t queued = 0;
     for (const ModelPart& part : model.get_parts()) {
-        if (part.is_skinned || part.cpu_vertices.empty() || part.cpu_indices.empty()) continue;
+        if (part.is_skinned || part.collision_only || part.cpu_vertices.empty() || part.cpu_indices.empty()) continue;
 
         const glm::mat4 m = transform * part.transform;
         const glm::mat3 nm = glm::transpose(glm::inverse(glm::mat3(m)));

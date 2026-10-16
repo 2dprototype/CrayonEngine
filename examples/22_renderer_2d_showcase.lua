@@ -12,13 +12,14 @@ local G = crayon.graphics
 
 function crayon.config(t)
     t.window.title = "22 - 2D showcase"
-    t.window.width = 320
+    t.window.width = 340
     t.window.height = 240
     t.window.virtualWidth = 320
     t.window.virtualHeight = 240
     t.modules.physics3D = false
     t.modules.audio = false
     t.modules.mesh3D = false
+    t.graphics.renderers = "gl"
 end
 
 local S = { zoomed = false }
@@ -33,7 +34,7 @@ function crayon.keydown(k, isRepeat)
     if isRepeat then return end
     if k == "space" then S.zoomed = not S.zoomed end
     if k == "escape" then crayon.window.quit() end
-end
+    end
 
 function crayon.draw()
     local t = crayon.time.getTime()

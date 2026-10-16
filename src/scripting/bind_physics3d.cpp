@@ -2,6 +2,9 @@
 #include "../core/engine.hpp"
 #include "../physics/physics_system.hpp"
 #include "../graphics/model3d.hpp"
+#include "../physics/model_colliders.hpp"
+#include <glm/gtc/quaternion.hpp>
+#include <glm/gtc/matrix_transform.hpp>
 #include <cstring>
 #include <cstdio>
 #include <glm/gtc/type_ptr.hpp>
@@ -2026,6 +2029,243 @@ static int l_physics_create_mesh_body(lua_State* L) {
     return 1;
 }
 
+// ---------------------------------------------------------------------------------------------
+// Heightfield / convex / compound / model bodies
+// ---------------------------------------------------------------------------------------------
+namespace {
+
+float body_opt_num(lua_State* L, int tbl, const char* key, float def) {
+    if (!lua_istable(L, tbl)) return def;
+    lua_getfield(L, tbl, key);
+    float v = lua_isnumber(L, -1) ? static_cast<float>(lua_tonumber(L, -1)) : def;
+    lua_pop(L, 1);
+    return v;
+}
+
+struct BodyOpts {
+    MotionType motion = MotionType::Static;
+    float friction = 0.5f, restitution = 0.2f, density = 1000.0f;
+    glm::vec3 pos{0.0f};
+    glm::vec3 euler{0.0f};        // rx, ry, rz in drawModel's composition order (Rz * Ry * Rx)
+    glm::vec3 scale{1.0f};
+};
+
+// opts table at `idx`: motion, friction, restitution, density, x/y/z, rx/ry/rz, scale | sx/sy/sz
+BodyOpts read_body_opts(lua_State* L, int idx, MotionType default_motion) {
+    BodyOpts o;
+    o.motion = default_motion;
+    if (!lua_istable(L, idx)) return o;
+    lua_getfield(L, idx, "motion");
+    if (!lua_isnil(L, -1)) o.motion = parse_motion_type(L, lua_gettop(L));
+    lua_pop(L, 1);
+    o.friction = body_opt_num(L, idx, "friction", o.friction);
+    o.restitution = body_opt_num(L, idx, "restitution", o.restitution);
+    o.density = body_opt_num(L, idx, "density", o.density);
+    o.pos = glm::vec3(body_opt_num(L, idx, "x", 0), body_opt_num(L, idx, "y", 0), body_opt_num(L, idx, "z", 0));
+    o.euler = glm::vec3(body_opt_num(L, idx, "rx", 0), body_opt_num(L, idx, "ry", 0), body_opt_num(L, idx, "rz", 0));
+    const float uniform = body_opt_num(L, idx, "scale", 1.0f);
+    o.scale = glm::vec3(body_opt_num(L, idx, "sx", uniform), body_opt_num(L, idx, "sy", uniform), body_opt_num(L, idx, "sz", uniform));
+    return o;
+}
+
+glm::quat euler_to_quat(const glm::vec3& e) {   // q = Qz * Qy * Qx  (same as drawModel)
+    return glm::angleAxis(e.z, glm::vec3(0, 0, 1)) * glm::angleAxis(e.y, glm::vec3(0, 1, 0)) * glm::angleAxis(e.x, glm::vec3(1, 0, 0));
+}
+
+// Reads a list of points: { {x,y,z}, ... } | { {x=,y=,z=}, ... } | flat { x1,y1,z1, x2,y2,z2, ... }
+bool read_point_list(lua_State* L, int idx, std::vector<glm::vec3>& out) {
+    if (!lua_istable(L, idx)) return false;
+    const int n = static_cast<int>(lua_objlen(L, idx));
+    if (n == 0) return false;
+    lua_rawgeti(L, idx, 1);
+    const bool nested = lua_istable(L, -1);
+    lua_pop(L, 1);
+    auto num_at = [&](int tbl, int i) { lua_rawgeti(L, tbl, i); float v = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1); return v; };
+    if (nested) {
+        for (int i = 1; i <= n; ++i) {
+            lua_rawgeti(L, idx, i);
+            const int t = lua_gettop(L);
+            glm::vec3 p;
+            lua_getfield(L, t, "x");
+            if (lua_isnumber(L, -1)) {
+                p.x = static_cast<float>(lua_tonumber(L, -1)); lua_pop(L, 1);
+                p.y = body_opt_num(L, t, "y", 0); p.z = body_opt_num(L, t, "z", 0);
+            } else {
+                lua_pop(L, 1);
+                p = glm::vec3(num_at(t, 1), num_at(t, 2), num_at(t, 3));
+            }
+            out.push_back(p);
+            lua_pop(L, 1);
+        }
+    } else {
+        for (int i = 1; i + 2 <= n; i += 3) out.push_back(glm::vec3(num_at(idx, i), num_at(idx, i + 1), num_at(idx, i + 2)));
+    }
+    return !out.empty();
+}
+
+bool read_index_list(lua_State* L, int idx, std::vector<uint32_t>& out) {
+    if (!lua_istable(L, idx)) return false;
+    const int n = static_cast<int>(lua_objlen(L, idx));
+    for (int i = 1; i <= n; ++i) { lua_rawgeti(L, idx, i); out.push_back(static_cast<uint32_t>(lua_tointeger(L, -1))); lua_pop(L, 1); }
+    return !out.empty();
+}
+
+} // namespace
+
+// physics.createModelBody(model, { x,y,z, rx,ry,rz, scale | sx,sy,sz, motion = "static", shape = "auto",
+//                                  friction, restitution, density })
+// Uses the model's authored collision geometry when it has any (nodes named UBX_/USP_/UCP_/UCX_,
+// *_col, col_*, or a node custom property collision = "mesh"|"convex"|"box"|"sphere"|"capsule");
+// otherwise the visible geometry: a triangle mesh for static bodies, a convex hull for moving ones.
+static int l_physics_create_model_body(lua_State* L) {
+    auto* lm = static_cast<LuaModel*>(luaL_checkudata(L, 1, "Graphics.Model"));
+    if (!lm || !lm->model) return luaL_error(L, "createModelBody: invalid model");
+    BodyOpts o = read_body_opts(L, 2, MotionType::Static);
+
+    ModelColliderOptions co;
+    co.scale = o.scale;
+    co.dynamic = o.motion != MotionType::Static;
+    if (lua_istable(L, 2)) {
+        lua_getfield(L, 2, "shape");
+        if (lua_isstring(L, -1)) co.shape = lua_tostring(L, -1);
+        lua_pop(L, 1);
+        co.max_hull_points = static_cast<int>(body_opt_num(L, 2, "maxHullPoints", 256));
+    }
+    std::vector<ShapePartDesc> parts;
+    std::string err;
+    if (!build_model_collider_parts(*lm->model, co, parts, err)) return luaL_error(L, "createModelBody: %s", err.c_str());
+
+    PhysicsSystem& ps = Engine::get().get_physics();
+    uint32_t id = ps.create_compound_body(o.pos, parts, o.motion, o.friction, o.restitution, o.density, euler_to_quat(o.euler), &err);
+    if (id == 0) return luaL_error(L, "createModelBody: %s", err.c_str());
+    push_body_userdata(L, id, &ps);
+    return 1;
+}
+
+// physics.createConvexBody(x, y, z, points | model, { motion = "dynamic", friction, restitution, density,
+//                                                     rx,ry,rz, scale, maxHullPoints })
+//   points = { {x,y,z}, ... } or a flat list. With a model, the hull of its visible geometry is used.
+static int l_physics_create_convex_body(lua_State* L) {
+    glm::vec3 pos(static_cast<float>(luaL_checknumber(L, 1)), static_cast<float>(luaL_checknumber(L, 2)), static_cast<float>(luaL_checknumber(L, 3)));
+    BodyOpts o = read_body_opts(L, 5, MotionType::Dynamic);
+    int max_pts = static_cast<int>(body_opt_num(L, 5, "maxHullPoints", 256));
+    std::vector<ShapePartDesc> parts;
+    std::string err;
+    if (lua_isuserdata(L, 4)) {
+        auto* lm = static_cast<LuaModel*>(luaL_checkudata(L, 4, "Graphics.Model"));
+        if (!lm || !lm->model) return luaL_error(L, "createConvexBody: invalid model");
+        ModelColliderOptions co; co.shape = "convex"; co.scale = o.scale; co.dynamic = true; co.use_authored = false; co.max_hull_points = max_pts;
+        if (!build_model_collider_parts(*lm->model, co, parts, err)) return luaL_error(L, "createConvexBody: %s", err.c_str());
+    } else {
+        ShapePartDesc d; d.kind = ShapePartDesc::Kind::Convex;
+        std::vector<glm::vec3> pts;
+        if (!read_point_list(L, 4, pts)) return luaL_error(L, "createConvexBody: expected a model or a list of points");
+        for (auto& p : pts) p *= o.scale;
+        d.points = simplify_point_cloud(pts, max_pts);
+        parts.push_back(std::move(d));
+    }
+    PhysicsSystem& ps = Engine::get().get_physics();
+    uint32_t id = ps.create_compound_body(o.pos, parts, o.motion, o.friction, o.restitution, o.density, euler_to_quat(o.euler), &err);
+    if (id == 0) return luaL_error(L, "createConvexBody: %s", err.c_str());
+    push_body_userdata(L, id, &ps);
+    return 1;
+}
+
+// physics.createCompoundBody(x, y, z, shapes, { motion = "static", friction, restitution, density, rx,ry,rz })
+//   shapes[i] = { shape = "box",      x,y,z, rx,ry,rz, hx,hy,hz }                (half extents)
+//               { shape = "sphere",   x,y,z, radius }
+//               { shape = "capsule",  x,y,z, rx,ry,rz, radius, halfHeight }      (axis = local Y)
+//               { shape = "cylinder", x,y,z, rx,ry,rz, radius, halfHeight }
+//               { shape = "convex",   x,y,z, rx,ry,rz, points = { {x,y,z}, ... } }
+//               { shape = "mesh",     x,y,z, rx,ry,rz, vertices = {...}, indices = {...} }   (static bodies only)
+static int l_physics_create_compound_body(lua_State* L) {
+    glm::vec3 pos(static_cast<float>(luaL_checknumber(L, 1)), static_cast<float>(luaL_checknumber(L, 2)), static_cast<float>(luaL_checknumber(L, 3)));
+    luaL_checktype(L, 4, LUA_TTABLE);
+    BodyOpts o = read_body_opts(L, 5, MotionType::Static);
+
+    std::vector<ShapePartDesc> parts;
+    const int n = static_cast<int>(lua_objlen(L, 4));
+    for (int i = 1; i <= n; ++i) {
+        lua_rawgeti(L, 4, i);
+        const int t = lua_gettop(L);
+        if (!lua_istable(L, t)) return luaL_error(L, "createCompoundBody: shape %d is not a table", i);
+        lua_getfield(L, t, "shape");
+        std::string kind = lua_isstring(L, -1) ? lua_tostring(L, -1) : "";
+        lua_pop(L, 1);
+        ShapePartDesc d;
+        d.position = glm::vec3(body_opt_num(L, t, "x", 0), body_opt_num(L, t, "y", 0), body_opt_num(L, t, "z", 0));
+        d.rotation = euler_to_quat(glm::vec3(body_opt_num(L, t, "rx", 0), body_opt_num(L, t, "ry", 0), body_opt_num(L, t, "rz", 0)));
+        if (kind == "box") {
+            d.kind = ShapePartDesc::Kind::Box;
+            d.half_extent = glm::vec3(body_opt_num(L, t, "hx", 0.5f), body_opt_num(L, t, "hy", 0.5f), body_opt_num(L, t, "hz", 0.5f));
+        } else if (kind == "sphere") {
+            d.kind = ShapePartDesc::Kind::Sphere; d.radius = body_opt_num(L, t, "radius", 0.5f);
+        } else if (kind == "capsule" || kind == "cylinder") {
+            d.kind = kind == "capsule" ? ShapePartDesc::Kind::Capsule : ShapePartDesc::Kind::Cylinder;
+            d.radius = body_opt_num(L, t, "radius", 0.5f); d.half_height = body_opt_num(L, t, "halfHeight", 0.5f);
+        } else if (kind == "convex") {
+            d.kind = ShapePartDesc::Kind::Convex;
+            lua_getfield(L, t, "points");
+            const bool ok = read_point_list(L, lua_gettop(L), d.points);
+            lua_pop(L, 1);
+            if (!ok) return luaL_error(L, "createCompoundBody: convex shape %d needs points", i);
+        } else if (kind == "mesh") {
+            d.kind = ShapePartDesc::Kind::Mesh;
+            lua_getfield(L, t, "vertices");
+            bool ok = read_point_list(L, lua_gettop(L), d.vertices);
+            lua_pop(L, 1);
+            lua_getfield(L, t, "indices");
+            ok = read_index_list(L, lua_gettop(L), d.indices) && ok;
+            lua_pop(L, 1);
+            if (!ok) return luaL_error(L, "createCompoundBody: mesh shape %d needs vertices and indices", i);
+        } else {
+            return luaL_error(L, "createCompoundBody: shape %d has unknown kind '%s' (box, sphere, capsule, cylinder, convex, mesh)", i, kind.c_str());
+        }
+        lua_pop(L, 1);
+        parts.push_back(std::move(d));
+    }
+    PhysicsSystem& ps = Engine::get().get_physics();
+    std::string err;
+    uint32_t id = ps.create_compound_body(pos, parts, o.motion, o.friction, o.restitution, o.density, euler_to_quat(o.euler), &err);
+    if (id == 0) return luaL_error(L, "createCompoundBody: %s", err.c_str());
+    push_body_userdata(L, id, &ps);
+    return 1;
+}
+
+// physics.createHeightfieldBody(rows, { width = 100, height = 10, depth = 100, x = 0, y = 0, z = 0,
+//                                       friction = 0.6, restitution = 0 })
+//   rows = { { h, h, ... }, { ... } }   heights in 0..1 (row r = z position, column c = x position)
+//   (For terrain objects use terrain:createBody() instead.)
+static int l_physics_create_heightfield_body(lua_State* L) {
+    luaL_checktype(L, 1, LUA_TTABLE);
+    const int rows = static_cast<int>(lua_objlen(L, 1));
+    if (rows < 2) return luaL_error(L, "createHeightfieldBody: need at least 2 rows");
+    std::vector<float> h;
+    int cols = 0;
+    for (int r = 1; r <= rows; ++r) {
+        lua_rawgeti(L, 1, r);
+        if (!lua_istable(L, -1)) return luaL_error(L, "createHeightfieldBody: row %d is not a table", r);
+        const int c = static_cast<int>(lua_objlen(L, -1));
+        if (r == 1) cols = c;
+        else if (c != cols) return luaL_error(L, "createHeightfieldBody: every row needs %d values", cols);
+        for (int i = 1; i <= c; ++i) { lua_rawgeti(L, -1, i); h.push_back(static_cast<float>(lua_tonumber(L, -1))); lua_pop(L, 1); }
+        lua_pop(L, 1);
+    }
+    if (cols < 2) return luaL_error(L, "createHeightfieldBody: need at least 2 columns");
+    glm::vec3 size(body_opt_num(L, 2, "width", 100), body_opt_num(L, 2, "height", 10), body_opt_num(L, 2, "depth", 100));
+    glm::vec3 origin(body_opt_num(L, 2, "x", 0), body_opt_num(L, 2, "y", 0), body_opt_num(L, 2, "z", 0));
+    PhysicsSystem& ps = Engine::get().get_physics();
+    uint32_t id = ps.create_heightfield_body(origin, h, cols, rows, size, body_opt_num(L, 2, "friction", 0.6f), body_opt_num(L, 2, "restitution", 0.0f));
+    if (id == 0) return luaL_error(L, "createHeightfieldBody: failed to create the heightfield shape");
+    push_body_userdata(L, id, &ps);
+    return 1;
+}
+
+// Bridge for terrain:createBody() (bind_graphics_extra.cpp).
+void crayon_lua_push_physics_body(lua_State* L, uint32_t id) {
+    push_body_userdata(L, id, &Engine::get().get_physics());
+}
+
 static int l_physics_destroy_all(lua_State* /*L*/) {
     Engine::get().get_physics().destroy_all_bodies();
     return 0;
@@ -4009,6 +4249,18 @@ void register_physics3d_bindings(lua_State* L) {
 
     lua_pushcfunction(L, l_physics_create_mesh_body);
     lua_setfield(L, -2, "createMeshBody");
+
+    lua_pushcfunction(L, l_physics_create_model_body);
+    lua_setfield(L, -2, "createModelBody");
+
+    lua_pushcfunction(L, l_physics_create_convex_body);
+    lua_setfield(L, -2, "createConvexBody");
+
+    lua_pushcfunction(L, l_physics_create_compound_body);
+    lua_setfield(L, -2, "createCompoundBody");
+
+    lua_pushcfunction(L, l_physics_create_heightfield_body);
+    lua_setfield(L, -2, "createHeightfieldBody");
 
     // Characters (camelCase)
     lua_pushcfunction(L, l_physics_create_character);

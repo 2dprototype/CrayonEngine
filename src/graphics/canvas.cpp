@@ -23,6 +23,18 @@ bool Canvas::init() {
         return false;
     }
 
+    // Remember whatever the caller had bound (e.g. the engine's virtual FBO when a canvas
+    // is created mid-frame) so creating a canvas never changes the active render target.
+    GLint prev_fbo = 0, prev_tex = 0, prev_rbo = 0;
+    glGetIntegerv(GL_FRAMEBUFFER_BINDING,  &prev_fbo);
+    glGetIntegerv(GL_TEXTURE_BINDING_2D,   &prev_tex);
+    glGetIntegerv(GL_RENDERBUFFER_BINDING, &prev_rbo);
+    auto restore = [&]() {
+        glBindFramebuffer(GL_FRAMEBUFFER,   static_cast<GLuint>(prev_fbo));
+        glBindTexture(GL_TEXTURE_2D,        static_cast<GLuint>(prev_tex));
+        glBindRenderbuffer(GL_RENDERBUFFER, static_cast<GLuint>(prev_rbo));
+    };
+
     glGenFramebuffers(1, &m_fbo);
     glBindFramebuffer(GL_FRAMEBUFFER, m_fbo);
 
@@ -45,14 +57,14 @@ bool Canvas::init() {
     if (glCheckFramebufferStatus(GL_FRAMEBUFFER) != GL_FRAMEBUFFER_COMPLETE) {
         CRAYON_LOG_ERROR("Canvas: Framebuffer is not complete for {}x{}!", m_width, m_height);
         destroy();
-        glBindFramebuffer(GL_FRAMEBUFFER, 0);
+        restore();
         return false;
     }
 
-    glBindFramebuffer(GL_FRAMEBUFFER, 0);
-    glBindTexture(GL_TEXTURE_2D, 0);
+    restore();
     return true;
 }
+
 
 void Canvas::destroy() {
     if (m_depth_stencil_rbo) {

@@ -15,6 +15,7 @@
 #include "../graphics/skybox.hpp"
 #include "../graphics/static_batch3d.hpp"
 #include "../graphics/terrain.hpp"
+#include "../physics/physics_system.hpp"
 #include "../graphics/texture.hpp"
 
 extern "C" {
@@ -34,6 +35,7 @@ namespace crayon {
 GLuint crayon_lua_check_texture(lua_State* L, int idx);
 void crayon_lua_push_texture(lua_State* L, GLuint id, int w, int h);
 std::shared_ptr<Model3D> crayon_lua_check_model(lua_State* L, int idx);
+void crayon_lua_push_physics_body(lua_State* L, uint32_t id);
 
 namespace {
 
@@ -536,6 +538,18 @@ int ter_raycast(lua_State* L) {
     lua_pushnumber(L, hit.x); lua_pushnumber(L, hit.y); lua_pushnumber(L, hit.z);
     return 3;
 }
+// terrain:createBody([friction = 0.6 [, restitution = 0]]) -> physics body
+// A static heightfield matching the terrain (heights are resampled to Jolt's grid; differences from
+// the visual mesh stay well below one cell).
+int ter_create_body(lua_State* L) {
+    auto t = check_terrain(L, 1);
+    const Terrain::Options& o = t->options();
+    PhysicsSystem& ps = Engine::get().get_physics();
+    uint32_t id = ps.create_heightfield_body(o.origin, t->heights(), t->columns(), t->rows(), o.size, num(L, 2, 0.6), num(L, 3, 0.0));
+    if (id == 0) return luaL_error(L, "terrain:createBody failed (is the physics3D module enabled?)");
+    crayon_lua_push_physics_body(L, id);
+    return 1;
+}
 int ter_info(lua_State* L) {
     auto t = check_terrain(L, 1);
     lua_pushinteger(L, t->columns()); lua_pushinteger(L, t->rows());
@@ -543,13 +557,43 @@ int ter_info(lua_State* L) {
     return 4;
 }
 
+// ---------------- Model collision helpers ----------------
+// model:hasCollision()                 true when the model has authored collision geometry
+// model:getCollisionParts()            { { name=, kind="mesh"|"convex"|"box"|"sphere"|"capsule", node=index, hidden=bool }, ... }
+// model:setCollisionVisible(bool)      draw the (normally hidden) collision geometry for debugging
+int model_has_collision(lua_State* L) { lua_pushboolean(L, crayon_lua_check_model(L, 1)->has_collision_parts()); return 1; }
+int model_set_collision_visible(lua_State* L) { crayon_lua_check_model(L, 1)->set_collision_visible(lua_toboolean(L, 2) != 0); return 0; }
+int model_get_collision_parts(lua_State* L) {
+    auto m = crayon_lua_check_model(L, 1);
+    lua_newtable(L);
+    int n = 0;
+    for (const auto& part : m->get_parts()) {
+        if (part.collision == CollisionKind::None) continue;
+        lua_newtable(L);
+        const bool node_ok = part.node_index >= 0 && part.node_index < static_cast<int>(m->get_nodes().size());
+        lua_pushstring(L, (node_ok ? m->get_nodes()[part.node_index].name : part.name).c_str()); lua_setfield(L, -2, "name");
+        lua_pushstring(L, collision_kind_name(part.collision)); lua_setfield(L, -2, "kind");
+        lua_pushinteger(L, part.node_index); lua_setfield(L, -2, "node");
+        lua_pushboolean(L, part.collision_only); lua_setfield(L, -2, "hidden");
+        lua_rawseti(L, -2, ++n);
+    }
+    return 1;
+}
+
 void register_methods(lua_State* L) {
+    luaL_getmetatable(L, "Graphics.Model");
+    struct { const char* name; lua_CFunction fn; } mm[] = {
+        {"hasCollision", model_has_collision}, {"getCollisionParts", model_get_collision_parts},
+        {"setCollisionVisible", model_set_collision_visible}};
+    for (auto& m : mm) { lua_pushcfunction(L, m.fn); lua_setfield(L, -2, m.name); }
+    lua_pop(L, 1);
+
     luaL_newmetatable(L, kTerrainMeta);
     lua_pushvalue(L, -1);
     lua_setfield(L, -2, "__index");
     struct { const char* name; lua_CFunction fn; } tm[] = {
         {"draw", ter_draw}, {"getHeightAt", ter_height}, {"getNormalAt", ter_normal}, {"contains", ter_contains},
-        {"raycast", ter_raycast}, {"getInfo", ter_info}, {"__gc", ter_gc}};
+        {"raycast", ter_raycast}, {"getInfo", ter_info}, {"createBody", ter_create_body}, {"__gc", ter_gc}};
     for (auto& m : tm) { lua_pushcfunction(L, m.fn); lua_setfield(L, -2, m.name); }
     lua_pop(L, 1);
 

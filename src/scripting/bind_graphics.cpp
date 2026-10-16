@@ -561,7 +561,32 @@ static int l_model_get_node_count(lua_State* L) {
     return 1;
 }
 
-static void push_node_table(lua_State* L, const ModelNode& node, int idx) {
+static void push_model_property(lua_State* L, const ModelProperty& p) {
+    switch (p.type) {
+        case ModelProperty::Type::Bool:   lua_pushboolean(L, p.boolean); break;
+        case ModelProperty::Type::Number: lua_pushnumber(L, p.number); break;
+        case ModelProperty::Type::String: lua_pushlstring(L, p.string.data(), p.string.size()); break;
+        case ModelProperty::Type::Array:
+            lua_createtable(L, static_cast<int>(p.array.size()), 0);
+            for (size_t i = 0; i < p.array.size(); ++i) { push_model_property(L, p.array[i]); lua_rawseti(L, -2, static_cast<int>(i + 1)); }
+            break;
+        case ModelProperty::Type::Object:
+            lua_createtable(L, 0, static_cast<int>(p.keys.size()));
+            for (size_t i = 0; i < p.keys.size(); ++i) { push_model_property(L, p.values[i]); lua_setfield(L, -2, p.keys[i].c_str()); }
+            break;
+        default: lua_pushnil(L); break;
+    }
+}
+
+// node = {
+//   name, index, parent,
+//   x,y,z, rx,ry,rz,rw (quaternion), sx,sy,sz            -- local transform (as before)
+//   wx,wy,wz                                             -- world position
+//   wrx,wry,wrz                                          -- world rotation, euler in drawModel's order
+//   hasMesh, collision ("mesh"|"convex"|"box"|"sphere"|"capsule" or nil),
+//   properties = { ...custom properties set on the node in Blender / glTF extras... }
+// }
+static void push_node_table(lua_State* L, const Model3D& model, const ModelNode& node, int idx) {
     lua_newtable(L);
     lua_pushstring(L, node.name.c_str());
     lua_setfield(L, -2, "name");
@@ -592,6 +617,37 @@ static void push_node_table(lua_State* L, const ModelNode& node, int idx) {
     lua_setfield(L, -2, "sy");
     lua_pushnumber(L, node.scale.z);
     lua_setfield(L, -2, "sz");
+
+    // world transform
+    const glm::mat4& W = node.world_matrix;
+    lua_pushnumber(L, W[3].x); lua_setfield(L, -2, "wx");
+    lua_pushnumber(L, W[3].y); lua_setfield(L, -2, "wy");
+    lua_pushnumber(L, W[3].z); lua_setfield(L, -2, "wz");
+    {
+        // R = Rz * Ry * Rx (the composition drawModel uses); columns normalised to strip scale
+        glm::vec3 c0 = glm::normalize(glm::vec3(W[0])), c1 = glm::normalize(glm::vec3(W[1])), c2 = glm::normalize(glm::vec3(W[2]));
+        const float ry = std::asin(std::clamp(-c0.z, -1.0f, 1.0f));
+        float rx, rz;
+        if (std::fabs(c0.z) < 0.99999f) { rx = std::atan2(c1.z, c2.z); rz = std::atan2(c0.y, c0.x); }
+        else { rx = std::atan2(-c2.y, c1.y); rz = 0.0f; }   // gimbal lock
+        lua_pushnumber(L, rx); lua_setfield(L, -2, "wrx");
+        lua_pushnumber(L, ry); lua_setfield(L, -2, "wry");
+        lua_pushnumber(L, rz); lua_setfield(L, -2, "wrz");
+    }
+
+    bool has_mesh = false;
+    CollisionKind kind = CollisionKind::None;
+    for (const auto& part : model.get_parts()) {
+        if (part.node_index != idx) continue;
+        has_mesh = true;
+        if (part.collision != CollisionKind::None) kind = part.collision;
+    }
+    lua_pushboolean(L, has_mesh); lua_setfield(L, -2, "hasMesh");
+    if (kind != CollisionKind::None) { lua_pushstring(L, collision_kind_name(kind)); lua_setfield(L, -2, "collision"); }
+
+    static const ModelProperty kEmptyObject = [] { ModelProperty p; p.type = ModelProperty::Type::Object; return p; }();
+    push_model_property(L, node.extras.type == ModelProperty::Type::Object ? node.extras : kEmptyObject);
+    lua_setfield(L, -2, "properties");
 }
 
 static int l_model_get_node(lua_State* L) {
@@ -601,14 +657,14 @@ static int l_model_get_node(lua_State* L) {
         size_t idx = static_cast<size_t>(lua_tointeger(L, 2));
         const auto* node = model->get_node(idx);
         if (node) {
-            push_node_table(L, *node, static_cast<int>(idx));
+            push_node_table(L, *model, *node, static_cast<int>(idx));
             return 1;
         }
     } else if (lua_isstring(L, 2)) {
         std::string name = lua_tostring(L, 2);
         int idx = model->find_node_index(name);
         if (idx >= 0) {
-            push_node_table(L, *model->get_node(static_cast<size_t>(idx)), idx);
+            push_node_table(L, *model, *model->get_node(static_cast<size_t>(idx)), idx);
             return 1;
         }
     }
@@ -621,7 +677,7 @@ static int l_model_get_nodes(lua_State* L) {
     const auto& nodes = model->get_nodes();
     lua_createtable(L, static_cast<int>(nodes.size()), 0);
     for (size_t i = 0; i < nodes.size(); ++i) {
-        push_node_table(L, nodes[i], static_cast<int>(i));
+        push_node_table(L, *model, nodes[i], static_cast<int>(i));
         lua_rawseti(L, -2, static_cast<int>(i + 1));
     }
     return 1;

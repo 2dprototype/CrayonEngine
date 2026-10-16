@@ -24,7 +24,7 @@ function crayon.config(t)
     t.modules.physics3D = false
     t.modules.audio = false
     t.modules.mesh3D = true
-	end
+end
 
 local PHASE_SECONDS = 2.0
 local phases = { "empty", "3D scene", "2D sprites", "3D + 2D" }

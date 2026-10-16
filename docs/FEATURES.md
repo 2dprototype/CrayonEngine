@@ -1,7 +1,7 @@
 # New graphics features (GPU and CPU renderers)
 
 Everything here works on both backends (see `RENDERERS.md`). Examples: `examples/25_2d_features.lua`,
-`26_3d_features.lua`; self-tests: `20_renderer_selftest.lua`, `27_features_selftest.lua`.
+`26_3d_features.lua`, `28_collision.lua`; self-tests: `20_renderer_selftest.lua`, `27_features_selftest.lua`.
 Run the headless test suite with `tools/run_tests.sh`.
 
 ## Culling (automatic)
@@ -44,6 +44,34 @@ Notes
   per-object culling skips, so prefer small chunk sizes there.
 * Mask shapes define the mask by coverage (sprite alpha is ignored).
 * Screenshots are written as uncompressed PNG.
+
+## Collision (physics3D)
+Lua module `crayon.physics3D`. Verified with real Jolt physics (`test/soft/physics_shapes_test.cpp`).
+| Feature | API |
+|---|---|
+| Level collision from a model (Blender workflow) | `physics3D.createModelBody(model, {x,y,z, rx,ry,rz, scale, motion="static", shape="auto", friction, restitution, density})` |
+| Terrain collider (heightfield) | `terrain:createBody([friction, restitution])`, or `physics3D.createHeightfieldBody(rows, {width,height,depth,x,y,z})` |
+| Convex hull bodies (dynamic props) | `physics3D.createConvexBody(x,y,z, points \| model, {motion="dynamic", ...})` |
+| Compound bodies | `physics3D.createCompoundBody(x,y,z, {{shape="box",hx=,hy=,hz=,x=,y=,z=,rx=,ry=,rz=}, {shape="sphere",radius=}, {shape="capsule"\|"cylinder",radius=,halfHeight=}, {shape="convex",points=}, {shape="mesh",vertices=,indices=}}, opts)` |
+| Spawn points / custom properties | `model:getNodes()` -> `{name, x,y,z (local), wx,wy,wz (world), wrx,wry,wrz (world euler, drawModel order), hasMesh, collision, properties={...}}` |
+| Debugging | `model:getCollisionParts()`, `model:hasCollision()`, `model:setCollisionVisible(true)` |
+
+**Authoring collision in Blender / any DCC tool** (glTF 2.0 or OBJ; object/node names decide):
+`UBX_name` box, `USP_name` sphere, `UCP_name` capsule, `UCX_name` convex hull, `name_col` / `col_name` /
+`name-collision` triangle mesh (add `_convex`, `_hull`, `_box`, `_sphere` or `_capsule` as another token to pick a
+shape). Blender's `.001` suffixes are ignored. Collision nodes are never drawn and do not affect model bounds
+or static batches. A node custom property `collision = "mesh"|"convex"|"box"|"sphere"|"capsule"|"none"` overrides
+the name (the node stays visible unless `collision_only = true`). Enable *Custom Properties* in Blender's glTF
+export so empties' properties (spawn points, tags) arrive in `properties`.
+Without collision nodes, `createModelBody` uses the visible geometry: triangle mesh for static bodies, convex hull
+for moving ones (`shape` can force `"mesh"|"convex"|"box"|"sphere"|"capsule"`).
+
+Notes: triangle meshes are static-only (moving bodies get convex hulls / primitives instead; asking for a moving
+mesh is a clear error). Hulls over 256 points are simplified (`maxHullPoints`). Box/sphere/capsule fits use the
+node's own orientation; non-uniform `scale` on rotated primitives is approximate. Terrain heights are resampled
+to Jolt's grid (multiple of 4 samples per side); physics and visual surfaces agree to within a fraction of a cell
+(diagonal triangulation can differ slightly). `examples/28_collision.lua` + `examples/assets/models/collision_demo.gltf`
+(written by `tools/make_collision_demo_gltf.py`) show everything.
 
 ## Not implemented yet
 Shadows, normal/emissive/specular materials, multiple cameras / viewports / 3D render-to-texture, decals and trails,

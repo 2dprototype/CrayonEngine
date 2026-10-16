@@ -1,6 +1,7 @@
 #pragma once
 
 #include <memory>
+#include <string>
 #include <vector>
 #include <cstdint>
 #include <glm/glm.hpp>
@@ -63,6 +64,21 @@ struct PhysicsDebugDrawFlags {
     bool draw_velocities = false;
 };
 
+// One child shape of a compound body (or a standalone shape description). Positions/rotations are
+// relative to the body. Used by create_compound_body and by the model collider builder.
+struct ShapePartDesc {
+    enum class Kind { Box, Sphere, Capsule, Cylinder, Convex, Mesh };
+    Kind kind = Kind::Box;
+    glm::vec3 position{0.0f};
+    glm::quat rotation{1.0f, 0.0f, 0.0f, 0.0f};
+    glm::vec3 half_extent{0.5f};              // Box
+    float radius = 0.5f;                      // Sphere, Capsule, Cylinder
+    float half_height = 0.5f;                 // Capsule / Cylinder (length of the straight part / 2), axis = Y
+    std::vector<glm::vec3> points;            // Convex: hull is built from these points
+    std::vector<glm::vec3> vertices;          // Mesh (static bodies only)
+    std::vector<uint32_t> indices;
+};
+
 class PhysicsSystem {
 public:
     PhysicsSystem();
@@ -84,6 +100,21 @@ public:
     uint32_t create_cylinder(const glm::vec3& pos, float half_height, float radius, MotionType motion = MotionType::Dynamic, float friction = 0.5f, float restitution = 0.2f, float density = 1000.0f);
     uint32_t create_plane(const glm::vec3& pos, const glm::vec3& normal, float half_extent = 100.0f);
     uint32_t create_mesh_body(const glm::vec3& pos, const std::vector<glm::vec3>& vertices, const std::vector<uint32_t>& indices, float friction = 0.5f, float restitution = 0.2f);
+
+    // Static heightfield terrain. `heights01` holds columns*rows samples in 0..1 (row-major, row 0 = z 0),
+    // spanning size.x by size.z world units starting at `origin`; world height = origin.y + h * size.y.
+    // The grid is resampled to the square power-friendly grid Jolt needs (multiple of 4 samples per side).
+    uint32_t create_heightfield_body(const glm::vec3& origin, const std::vector<float>& heights01, int columns, int rows,
+                                     const glm::vec3& size, float friction = 0.6f, float restitution = 0.0f);
+    // Convex hull of `points` (local space). Works for dynamic bodies, unlike mesh bodies.
+    uint32_t create_convex_body(const glm::vec3& pos, const std::vector<glm::vec3>& points, MotionType motion = MotionType::Dynamic,
+                                float friction = 0.5f, float restitution = 0.2f, float density = 1000.0f,
+                                const glm::quat& rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f));
+    // Several shapes in one rigid body. Mesh parts are only allowed when motion is Static.
+    // Returns 0 and fills *error when the shapes cannot be built.
+    uint32_t create_compound_body(const glm::vec3& pos, const std::vector<ShapePartDesc>& parts, MotionType motion = MotionType::Static,
+                                  float friction = 0.5f, float restitution = 0.2f, float density = 1000.0f,
+                                  const glm::quat& rotation = glm::quat(1.0f, 0.0f, 0.0f, 0.0f), std::string* error = nullptr);
 
     // Body management
     bool destroy_body(uint32_t body_id);
