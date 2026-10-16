@@ -1,12 +1,29 @@
 # Build outputs (root and build directories)
-/build
+/build/
+build/
 *.exe
-/*.dll
+*.dll
+*.dylib
+*.so
 *.o
 *.obj
-*.so
+*.pdb
+*.ilk
+*.exp
 *.apk
 *.aab
+.ninja_deps
+.ninja_log
+
+# Keep essential vendor and SDK prebuilt binaries
+!/vendor/luajit/bin/*.dll
+!/vendor/sdl3/bin/*.dll
+!/sdk/bin/*.dll
+
+# CMake in-source build artifacts
+CMakeCache.txt
+CMakeFiles/
+cmake_install.cmake
 
 # Local / temporary
 /ignore
@@ -16,6 +33,7 @@ imgui.ini
 *.txt
 !CMakeLists.txt
 *.zip
+license.dat
 
 # Vendor dependencies: ignore temporary source repos, keep core libraries & prebuilts
 /vendor/luajit-src/
@@ -32,10 +50,12 @@ imgui.ini
 /android/app/.cxx/
 /android/local.properties
 
-# IDE & Editor files
+# IDE & Editor & OS files
 .idea/
 *.iml
 .vscode/
+.DS_Store
+Thumbs.db
 
 # Plugin build output
-/plugins/bin
+/plugins/bin/

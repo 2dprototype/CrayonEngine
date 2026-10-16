@@ -8,7 +8,6 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Build options to separate crayon and editor builds
 option(BUILD_CRAYON "Build the Crayon Engine Player (crayon.exe)" ON)
 option(BUILD_EDITOR "Build the Crayon Project Manager (editor.exe)" ON)
-option(BUILD_PLUGINS "Build the native plugins in plugins/ (physics4D.dll, ...) next to the crayon binary" ON)
 
 # ---- Android ---------------------------------------------------------------
 # Configure with the NDK toolchain (Gradle does this for you, see android/).
@@ -241,14 +240,6 @@ if(BUILD_CRAYON)
             "$<TARGET_FILE_DIR:crayon>"
     )
     endif()
-endif()
-
-# -------------------------------------------------------------
-# Native plugins (physics4D, ...): plugins/<name>/ -> <name>.dll / .so / .dylib next to crayon
-# -------------------------------------------------------------
-# Not on Android yet: plugin loading there needs the libs packaged into the APK's lib dir.
-if(BUILD_PLUGINS AND NOT ANDROID)
-    add_subdirectory(plugins)
 endif()
 
 # -------------------------------------------------------------

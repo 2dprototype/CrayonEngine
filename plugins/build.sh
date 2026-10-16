@@ -12,12 +12,10 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="$HERE/../build/plugins"
 OUT="$HERE/bin"
 
-if [ ! -f "$BUILD/CMakeCache.txt" ]; then
-    echo "[*] Configuring plugins..."
-    GEN=()
-    command -v ninja >/dev/null 2>&1 && GEN=(-G Ninja)
-    cmake -S "$HERE" -B "$BUILD" "${GEN[@]}" -DCMAKE_BUILD_TYPE=Release -DCRAYON_PLUGIN_OUTPUT_DIR="$OUT"
-fi
+echo "[*] Configuring plugins..."
+GEN=()
+command -v ninja >/dev/null 2>&1 && GEN=(-G Ninja)
+cmake -S "$HERE" -B "$BUILD" "${GEN[@]}" -DCMAKE_BUILD_TYPE=Release -DCRAYON_PLUGIN_OUTPUT_DIR="$OUT"
 
 JOBS="$(nproc 2>/dev/null || sysctl -n hw.ncpu 2>/dev/null || echo 4)"
 if [ $# -eq 0 ]; then

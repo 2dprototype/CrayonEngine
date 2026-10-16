@@ -26,17 +26,26 @@ If a plugin can't be loaded the game still starts; `crayon.<name>` then raises a
 
 ## Building
 
-From the main project the plugins are built with the engine (`build.bat`, or
-`cmake --build build --target crayon_plugins`) and written next to `crayon.exe`.
-Disable with `-DBUILD_PLUGINS=OFF`, skip one with `-DCRAYON_PLUGIN_<name>=OFF`.
+Plugins can be built completely standalone without rebuilding the engine:
 
-Standalone (no engine build needed):
+### Dedicated Plugin Build Scripts
+```cmd
+:: Build individual plugins directly:
+build_physics4D.bat          :: or plugins\build_physics4D.bat
+build_activation.bat         :: or plugins\build_activation.bat
 
+:: Unix / macOS:
+./build_physics4D.sh         :: or ./plugins/build_physics4D.sh
+./build_activation.sh        :: or ./plugins/build_activation.sh
 ```
-plugins\build.bat            :: all plugins  ->  plugins\bin\*.dll (also copied next to crayon.exe if found)
-plugins\build.bat physics4D  :: just one
-./plugins/build.sh [name]    # Linux / macOS
+
+### All Plugins
+```cmd
+plugins\build.bat            :: all plugins -> plugins\bin\*.dll
+./plugins/build.sh           :: Linux / macOS
 ```
+
+To build a standalone plugin with zero engine source code, see the standalone **`sdk/`** directory.
 
 ## Writing your own plugin
 
@@ -89,6 +98,7 @@ Rebuild plugins when `CRAYON_PLUGIN_API_VERSION` changes.
 
 | plugin | Lua API | notes |
 |---|---|---|
+| `activation` | `crayon.activation.*` (see plugins/activation/README.md) | offline license keys, trial, feature flags; ships a `crayon_keygen` tool |
 | `physics4D` | `crayon.physics4D.*` (see docs/quick_start.md) | hv4d 4D rigid bodies; steps at a fixed 60 Hz, draws via the host debug-drawing API |
 
 Android: plugins are not built/loaded there yet (the app can only dlopen libraries from its APK lib dir).

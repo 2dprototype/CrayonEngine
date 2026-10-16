@@ -11,11 +11,9 @@ set "HERE=%~dp0"
 set "BUILD=%HERE%..\build\plugins"
 set "OUT=%HERE%bin"
 
-if not exist "%BUILD%\build.ninja" (
-    echo [*] Configuring plugins...
-    cmake -S "%HERE%." -B "%BUILD%" -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCRAYON_PLUGIN_OUTPUT_DIR="%OUT%"
-    if errorlevel 1 exit /b 1
-)
+echo [*] Configuring plugins...
+cmake -S "%HERE%." -B "%BUILD%" -G "Ninja" -DCMAKE_BUILD_TYPE=Release -DCRAYON_PLUGIN_OUTPUT_DIR="%OUT%"
+if errorlevel 1 exit /b 1
 
 if "%~1"=="" (
     echo [*] Building all plugins...

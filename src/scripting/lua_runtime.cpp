@@ -94,12 +94,6 @@ void LuaRuntime::register_plugin_stubs(const std::vector<PluginFailure>& failure
         if (f.name.empty() || !crayon_field_is_nil(m_L, f.name.c_str())) continue;
         install_plugin_stub(m_L, f.name.c_str(), ("the plugin failed to load: " + f.reason).c_str());
     }
-    // physics4D used to be built in: point old code at the new way of enabling it.
-    if (crayon_field_is_nil(m_L, "physics4D")) {
-        install_plugin_stub(m_L, "physics4D",
-            "physics4D is a plugin now. Put physics4D.dll (.so/.dylib) next to the crayon binary and add "
-            "`t.plugins.physics4D = true` to crayon.config().");
-    }
 }
 
 LuaRuntime::LuaRuntime() = default;
