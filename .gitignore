@@ -36,3 +36,6 @@ imgui.ini
 .idea/
 *.iml
 .vscode/
+
+# Plugin build output
+/plugins/bin

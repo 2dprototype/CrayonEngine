@@ -8,6 +8,7 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 # Build options to separate crayon and editor builds
 option(BUILD_CRAYON "Build the Crayon Engine Player (crayon.exe)" ON)
 option(BUILD_EDITOR "Build the Crayon Project Manager (editor.exe)" ON)
+option(BUILD_PLUGINS "Build the native plugins in plugins/ (physics4D.dll, ...) next to the crayon binary" ON)
 
 # ---- Android ---------------------------------------------------------------
 # Configure with the NDK toolchain (Gradle does this for you, see android/).
@@ -49,6 +50,7 @@ add_compile_definitions(
 # The editor target below overrides its own includes and does not rely on this.
 include_directories(
     src
+    plugins/include
     editor
     icon
     ${CRAYON_GLAD_DIR}/include
@@ -65,13 +67,6 @@ include_directories(
 if(NOT ANDROID)
     # Prebuilt desktop SDL3 headers. On Android the SDL3::SDL3 target provides its own.
     include_directories(vendor/sdl3/include)
-endif()
-
-# hv4d: the standalone 4D physics library (lives in vendor/, deliberately NOT part of src/).
-# Provides the `hypervis4d` static-library target and its public include directory.
-if(NOT TARGET hypervis4d)
-    set(HV4D_BUILD_TESTS OFF CACHE BOOL "" FORCE)
-    add_subdirectory(vendor/hypervis4d)
 endif()
 
 file(GLOB_RECURSE BOX2D_SOURCES
@@ -111,7 +106,8 @@ set(ENGINE_SOURCES
     src/physics/physics_system.cpp
     src/physics/model_colliders.cpp
     src/physics/physics2d_system.cpp
-    src/physics/physics4d_system.cpp
+    src/plugins/plugin_manager.cpp
+    src/plugins/host_api.cpp
     src/scripting/lua_runtime.cpp
     src/scripting/bind_window.cpp
     src/scripting/bind_graphics.cpp
@@ -123,7 +119,6 @@ set(ENGINE_SOURCES
     src/scripting/bind_audio.cpp
     src/scripting/bind_physics3d.cpp
     src/scripting/bind_physics2d.cpp
-    src/scripting/bind_physics4d.cpp
     src/scripting/bind_particles.cpp
     src/scripting/bind_math.cpp
     src/scripting/bind_fs.cpp
@@ -205,7 +200,6 @@ if(BUILD_CRAYON)
         )
 
         target_link_libraries(crayon PRIVATE
-            hypervis4d
             Jolt
             ${CRAYON_ANDROID_LIB_DIR}/libluajit-5.1.a
             SDL3::SDL3
@@ -225,12 +219,18 @@ if(BUILD_CRAYON)
     )
 
     target_link_libraries(crayon PRIVATE
-        hypervis4d
         ${CMAKE_CURRENT_SOURCE_DIR}/vendor/JoltPhysics/lib/libJolt.a
         ${CMAKE_CURRENT_SOURCE_DIR}/vendor/sdl3/lib/libSDL3.dll.a
         ${CMAKE_CURRENT_SOURCE_DIR}/vendor/luajit/lib/libluajit-5.1.dll.a
         opengl32
     )
+
+    # Plugins resolve lua_* from the crayon binary on Linux/macOS, so export its symbols there.
+    # (Windows plugins link against lua51.dll instead.)  Plugins need libdl to be loaded at all.
+    if(NOT WIN32)
+        set_target_properties(crayon PROPERTIES ENABLE_EXPORTS ON)
+        target_link_libraries(crayon PRIVATE ${CMAKE_DL_LIBS})
+    endif()
 
     add_custom_command(TARGET crayon POST_BUILD
         COMMAND ${CMAKE_COMMAND} -E copy_if_different
@@ -241,6 +241,14 @@ if(BUILD_CRAYON)
             "$<TARGET_FILE_DIR:crayon>"
     )
     endif()
+endif()
+
+# -------------------------------------------------------------
+# Native plugins (physics4D, ...): plugins/<name>/ -> <name>.dll / .so / .dylib next to crayon
+# -------------------------------------------------------------
+# Not on Android yet: plugin loading there needs the libs packaged into the APK's lib dir.
+if(BUILD_PLUGINS AND NOT ANDROID)
+    add_subdirectory(plugins)
 endif()
 
 # -------------------------------------------------------------

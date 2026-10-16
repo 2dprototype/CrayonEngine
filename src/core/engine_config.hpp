@@ -1,6 +1,7 @@
 #pragma once
 
 #include <string>
+#include <vector>
 #include <glm/vec4.hpp>
 
 namespace crayon {
@@ -33,12 +34,19 @@ struct WindowConfig {
 struct ModulesConfig {
     bool physics3d = true;
     bool physics2d = true;
-    bool physics4d = true;   // hv4d: 4D rigid-body physics (vendor/hypervis4d)
     bool audio = true;
     bool mesh3d = true;
     bool particles = true;
     bool input = true;
     bool fs = true;
+};
+
+// One entry of t.plugins in crayon.config():
+//     t.plugins.physics4D = true                 -> name = "physics4D", path = ""   (searched for)
+//     t.plugins.mine      = "libs/my_plugin.dll" -> name = "mine",      path = "libs/my_plugin.dll"
+struct PluginRequest {
+    std::string name;
+    std::string path;   // empty = look for <name>.dll / lib<name>.so / ... next to the binary
 };
 
 struct GraphicsConfig {
@@ -57,6 +65,7 @@ struct EngineConfig {
     WindowConfig window;
     ModulesConfig modules;
     GraphicsConfig graphics;
+    std::vector<PluginRequest> plugins;   // t.plugins
     int fps_limit = 0;
     bool console = true;
 };

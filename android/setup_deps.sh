@@ -2,7 +2,7 @@
 # One-time setup of the two Android dependencies that can't ship inside the repo:
 #   1. SDL3 source   -> vendor/sdl3-src            (libSDL3.so + Java glue are built from it)
 #   2. LuaJIT static -> vendor/android/<abi>/lib/libluajit-5.1.a
-# Everything else (Jolt, box2d, hypervis4d, GLES loader) is compiled by CMake / already in vendor/.
+# Everything else (Jolt, box2d, GLES loader) is compiled by CMake / already in vendor/.
 #
 # Run from Linux, macOS or WSL (LuaJIT's cross build needs a POSIX shell + host gcc + make).
 #   ABIS="arm64-v8a" ./android/setup_deps.sh        # default

@@ -1161,8 +1161,11 @@ end
 
 ---
 
-## Physics4D Module
+## Physics4D Module (plugin)
 Access via: `crayon.physics4D`
+
+> **This is a plugin.** Ship `physics4D.dll` (`.so` / `.dylib`) next to the crayon binary and enable it with
+> `function crayon.config(t) t.plugins.physics4D = true end`. Without it, `crayon.physics4D` raises an error that says so.
 
 A real 4D rigid-body engine (the **hv4d** library in `vendor/hypervis4d`). Bodies live in a world with four spatial axes `x, y, z, w` (`y` is up; `w` is the extra dimension). Since you can only *see* 3D, the engine renders the **3D slice** where the world meets a hyperplane (by default `w = sliceW`).
 
@@ -1781,13 +1784,18 @@ function crayon.config(t)
     t.modules = {
         physics3D = true,
         physics2D = true,
-        physics4D = true,
         audio = true,
         mesh3D = true,
         particles = true,
         input = true,
         fs = true
     }
+
+    -- Native plugins (.dll / .so / .dylib next to the crayon binary or in a plugins/ folder).
+    -- Set a key to true to search for <key>.dll, or to a string for an explicit path.
+    t.plugins.physics4D = true                 -- physics4D.dll / libphysics4D.so
+    t.plugins.mything   = "libs/mything.dll"   -- explicit path
+    -- (see plugins/README.md for writing your own)
 
     t.graphics = {
         clearColor = {0.1, 0.1, 0.15, 1.0},

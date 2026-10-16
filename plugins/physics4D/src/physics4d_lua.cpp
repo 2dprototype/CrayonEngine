@@ -1,4 +1,4 @@
-// Lua bindings for the hv4d 4D physics engine:  crayon.physics4D.*  and the Physics4D.Body userdata.
+// (physics4D plugin) Lua bindings for the hv4d 4D physics engine:  crayon.physics4D.*  and the Physics4D.Body userdata.
 //
 // Conventions
 //   * Positions / vectors are 4D: x, y, z, w   (y is up; w is the 4th spatial dimension).
@@ -8,9 +8,11 @@
 //   * Angular velocity is a bivector in the same order, expressed in the body's own frame.
 //   * Body ids are plain integers (as used by the collision callbacks); body handles are userdata.
 
-#include "lua_runtime.hpp"
-#include "../core/engine.hpp"
-#include "../physics/physics4d_system.hpp"
+#include <lua.hpp>
+
+#include "host_gfx.hpp"
+#include "plugin_state.hpp"
+#include "physics4d_system.hpp"
 
 #include <algorithm>
 #include <cmath>
@@ -32,8 +34,8 @@ struct LuaPhysics4DBody {
 
 constexpr const char* BODY_MT = "Physics4D.Body";
 
-inline Physics4DSystem& P4() { return Engine::get().get_physics4d(); }
-inline hv4d::World& W() { return Engine::get().get_physics4d().world(); }
+inline Physics4DSystem& P4() { return *g_physics4d; }
+inline hv4d::World& W() { return g_physics4d->world(); }
 
 // ---------------------------------------------------------------------------------
 // helpers
@@ -802,7 +804,9 @@ static int l_draw_debug(lua_State* L) {
         if (field_number(L, 1, "planeExtent", v)) f.plane_extent = v;
         if (field_number(L, 1, "planeDivisions", v)) f.plane_divisions = static_cast<int>(v);
     }
-    P4().draw_debug(Engine::get().get_mesh_renderer(), f);
+    HostGfx gfx;
+    gfx.h = g_host;
+    P4().draw_debug(gfx, f);
     return 0;
 }
 

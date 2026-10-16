@@ -104,6 +104,7 @@ end
 -- ---------------------------------------------------------------------------
 
 function crayon.config(t)
+    t.plugins.physics4D = true   -- needs physics4D.dll / .so next to the crayon binary
     t.window.height = 240*2
     t.window.width = 320*2
 end

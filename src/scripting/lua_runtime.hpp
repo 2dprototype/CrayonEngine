@@ -2,11 +2,13 @@
 
 #include <string>
 #include <memory>
+#include <vector>
 #include <lua.hpp>
 
 namespace crayon {
 
 class Model3D;
+struct PluginFailure;
 
 struct LuaModel {
     std::shared_ptr<Model3D> model;
@@ -68,11 +70,6 @@ public:
     void call_trigger2d_enter(uint32_t sensor_id, uint32_t other_body_id);
     void call_trigger2d_exit(uint32_t sensor_id, uint32_t other_body_id);
 
-    // 4D physics (hv4d) events -> crayon.onCollision4DEnter / onCollision4DExit / onTrigger4DEnter / onTrigger4DExit
-    void call_collision4d_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float nz, float nw, float impulse);
-    void call_collision4d_exit(uint32_t body_a, uint32_t body_b);
-    void call_trigger4d_enter(uint32_t sensor_id, uint32_t other_body_id);
-    void call_trigger4d_exit(uint32_t sensor_id, uint32_t other_body_id);
 
     bool run_config_phase(const std::string& filepath, struct EngineConfig& config);
     
@@ -81,6 +78,10 @@ public:
 
     void register_modules();
     void register_modules(const struct ModulesConfig& modules);
+
+    // Installs "plugin not loaded" stubs so crayon.<name> raises a helpful error instead of
+    // `attempt to index a nil value`.  Call after PluginManager::register_lua().
+    void register_plugin_stubs(const std::vector<PluginFailure>& failures);
 
 private:
     int push_error_handler();
@@ -96,7 +97,6 @@ void register_time_bindings(lua_State* L);
 void register_audio_bindings(lua_State* L);
 void register_physics3d_bindings(lua_State* L);
 void register_physics2d_bindings(lua_State* L);
-void register_physics4d_bindings(lua_State* L);
 void register_particle_bindings(lua_State* L);
 void register_math_bindings(lua_State* L);
 void register_fs_bindings(lua_State* L);

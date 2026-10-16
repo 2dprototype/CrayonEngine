@@ -74,6 +74,10 @@ local function buildScene()
     table.insert(bodies, spinner)
 end
 
+function crayon.config(t)
+    t.plugins.physics4D = true   -- needs physics4D.dll / .so next to the crayon binary
+end
+
 function crayon.init()
     -- Bind the module reference now that all Lua bindings have been registered.
     P = crayon.physics4D

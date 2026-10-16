@@ -7,7 +7,7 @@
 #include "../scripting/lua_runtime.hpp"
 #include "../physics/physics_system.hpp"
 #include "../physics/physics2d_system.hpp"
-#include "../physics/physics4d_system.hpp"
+#include "../plugins/host_api.hpp"
 #include <filesystem>
 #include <cstring>
 
@@ -168,18 +168,6 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
         CRAYON_LOG_INFO("Physics2DSystem skipped (disabled in crayon.config for optimization)");
     }
 
-    // 8c. Conditionally initialize the hv4d 4D Physics4DSystem
-    if (m_config.modules.physics4d) {
-        m_physics4d = std::make_unique<Physics4DSystem>();
-        if (!m_physics4d->init()) {
-            CRAYON_LOG_ERROR("Engine failed to initialize Physics4DSystem");
-            return false;
-        }
-    } else {
-        m_physics4d.reset();
-        CRAYON_LOG_INFO("Physics4DSystem skipped (disabled in crayon.config for optimization)");
-    }
-
     // 9. Conditionally initialize AudioSystem
     if (m_config.modules.audio) {
         if (!m_audio.init()) {
@@ -191,6 +179,9 @@ bool Engine::init(int window_w, int window_h, int virtual_w, int virtual_h, cons
 
     // 10. Register Lua modules based on config
     m_lua_runtime->register_modules(m_config.modules);
+    m_plugins.load(m_config.plugins, plugin_host_api());
+    m_plugins.register_lua(m_lua_runtime->get_state());
+    m_lua_runtime->register_plugin_stubs(m_plugins.failures());
 
     // 11. Apply graphics config
     set_clear_color(m_config.graphics.clear_color.r,
@@ -229,6 +220,7 @@ void Engine::shutdown() {
         m_lua_runtime->shutdown();
         m_lua_runtime.reset();
     }
+    m_plugins.unload();   // after the Lua state is closed (plugin userdata __gc may have run)
     if (m_physics) {
         m_physics->shutdown();
         m_physics.reset();
@@ -236,10 +228,6 @@ void Engine::shutdown() {
     if (m_physics2d) {
         m_physics2d->shutdown();
         m_physics2d.reset();
-    }
-    if (m_physics4d) {
-        m_physics4d->shutdown();
-        m_physics4d.reset();
     }
     if (m_config.modules.audio) {
         m_audio.shutdown();
@@ -428,7 +416,7 @@ void Engine::soft_restart() {
 
     if (m_physics)   { m_physics->shutdown();   m_physics.reset();   }
     if (m_physics2d) { m_physics2d->shutdown(); m_physics2d.reset(); }
-    if (m_physics4d) { m_physics4d->shutdown(); m_physics4d.reset(); }
+    m_plugins.unload();   // Lua is closed above; plugins are re-loaded after the new config phase
 
     // Audio: only shut down if it was actually running.
     if (old_config.modules.audio) {
@@ -437,7 +425,6 @@ void Engine::soft_restart() {
 
     m_physics_accumulator   = 0.0f;
     m_physics2d_accumulator = 0.0f;
-    m_physics4d_accumulator = 0.0f;
 
     // ---------------------------------------------------------------
     // 4. Reset config to defaults, re-apply CLI overrides, re-run
@@ -556,14 +543,6 @@ void Engine::soft_restart() {
         }
     }
 
-    if (m_config.modules.physics4d) {
-        m_physics4d = std::make_unique<Physics4DSystem>();
-        if (!m_physics4d->init()) {
-            CRAYON_LOG_ERROR("soft_restart: failed to re-init Physics4DSystem");
-            m_physics4d.reset();
-        }
-    }
-
     if (m_config.modules.audio) {
         if (!m_audio.init()) {
             CRAYON_LOG_WARN("soft_restart: audio init failed (continuing without)");
@@ -591,6 +570,9 @@ void Engine::soft_restart() {
     //     (run_config_phase already executed the top-level chunk.)
     // ---------------------------------------------------------------
     m_lua_runtime->register_modules(m_config.modules);
+    m_plugins.load(m_config.plugins, plugin_host_api());
+    m_plugins.register_lua(m_lua_runtime->get_state());
+    m_lua_runtime->register_plugin_stubs(m_plugins.failures());
     m_lua_runtime->call_init();
 
     // ---------------------------------------------------------------
@@ -758,36 +740,9 @@ void Engine::step_simulation(float dt) {
         }
     }
 
-    if (m_physics4d && m_config.modules.physics4d) {
-        const float fixed_dt = 1.0f / 60.0f;
-        m_physics4d_accumulator += dt;
-        if (m_physics4d_accumulator > 0.2f) m_physics4d_accumulator = 0.2f;
-        while (m_physics4d_accumulator >= fixed_dt) {
-            m_physics4d->update(fixed_dt);
-            m_physics4d_accumulator -= fixed_dt;
-        }
-
-        // Always drain the queue (so it can't grow without bound), but only dispatch when a script is running.
-        auto events = m_physics4d->get_and_clear_events();
-        if (m_lua_runtime && !m_game_script_path.empty()) {
-            for (const auto& evt : events) {
-                switch (evt.type) {
-                    case Physics4DEventType::CollisionEnter:
-                        m_lua_runtime->call_collision4d_enter(evt.bodyA, evt.bodyB, evt.normal.x, evt.normal.y,
-                                                              evt.normal.z, evt.normal.w, evt.impulse);
-                        break;
-                    case Physics4DEventType::CollisionExit:
-                        m_lua_runtime->call_collision4d_exit(evt.bodyA, evt.bodyB);
-                        break;
-                    case Physics4DEventType::TriggerEnter:
-                        m_lua_runtime->call_trigger4d_enter(evt.bodyA, evt.bodyB);
-                        break;
-                    case Physics4DEventType::TriggerExit:
-                        m_lua_runtime->call_trigger4d_exit(evt.bodyA, evt.bodyB);
-                        break;
-                }
-            }
-        }
+    // Plugins (physics4D, ...) get their per-frame hook right before crayon.update(dt).
+    if (m_lua_runtime && !m_game_script_path.empty() && !m_plugins.loaded().empty()) {
+        m_plugins.update(m_lua_runtime->get_state(), dt);
     }
 
     if (m_config.modules.audio) {

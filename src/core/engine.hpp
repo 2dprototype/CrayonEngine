@@ -17,13 +17,13 @@
 #include "../graphics/image_data.hpp"
 #include "../graphics/mesh3d.hpp"
 #include "../graphics/post_process_chain.hpp"
+#include "../plugins/plugin_manager.hpp"
 
 namespace crayon {
 
 class LuaRuntime;
 class PhysicsSystem;
 class Physics2DSystem;
-class Physics4DSystem;
 class Model3D;
 
 class Engine {
@@ -56,8 +56,7 @@ public:
     PhysicsSystem& get_physics() { return *m_physics; }
     bool has_physics2d() const { return m_physics2d != nullptr; }
     Physics2DSystem& get_physics2d() { return *m_physics2d; }
-    bool has_physics4d() const { return m_physics4d != nullptr; }
-    Physics4DSystem& get_physics4d() { return *m_physics4d; }
+    PluginManager& get_plugins() { return m_plugins; }
     PostProcessChain& get_post_process_chain() { return m_post_process_chain; }
     const EngineConfig& get_config() const { return m_config; }
     EngineConfig& get_config() { return m_config; }
@@ -128,8 +127,7 @@ private:
     float m_physics_accumulator = 0.0f;
     std::unique_ptr<Physics2DSystem> m_physics2d;
     float m_physics2d_accumulator = 0.0f;
-    std::unique_ptr<Physics4DSystem> m_physics4d;
-    float m_physics4d_accumulator = 0.0f;
+    PluginManager m_plugins;   // native plugins (.dll/.so/.dylib), see plugins/README.md
 
     std::unordered_map<std::string, std::shared_ptr<Texture>> m_texture_cache;
     std::unordered_map<GLuint, std::shared_ptr<Texture>> m_user_textures;

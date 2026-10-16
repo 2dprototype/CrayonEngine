@@ -21,6 +21,7 @@ if %errorlevel% equ 0 (
     echo [OK] Build successful!
     echo   Player: .\build\crayon.exe (or .\crayon.exe)
     echo   Editor: .\build\editor.exe (or .\editor.exe)
+    echo   Plugins: .\build\*.dll next to crayon.exe (physics4D.dll, ...)
 ) else (
     echo [ERROR] Build failed.
 )

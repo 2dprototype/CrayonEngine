@@ -1,9 +1,9 @@
 #pragma once
 
-// Physics4DSystem: engine-side wrapper around the standalone hv4d library
-// (vendor/hypervis4d).  It owns the hv4d::World, the current hyperplane slice
-// used for visualisation/picking, buffered collision events, and the debug
-// renderer which draws 4D bodies into the 3D scene through MeshRenderer3D.
+// Physics4DSystem: wrapper around the standalone hv4d library (vendor/hypervis4d).  It owns the
+// hv4d::World, the current hyperplane slice used for visualisation/picking, buffered collision
+// events, and the debug renderer which draws 4D bodies into the 3D scene through the engine's
+// plugin host API (HostGfx).
 
 #include <cstdint>
 #include <vector>
@@ -12,7 +12,7 @@
 
 namespace crayon {
 
-class MeshRenderer3D;
+struct HostGfx;
 
 enum class Physics4DEventType {
     CollisionEnter,
@@ -71,7 +71,7 @@ public:
     std::vector<Physics4DEvent> get_and_clear_events();
 
     // ---- Debug drawing (call during crayon.draw, i.e. inside the 3D pass) ----
-    void draw_debug(MeshRenderer3D& renderer, const Physics4DDebugFlags& flags = Physics4DDebugFlags{});
+    void draw_debug(const HostGfx& renderer, const Physics4DDebugFlags& flags = Physics4DDebugFlags{});
 
     // ---- Helpers ----
     static hv4d::Vec4 to_hv(const glm::vec4& v) { return {v.x, v.y, v.z, v.w}; }

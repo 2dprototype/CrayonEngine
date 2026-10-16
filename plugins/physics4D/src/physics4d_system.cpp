@@ -5,8 +5,7 @@
 #include <cmath>
 #include <string>
 
-#include "../core/log.hpp"
-#include "../graphics/mesh3d.hpp"
+#include "host_gfx.hpp"
 
 namespace crayon {
 
@@ -54,7 +53,6 @@ bool Physics4DSystem::init() {
     m_slice = hv4d::SlicePlane::at_w(0.0f);
     m_axis_slice = true;
     m_initialized = true;
-    CRAYON_LOG_INFO("Physics4DSystem initialized (hv4d)");
     return true;
 }
 
@@ -130,7 +128,7 @@ const char* Physics4DSystem::solid_name(hv4d::RegularSolid s) {
 // ---------------------------------------------------------------------------
 // Debug rendering
 // ---------------------------------------------------------------------------
-void Physics4DSystem::draw_debug(MeshRenderer3D& r, const Physics4DDebugFlags& f) {
+void Physics4DSystem::draw_debug(const HostGfx& r, const Physics4DDebugFlags& f) {
     if (!m_initialized) return;
 
     const hv4d::SlicePlane& plane = m_slice;

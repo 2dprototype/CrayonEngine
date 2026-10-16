@@ -92,6 +92,10 @@ end
 -- ---------------------------------------------------------------------------
 -- Lifecycle
 -- ---------------------------------------------------------------------------
+function crayon.config(t)
+    t.plugins.physics4D = true   -- needs physics4D.dll / .so next to the crayon binary
+end
+
 function crayon.init()
     P = crayon.physics4D
     G = crayon.graphics

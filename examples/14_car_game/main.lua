@@ -15,7 +15,6 @@
 -- Config phase: disable modules this demo doesn't use.
 function crayon.config(t)
     t.modules.physics2D = false
-    t.modules.physics4D = false
     t.modules.audio     = false
     t.modules.particles = false
     t.modules.fs        = false

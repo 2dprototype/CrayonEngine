@@ -2,6 +2,8 @@
 #include "lua_prelude.hpp"
 #include "../core/log.hpp"
 #include "../core/engine_config.hpp"
+#include "../plugins/plugin_manager.hpp"
+#include <algorithm>
 #include <filesystem>
 
 
@@ -48,6 +50,56 @@ static void register_disabled_stub(lua_State* L, const char* name) {
     lua_setmetatable(L, -2);
     lua_setfield(L, -2, name);
     lua_pop(L, 1); // pop crayon
+}
+
+static int l_plugin_missing_error(lua_State* L) {
+    const char* name = lua_tostring(L, lua_upvalueindex(1));
+    const char* why  = lua_tostring(L, lua_upvalueindex(2));
+    return luaL_error(L, "crayon.%s is not available: %s", name ? name : "?", why ? why : "plugin not loaded");
+}
+
+static void install_plugin_stub(lua_State* L, const char* name, const char* why) {
+    lua_getglobal(L, "crayon");
+    if (!lua_istable(L, -1)) { lua_pop(L, 1); return; }
+    lua_newtable(L);      // dummy module table
+    lua_newtable(L);      // metatable
+    lua_pushstring(L, name);
+    lua_pushstring(L, why);
+    lua_pushcclosure(L, l_plugin_missing_error, 2);
+    lua_setfield(L, -2, "__index");
+    lua_pushstring(L, name);
+    lua_pushstring(L, why);
+    lua_pushcclosure(L, l_plugin_missing_error, 2);
+    lua_setfield(L, -2, "__newindex");
+    lua_setmetatable(L, -2);
+    lua_setfield(L, -2, name);
+    lua_pop(L, 1);        // pop crayon
+}
+
+static bool crayon_field_is_nil(lua_State* L, const char* name) {
+    lua_getglobal(L, "crayon");
+    bool nil = true;
+    if (lua_istable(L, -1)) {
+        lua_getfield(L, -1, name);
+        nil = lua_isnil(L, -1);
+        lua_pop(L, 1);
+    }
+    lua_pop(L, 1);
+    return nil;
+}
+
+void LuaRuntime::register_plugin_stubs(const std::vector<PluginFailure>& failures) {
+    if (!m_L) return;
+    for (const PluginFailure& f : failures) {
+        if (f.name.empty() || !crayon_field_is_nil(m_L, f.name.c_str())) continue;
+        install_plugin_stub(m_L, f.name.c_str(), ("the plugin failed to load: " + f.reason).c_str());
+    }
+    // physics4D used to be built in: point old code at the new way of enabling it.
+    if (crayon_field_is_nil(m_L, "physics4D")) {
+        install_plugin_stub(m_L, "physics4D",
+            "physics4D is a plugin now. Put physics4D.dll (.so/.dylib) next to the crayon binary and add "
+            "`t.plugins.physics4D = true` to crayon.config().");
+    }
 }
 
 LuaRuntime::LuaRuntime() = default;
@@ -119,12 +171,6 @@ void LuaRuntime::register_modules(const ModulesConfig& modules) {
         register_physics2d_bindings(m_L);
     } else {
         register_disabled_stub(m_L, "physics2D");
-    }
-
-    if (modules.physics4d) {
-        register_physics4d_bindings(m_L);
-    } else {
-        register_disabled_stub(m_L, "physics4D");
     }
 
     if (modules.particles) {
@@ -212,8 +258,6 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_setfield(m_L, -2, "physics3D");
     lua_pushboolean(m_L, config.modules.physics2d);
     lua_setfield(m_L, -2, "physics2D");
-    lua_pushboolean(m_L, config.modules.physics4d);
-    lua_setfield(m_L, -2, "physics4D");
     lua_pushboolean(m_L, config.modules.audio);
     lua_setfield(m_L, -2, "audio");
     lua_pushboolean(m_L, config.modules.mesh3d);
@@ -225,6 +269,10 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_pushboolean(m_L, config.modules.fs);
     lua_setfield(m_L, -2, "fs");
     lua_setfield(m_L, -2, "modules");
+
+    // t.plugins: t.plugins.physics4D = true  |  t.plugins.name = "path/to/plugin.dll"
+    lua_newtable(m_L);
+    lua_setfield(m_L, -2, "plugins");
 
     // t.graphics (camelCase)
     lua_newtable(m_L);
@@ -404,10 +452,6 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
         if (lua_isboolean(m_L, -1)) config.modules.physics2d = lua_toboolean(m_L, -1);
         lua_pop(m_L, 1);
 
-        lua_getfield(m_L, -1, "physics4D");
-        if (lua_isboolean(m_L, -1)) config.modules.physics4d = lua_toboolean(m_L, -1);
-        lua_pop(m_L, 1);
-
         lua_getfield(m_L, -1, "audio");
         if (lua_isboolean(m_L, -1)) config.modules.audio = lua_toboolean(m_L, -1);
         lua_pop(m_L, 1);
@@ -429,6 +473,32 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
         lua_pop(m_L, 1);
     }
     lua_pop(m_L, 1); // pop t.modules
+
+    // Read t.plugins (key = plugin name, value = true | "explicit/path")
+    config.plugins.clear();
+    lua_getfield(m_L, -1, "plugins");
+    if (lua_istable(m_L, -1)) {
+        lua_pushnil(m_L);
+        while (lua_next(m_L, -2) != 0) {
+            // key at -2, value at -1.  Only string keys count (never lua_tostring a number key in place).
+            if (lua_type(m_L, -2) == LUA_TSTRING) {
+                PluginRequest req;
+                req.name = lua_tostring(m_L, -2);
+                bool want = false;
+                if (lua_isboolean(m_L, -1)) {
+                    want = lua_toboolean(m_L, -1) != 0;
+                } else if (lua_type(m_L, -1) == LUA_TSTRING) {
+                    req.path = lua_tostring(m_L, -1);
+                    want = !req.path.empty();
+                }
+                if (want) config.plugins.push_back(std::move(req));
+            }
+            lua_pop(m_L, 1);   // pop value, keep key for lua_next
+        }
+    }
+    lua_pop(m_L, 1); // pop t.plugins
+    std::sort(config.plugins.begin(), config.plugins.end(),
+              [](const PluginRequest& a, const PluginRequest& b) { return a.name < b.name; });
 
     // Read t.graphics (strict camelCase)
     lua_getfield(m_L, -1, "graphics");
@@ -474,12 +544,11 @@ bool LuaRuntime::run_config_phase(const std::string& filepath, EngineConfig& con
     lua_pop(m_L, 1); // pop table t
     lua_pop(m_L, 1); // pop err_func
 
-    CRAYON_LOG_INFO("Configuration loaded from '{}': Title='{}', Win={}x{}, Virt={}x{}, Physics3D={}, Physics2D={}, Physics4D={}, Audio={}, Mesh3D={}",
+    CRAYON_LOG_INFO("Configuration loaded from '{}': Title='{}', Win={}x{}, Virt={}x{}, Physics3D={}, Physics2D={}, Audio={}, Mesh3D={}",
         filepath, config.window.title, config.window.width, config.window.height,
         config.window.virtual_width, config.window.virtual_height,
         config.modules.physics3d ? "ON" : "OFF",
         config.modules.physics2d ? "ON" : "OFF",
-        config.modules.physics4d ? "ON" : "OFF",
         config.modules.audio ? "ON" : "OFF",
         config.modules.mesh3d ? "ON" : "OFF");
 
@@ -924,70 +993,6 @@ void LuaRuntime::call_trigger_exit(uint32_t sensor_id, uint32_t other_body_id) {
     lua_pop(m_L, 1);
 }
 
-void LuaRuntime::call_collision4d_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float nz, float nw, float impulse) {
-    if (!m_L) return;
-    int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "onCollision4DEnter")) {
-        lua_pushinteger(m_L, body_a);
-        lua_pushinteger(m_L, body_b);
-        lua_pushnumber(m_L, nx);
-        lua_pushnumber(m_L, ny);
-        lua_pushnumber(m_L, nz);
-        lua_pushnumber(m_L, nw);
-        lua_pushnumber(m_L, impulse);
-        if (lua_pcall(m_L, 7, 0, err_func) != 0) {
-            const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.onCollision4DEnter():\n{}", err ? err : "unknown error");
-            lua_pop(m_L, 1);
-        }
-    }
-    lua_pop(m_L, 1);
-}
-
-void LuaRuntime::call_collision4d_exit(uint32_t body_a, uint32_t body_b) {
-    if (!m_L) return;
-    int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "onCollision4DExit")) {
-        lua_pushinteger(m_L, body_a);
-        lua_pushinteger(m_L, body_b);
-        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
-            const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.onCollision4DExit():\n{}", err ? err : "unknown error");
-            lua_pop(m_L, 1);
-        }
-    }
-    lua_pop(m_L, 1);
-}
-
-void LuaRuntime::call_trigger4d_enter(uint32_t sensor_id, uint32_t other_body_id) {
-    if (!m_L) return;
-    int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "onTrigger4DEnter")) {
-        lua_pushinteger(m_L, sensor_id);
-        lua_pushinteger(m_L, other_body_id);
-        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
-            const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.onTrigger4DEnter():\n{}", err ? err : "unknown error");
-            lua_pop(m_L, 1);
-        }
-    }
-    lua_pop(m_L, 1);
-}
-
-void LuaRuntime::call_trigger4d_exit(uint32_t sensor_id, uint32_t other_body_id) {
-    if (!m_L) return;
-    int err_func = push_error_handler();
-    if (get_crayon_func(m_L, "onTrigger4DExit")) {
-        lua_pushinteger(m_L, sensor_id);
-        lua_pushinteger(m_L, other_body_id);
-        if (lua_pcall(m_L, 2, 0, err_func) != 0) {
-            const char* err = lua_tostring(m_L, -1);
-            CRAYON_LOG_ERROR("Error in crayon.onTrigger4DExit():\n{}", err ? err : "unknown error");
-            lua_pop(m_L, 1);
-        }
-    }
-    lua_pop(m_L, 1);
-}
 
 void LuaRuntime::call_collision2d_enter(uint32_t body_a, uint32_t body_b, float nx, float ny, float impulse) {
     if (!m_L) return;
